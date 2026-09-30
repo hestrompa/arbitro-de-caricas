@@ -42,6 +42,9 @@ rep("$('againBtn').addEventListener('click', () => { start(); window.scrollTo({ 
 rep("  if (mode === 'menu' && (k === 'Enter' || k === ' ')) { start(); e.preventDefault(); return; }",
     "  if (mode === 'menu' && (k === 'Enter' || k === ' ')) { if (!$('brief').hidden) startCareerMatch(); else { C = null; useTeams(null); start(); } e.preventDefault(); return; }")
 rep("window.__arbitro = { get S() { return S; }, get mode() { return mode; }, start,", "window.__arbitro = { get S() { return S; }, get mode() { return mode; }, get C() { return C; }, set C(v) { C = v; }, openCareer, startCareerMatch, endMatch, saveCareer, start,")
+# ecrãs baixos: se o painel de decisão ficar fora do ecrã, leva-o à vista
+rep("function showDecide(on) {\n  $('decide').hidden = !on;", "function showDecide(on) {\n  $('decide').hidden = !on;\n  if (on) panelIntoView('decide');")
+rep("  $('protest').hidden = false; $('decide').hidden = true;", "  $('protest').hidden = false; $('decide').hidden = true; panelIntoView('protest');")
 # artigos certos para nomes de clubes e países
 import re
 t, n1 = re.subn(r"dos ' \+ TEAMS\[([^\]]+)\]\.name", r"' + deT(\1)", t)

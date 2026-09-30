@@ -189,3 +189,4 @@ function renderCareer() {
   $('carFinals').hidden = !C.finals; $('carFinals').textContent = C.finals ? 'Finais do Mundial apitadas: ' + C.finals : '';
 }
 function menuCareerLabel() { loadCareer(); $('careerBtn').textContent = C ? 'Continuar carreira' : 'Carreira'; }
+function panelIntoView(id) { const r = $(id).getBoundingClientRect(); if (r.bottom > window.innerHeight) $(id).scrollIntoView({ behavior: 'smooth', block: 'end' }); }
