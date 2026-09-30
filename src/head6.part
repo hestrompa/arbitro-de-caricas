@@ -1,4 +1,7 @@
 <title>Árbitro de Caricas</title>
+<meta name="theme-color" content="#0e1712">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
@@ -83,7 +86,25 @@ button:focus-visible { outline: 2px solid var(--whistle); outline-offset: 2px; }
 .decide-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-family: var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-size: 14px; }
 .timer { height: 4px; background: var(--line); border-radius: 99px; overflow: hidden; }
 .timer > i { display: block; height: 100%; width: 100%; background: var(--whistle); }
-.choices { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.choices { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+#decide[data-kind="foul-box"] .choices { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+#decide[data-kind="offside"] .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#decide[data-kind="mao"] .choices, #decide[data-kind="canto"] .choices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ask { border-color: var(--whistle); }
+.ticker { position: absolute; left: 10px; top: 10px; max-width: 70%; background: rgba(8,14,10,.72); border-left: 3px solid var(--whistle); padding: 4px 10px; font-size: 13px; color: var(--chalk); border-radius: 2px; pointer-events: none; opacity: .9; }
+.ticker.fresh { animation: tick 6s forwards; }
+@keyframes tick { 0% { opacity: 0; transform: translateY(-4px); } 6% { opacity: .95; transform: none; } 80% { opacity: .95; } 100% { opacity: .35; } }
+.stage.view3d .ticker { display: none; }
+.summary { margin: 4px 0 14px; }
+.summary h3 { margin: 0 0 6px; font-family: var(--display); font-size: 16px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+.moments { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; font-size: 14px; }
+.moments b { display: inline-block; min-width: 44px; color: var(--whistle); font-family: var(--display); font-variant-numeric: tabular-nums; }
+.moments .k-goal { color: var(--chalk); font-weight: 600; }
+.moments .k-card b { color: var(--whistle); }
+.moments .k-var b, .moments .k-pen b { color: #39d0ff; }
+details.feed { margin-top: 8px; }
+details.feed summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+details.feed .moments { margin-top: 6px; max-height: 260px; overflow: auto; font-size: 13px; color: var(--muted); }
 .choice { background: #1e2f24; border: 1px solid var(--line); border-radius: 4px; padding: 8px 4px; display: grid; justify-items: center; gap: 2px; font-family: var(--display); font-weight: 600; font-size: 17px; letter-spacing: .03em; }
 .choice small { font-family: var(--body); font-weight: 500; font-size: 11px; color: var(--muted); }
 .choice:hover { border-color: var(--muted); }
@@ -150,7 +171,11 @@ td.next { color: var(--whistle); }
   .viewbtns { bottom: 50px; }
   .pip { width: 40%; bottom: 50px; }
   .viewbtns button { padding: 4px 8px; font-size: 13px; }
-  .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .choices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #decide[data-kind="foul-box"] .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .choices .choice { font-size: 13px; letter-spacing: 0; padding: 6px 2px; min-width: 0; }
+  .choices .choice small { font-size: 10px; }
+  .ticker { font-size: 11px; max-width: 85%; top: 6px; left: 6px; }
   .team { font-size: 13px; line-height: 1.1; gap: 6px; }
   .team span:not(.dot) { overflow-wrap: anywhere; }
   .score { font-size: 26px; }
@@ -187,6 +212,7 @@ td.next { color: var(--whistle); }
     <div class="cap3d" id="cap3d" hidden><span id="capL"></span><span id="capR"></span></div>
     <div class="flash" id="flash" hidden>Lance!</div>
     <div class="toast" id="toast" hidden></div>
+    <div class="ticker" id="ticker" hidden></div>
     <div class="viewbtns" id="viewBtns" hidden>
       <button type="button" id="viewMine" aria-pressed="false">A tua vista</button>
       <button type="button" id="viewIdeal" aria-pressed="true">Vista ideal</button>
@@ -217,13 +243,14 @@ td.next { color: var(--whistle); }
         <div class="keys">
           <kbd>WASD / setas</kbd><span>mover o árbitro (ou toca no campo)</span>
           <kbd>Shift</kbd><span>correr, gasta energia</span>
-          <kbd>1 a 5</kbd><span>siga, falta, amarelo, vermelho, simulação</span>
+          <kbd>1 a 6</kbd><span>siga, falta, amarelo, vermelho, simulação, vantagem</span>
+          <kbd>1 a 3</kbd><span>mão na bola e cantos: siga, penálti ou livre, e a variante com cartão</span>
           <kbd>1 / 2</kbd><span>no fora de jogo: em jogo ou fora de jogo</span>
           <kbd>R</kbd><span>rever o lance em câmara lenta</span>
           <kbd>1 a 4</kbd><span>nos protestos: ignorar, afastar, amarelo, falar com o capitão</span>
           <kbd>Espaço , .</kbd><span>depois de veres o lance: pausa e fotograma a fotograma</span>
         </div>
-        <div class="row-actions"><button class="primary" id="startBtn" type="button">Apitar o início</button><button class="ghostbtn" id="careerBtn" type="button">Carreira</button><button class="ghostbtn" id="trainBtn" type="button">Treinar o VAR</button></div>
+        <div class="row-actions"><button class="primary" id="startBtn" type="button">Apitar o início</button><button class="ghostbtn" id="careerBtn" type="button">Carreira</button><button class="ghostbtn" id="trainBtn" type="button">Treinar o VAR</button><button class="ghostbtn" id="installBtn" type="button" hidden>Instalar a app</button></div>
         <p class="small">Na carreira começas nos distritais e o observador decide se sobes, ficas ou desces no fim de cada época, até à final do Mundial.</p>
       </div>
     </div>
@@ -233,13 +260,18 @@ td.next { color: var(--whistle); }
     <div class="decide-top"><span id="decideMsg">Qual é a tua decisão?</span><span id="decideTime"></span></div>
     <div class="timer"><i id="timerBar"></i></div>
     <div class="choices">
-      <button class="choice foul-choice" type="button" data-d="siga">Siga<small>1 · lance limpo</small></button>
-      <button class="choice foul-choice" type="button" data-d="falta">Falta<small>2 · livre</small></button>
-      <button class="choice foul-choice" type="button" data-d="amarelo"><span class="swatch" style="background: var(--whistle)"></span>Amarelo<small>3</small></button>
-      <button class="choice foul-choice" type="button" data-d="vermelho"><span class="swatch" style="background: var(--bad)"></span>Vermelho<small>4</small></button>
-      <button class="choice foul-choice" type="button" data-d="simulacao">Simulação<small>5 · amarelo ao atacante</small></button>
-      <button class="choice off-choice" type="button" data-d="emjogo" hidden>Em jogo<small>1 · segue o ataque</small></button>
-      <button class="choice off-choice" type="button" data-d="fora" hidden><span class="swatch" style="background: var(--whistle)"></span>Fora de jogo<small>2 · livre indireto</small></button>
+      <button class="choice" type="button" data-k="foul mao canto" data-d="siga">Siga<small>1 · lance limpo</small></button>
+      <button class="choice" type="button" data-k="foul" data-d="falta">Falta<small id="faltaSmall">2 · livre</small></button>
+      <button class="choice" type="button" data-k="foul" data-d="amarelo"><span class="swatch" style="background: var(--whistle)"></span>Amarelo<small>3</small></button>
+      <button class="choice" type="button" data-k="foul" data-d="vermelho"><span class="swatch" style="background: var(--bad)"></span>Vermelho<small>4</small></button>
+      <button class="choice" type="button" data-k="foul" data-d="simulacao">Simulação<small>5 · amarelo ao atacante</small></button>
+      <button class="choice" type="button" data-k="foul" data-d="vantagem">Vantagem<small>6 · deixa seguir</small></button>
+      <button class="choice" type="button" data-k="offside" data-d="emjogo" hidden>Em jogo<small>1 · segue o ataque</small></button>
+      <button class="choice" type="button" data-k="offside" data-d="fora" hidden><span class="swatch" style="background: var(--whistle)"></span>Fora de jogo<small>2 · livre indireto</small></button>
+      <button class="choice" type="button" data-k="mao" data-d="mao" hidden>Mão<small id="maoSmall">2 · penálti</small></button>
+      <button class="choice" type="button" data-k="mao" data-d="maoAmarelo" hidden><span class="swatch" style="background: var(--whistle)"></span>Mão + amarelo<small>3 · deliberada</small></button>
+      <button class="choice" type="button" data-k="canto" data-d="penalti" hidden>Penálti<small>2 · falta do defesa</small></button>
+      <button class="choice" type="button" data-k="canto" data-d="ataque" hidden>Falta atacante<small>3 · livre para a defesa</small></button>
       <button class="choice ghost" type="button" id="replayBtn">Rever<small>R · câmara lenta</small></button>
     </div>
   </section>
@@ -253,6 +285,12 @@ td.next { color: var(--whistle); }
       <button class="choice" type="button" id="pCard"><span class="swatch" style="background: var(--whistle)"></span>Amarelo<small>3 · por protestos</small></button>
       <button class="choice" type="button" id="pCap"><span class="swatch" style="background: #f2cf3a; border-radius: 2px; height: 4px"></span>Capitão<small id="pCapT">4 · confiança</small></button>
     </div>
+  </section>
+
+  <section class="decide ask" id="ask" hidden>
+    <div class="decide-top"><span id="askMsg"></span><span id="askTag"></span></div>
+    <div class="timer"><i id="askBar" style="background: var(--whistle)"></i></div>
+    <div class="choices three" id="askChoices"></div>
   </section>
 
   <p class="help" id="help">O observador avalia cada decisão contra o que aconteceu de facto. No monitor do VAR, num fora de jogo, arrasta as duas linhas no relvado até às partes do corpo que contam (setas para afinar, Tab troca de linha). Erros baixam o controlo do jogo e deixam os jogadores mais nervosos; abaixo de 10 o jogo é interrompido.</p>
@@ -281,6 +319,8 @@ td.next { color: var(--whistle); }
     <h2 id="revTitle">Relatório do observador</h2>
     <div class="grade"><b id="grade">0.0</b><span id="gradeTxt"></span></div>
     <p class="news" id="careerNote" hidden></p>
+    <div class="summary"><h3>Momentos do jogo</h3><ol class="moments" id="sumList"></ol>
+      <details class="feed"><summary>Relato completo · <span id="feedCount"></span></summary><ol class="moments" id="feedList"></ol></details></div>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Min.</th><th>O que foi</th><th>Decidiste</th><th>Viste de</th><th>Avaliação</th><th></th></tr></thead>

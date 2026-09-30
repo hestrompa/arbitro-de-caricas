@@ -4,6 +4,10 @@ Jogo de árbitro de futebol no browser. O jogo corre em 2D, com os jogadores com
 
 Abre o `index.html` num browser moderno. Não precisa de instalação nem de servidor.
 
+## Jogar no telemóvel, sem internet
+
+Com o GitHub Pages ligado (Settings → Pages → Deploy from a branch → `main` / root), o jogo fica em https://hestrompa.github.io/arbitro-de-caricas/. Aberto aí no telemóvel, o menu mostra "Instalar a app" (Android) ou usa-se "Adicionar ao ecrã principal" (iPhone). Depois de instalado abre em ecrã inteiro e funciona sem internet.
+
 ## Como se joga
 
 - Segues o jogo com a carica preta e amarela: WASD, setas ou toque no campo. Shift faz correr e gasta energia.
@@ -11,6 +15,10 @@ Abre o `index.html` num browser moderno. Não precisa de instalação nem de ser
 - Nos foras de jogo apertados vês o passe pelos olhos do assistente e decides se confias na bandeira (1 em jogo, 2 fora de jogo).
 - Depois de veres o lance uma vez podes pausar e andar fotograma a fotograma (espaço, vírgula e ponto), enquanto o relógio da decisão corre.
 - Os Azuis jogam em casa. O público pressiona e reduz o tempo para decidir, e os jogadores prejudicados vêm protestar: ignorar, afastar, amarelo ou falar com o capitão (1 a 4). O capitão, com a braçadeira amarela, só acalma a equipa se confiar em ti, e a confiança cai quando erras contra eles.
+- Há mais tipos de lance: mão na bola (siga, mão, mão com amarelo), empurrões na área nos cantos (penálti ou falta do atacante) e saídas do guarda-redes aos pés do avançado.
+- Lei da vantagem (tecla 6): se a bola sobra para um colega com espaço, deixas seguir e na paragem seguinte decides se mostras o cartão.
+- Faltas repetidas do mesmo jogador e faltas táticas num contra-ataque pedem amarelo. O guarda-redes que está a ganhar pode queimar tempo: mandas jogar ou mostras amarelo. No fim o 4.º árbitro mostra os descontos.
+- Há relato do jogo, um estádio 3D com bancadas nas cores das equipas, e o relatório final começa pelos momentos do jogo.
 - Quando erras num vermelho, num penálti ou num fora de jogo, o VAR chama-te ao monitor, e cada ida ao monitor custa autoridade. No fora de jogo arrastas as linhas no relvado (setas afinam, Tab troca de linha).
 - Os nervos do árbitro sobem com erros, protestos, idas ao VAR e público exaltado. Com nervos altos tens menos tempo para decidir e a imagem do lance treme.
 - Os jogadores em 3D usam animações captadas de pessoas reais (corrida, carrinho, queda, mergulho, remate).
@@ -27,7 +35,11 @@ Abre o `index.html` num browser moderno. Não precisa de instalação nem de ser
   - `audio.js`: sons sintetizados com Web Audio.
   - `p3.js`: público, protestos, VAR e treino do VAR.
   - `p4.js`: carreira (escalões, clubes, atributos, histórias dos jogos).
-  - `splice.py`, `phase3.py` e `phase4.py`: juntam as partes no `game.js` final.
+  - `p5.js`: mão na bola, cantos, guarda-redes, vantagem, antijogo e descontos.
+  - `p6.js`: relato e momentos do jogo.
+  - `p7.js`: estádio 3D e modo app instalável.
+  - `splice.py`, `phase3.py`, `phase4.py` e `phase5.py`: juntam as partes no `game.js` final.
+- `manifest.webmanifest`, `sw.js` e os ícones: modo app instalável e offline.
 - `assets/`: corpo humano já convertido (`human.bin`, `human.json`) e texturas de pele.
 - `assets/anims.json`: animações captadas (corrida, trote, parado, mergulho, queda, remate) já adaptadas ao corpo do jogo.
 - `tools/mocap/`: scripts que leem os ficheiros BVH da base de dados da CMU e os adaptam ao esqueleto do MakeHuman (`build_anims.py` gera o `anims.json`).

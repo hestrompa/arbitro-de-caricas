@@ -2,6 +2,7 @@ import base64, json, subprocess
 exec(open('splice.py').read())
 exec(open('phase3.py').read())
 exec(open('phase4.py').read())
+exec(open('phase5.py').read())
 M = '../assets/'
 h = json.load(open(M + 'human.json'))
 skins = {k: 'data:image/jpeg;base64,' + base64.b64encode(open(M + 'skin_' + k + '.jpg', 'rb').read()).decode() for k in ['light', 'mid', 'brown', 'dark']}
