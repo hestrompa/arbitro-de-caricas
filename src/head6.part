@@ -103,7 +103,29 @@ td.half { color: var(--whistle); font-weight: 600; }
 td.bad { color: var(--bad); font-weight: 600; }
 .linkbtn { background: none; border: 1px solid var(--line); border-radius: 3px; padding: 2px 8px; font-size: 13px; white-space: nowrap; }
 .ghostbtn { background: transparent; border: 1px solid var(--whistle); color: var(--whistle); border-radius: 4px; padding: 10px 18px; font-family: var(--display); font-weight: 600; font-size: 18px; letter-spacing: .05em; text-transform: uppercase; }
-.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.small { margin: 0; color: var(--muted); font-size: 13px; }
+.kicker { font-family: var(--display); font-size: 15px; letter-spacing: .08em; text-transform: uppercase; color: var(--whistle); }
+.card h1.teams { font-size: clamp(26px, 4.6vw, 44px); }
+.story { margin: 0; padding-left: 18px; color: var(--chalk); display: grid; gap: 4px; }
+.story.below { display: none; }
+.news { margin: 0; background: #1e2f24; border-left: 3px solid var(--whistle); padding: 8px 12px; border-radius: 3px; }
+.car-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.car-head span { font-family: var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.career h3 { margin: 0 0 6px; font-family: var(--display); font-size: 18px; letter-spacing: .05em; text-transform: uppercase; }
+.ladder { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+.ladder li { text-align: center; font-family: var(--display); font-size: 14px; letter-spacing: .03em; padding: 6px 2px; border: 1px solid var(--line); border-radius: 3px; color: var(--muted); }
+.ladder li.past { color: var(--chalk); }
+.ladder li.on { background: var(--whistle); color: #1a1a0e; border-color: var(--whistle); font-weight: 600; }
+.car-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+td.next { color: var(--whistle); }
+.attr { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.attr b { display: block; font-weight: 600; }
+.attr small { color: var(--muted); font-size: 12px; }
+.pips { display: flex; gap: 2px; }
+.pips i { width: 7px; height: 14px; background: var(--line); border-radius: 1px; }
+.pips i.on { background: var(--good); }
+.linkbtn:disabled { opacity: .4; cursor: default; }
 
 @media (max-width: 640px) {
   .meters { grid-template-columns: 1fr 1fr; gap: 10px 16px; }
@@ -118,14 +140,23 @@ td.bad { color: var(--bad); font-weight: 600; }
   .team { font-size: 15px; }
   .score { font-size: 26px; }
   .cap3d { font-size: 12px; }
+  .ladder { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .car-grid { grid-template-columns: 1fr; }
+  #brief { padding: 10px 12px; place-items: start stretch; }
+  #brief .card { gap: 5px; }
+  #brief .kicker { font-size: 13px; }
+  .card h1.teams { font-size: 21px; }
+  #brief .story { display: none; }
+  .story.below { display: grid; }
+  #brief .primary { padding: 6px 14px; font-size: 16px; }
 }
 </style>
 
 <div class="wrap">
   <header class="hud">
-    <div class="team"><span class="dot" style="background: var(--blue)"></span><span>Azuis</span></div>
+    <div class="team"><span class="dot" id="hd0" style="background: var(--blue)"></span><span id="hn0">Azuis</span></div>
     <div class="score"><span id="s0">0</span><span class="clock" id="clock">0'</span><span id="s1">0</span></div>
-    <div class="team away"><span>Laranjas</span><span class="dot" style="background: var(--orange)"></span></div>
+    <div class="team away"><span id="hn1">Laranjas</span><span class="dot" id="hd1" style="background: var(--orange)"></span></div>
   </header>
   <div class="meters">
     <div class="meter"><div class="meter-label"><span>Controlo do jogo</span><b id="ctrlTxt">70</b></div><div class="bar"><i id="ctrlBar"></i></div></div>
@@ -155,6 +186,14 @@ td.bad { color: var(--bad); font-weight: 600; }
       <button type="button" id="scSpeed" aria-label="Velocidade">1x</button>
       <span class="sctime" id="scTime"></span>
     </div>
+    <div class="overlay" id="brief" hidden>
+      <div class="card">
+        <span class="kicker" id="briefComp"></span>
+        <h1 class="teams" id="briefTeams"></h1>
+        <ul class="story" id="briefLines"></ul>
+        <button class="primary" id="briefStart" type="button">Apitar o início</button>
+      </div>
+    </div>
     <div class="overlay" id="menu">
       <div class="card">
         <h1>Árbitro de <em>Caricas</em></h1>
@@ -168,7 +207,8 @@ td.bad { color: var(--bad); font-weight: 600; }
           <kbd>1 a 3</kbd><span>nos protestos: ignorar, afastar, amarelo</span>
           <kbd>Espaço , .</kbd><span>depois de veres o lance: pausa e fotograma a fotograma</span>
         </div>
-        <div class="row-actions"><button class="primary" id="startBtn" type="button">Apitar o início</button><button class="ghostbtn" id="trainBtn" type="button">Treinar o VAR</button></div>
+        <div class="row-actions"><button class="primary" id="startBtn" type="button">Apitar o início</button><button class="ghostbtn" id="careerBtn" type="button">Carreira</button><button class="ghostbtn" id="trainBtn" type="button">Treinar o VAR</button></div>
+        <p class="small">Na carreira começas nos distritais e o observador decide se sobes, ficas ou desces no fim de cada época, até à final do Mundial.</p>
       </div>
     </div>
   </div>
@@ -200,9 +240,30 @@ td.bad { color: var(--bad); font-weight: 600; }
 
   <p class="help" id="help">O observador avalia cada decisão contra o que aconteceu de facto. No monitor do VAR, num fora de jogo, arrasta as duas linhas no relvado até às partes do corpo que contam (setas para afinar, Tab troca de linha). Erros baixam o controlo do jogo e deixam os jogadores mais nervosos; abaixo de 10 o jogo é interrompido.</p>
 
+  <section class="review career" id="career" hidden>
+    <div class="car-head"><h2>Carreira</h2><span id="carSeason"></span></div>
+    <p class="news" id="carNews" hidden></p>
+    <ul class="story below" id="carStory"></ul>
+    <ol class="ladder" id="carLadder" aria-label="Escalões"></ol>
+    <div class="car-grid">
+      <div>
+        <h3>Jogos da época</h3>
+        <table><thead><tr><th>Jogo</th><th>Equipas</th><th>Nota</th></tr></thead><tbody id="carFix"></tbody></table>
+      </div>
+      <div>
+        <h3>O teu árbitro</h3>
+        <p class="small" id="carPts"></p>
+        <div id="carAttrs"></div>
+        <p class="small" id="carFinals" hidden></p>
+      </div>
+    </div>
+    <div class="row-actions"><button class="ghostbtn" id="carMenu" type="button">Menu</button><button class="linkbtn" id="carReset" type="button">Apagar carreira</button></div>
+  </section>
+
   <section class="review" id="review" hidden>
     <h2 id="revTitle">Relatório do observador</h2>
     <div class="grade"><b id="grade">0.0</b><span id="gradeTxt"></span></div>
+    <p class="news" id="careerNote" hidden></p>
     <div class="table-wrap">
       <table>
         <thead><tr><th>Min.</th><th>O que foi</th><th>Decidiste</th><th>Viste de</th><th>Avaliação</th><th></th></tr></thead>
