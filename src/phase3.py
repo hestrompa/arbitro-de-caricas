@@ -175,5 +175,39 @@ rep("    $('capR').textContent = L.kind === 'offside' && L.userLines ? varReadou
 rep("    const why = l.varFirst ? (l.pts > 0", "    const why = l.training ? (l.pts === 1 ? (l.decided === l.varFirst ? 'Certo · confirmaste a decisão de campo' : 'Certo · corrigiste a decisão de campo') : 'Errado · decisão de campo era ' + DEC_LABEL[l.varFirst].toLowerCase()) : l.varFirst ? (l.pts > 0")
 rep("  const verdict = kind === 'abandonado'", "  const verdict = kind === 'treino' ? 'Treino do VAR terminado.' : kind === 'abandonado'")
 rep("$('startBtn').addEventListener('click', start);", "$('startBtn').addEventListener('click', start);\n$('trainBtn').addEventListener('click', startTraining);")
+# ---- janela do passe no monitor do VAR e na revisão do fora de jogo
+rep("""  R.cam.lookAt(lx, 0.9, ly);
+  R.renderer.render(R.scene, R.cam);
+}""", """  R.cam.lookAt(lx, 0.9, ly);
+  R.renderer.render(R.scene, R.cam);
+  passInset(L, t);
+}
+// segunda câmara, de lado para o passador: mostra a bola a sair do pé no mesmo instante da linha do tempo
+function passInset(L, t) {
+  const R = R3, oi = L.oi, pip = $('pip');
+  const on = L.ideal && (L.varReview || L.review);
+  pip.hidden = !on; if (!on) return;
+  const pr = L.rig.list.find(o => o.q.id === oi.passer); if (!pr) { pip.hidden = true; return; }
+  if (!R.cam2) R.cam2 = new R.T.PerspectiveCamera(32, 1.4, 0.1, 200);
+  const p = pr.r.outer.position, b = R.ball.position, rc = oi.snap.find(q => q.id === oi.receiver);
+  const d = rc ? norm(rc.x - p.x, rc.z === undefined ? rc.y - p.z : rc.y - p.z) : { x: 1, y: 0 };
+  const side = oi.ast.y < H / 2 ? -1 : 1, px = -d.y, py = d.x, sg = (py * side) >= 0 ? 1 : -1;
+  const mx = (p.x + b.x) / 2, mz = (p.z + b.z) / 2;
+  R.cam2.position.set(mx + px * sg * 5.6 - d.x * 1.2, 1.5, mz + py * sg * 5.6 - d.y * 1.2);
+  R.cam2.lookAt(mx, 0.8, mz);
+  const sr = stage.getBoundingClientRect(), r = pip.getBoundingClientRect();
+  const x = r.left - sr.left, y = sr.bottom - r.bottom, w = r.width, h = r.height;
+  R.cam2.aspect = w / h; R.cam2.updateProjectionMatrix();
+  const lv = [R.lines.def.visible, R.lines.att.visible]; R.lines.def.visible = R.lines.att.visible = false;
+  R.renderer.setScissorTest(true); R.renderer.setScissor(x, y, w, h); R.renderer.setViewport(x, y, w, h);
+  R.renderer.render(R.scene, R.cam2);
+  R.renderer.setScissorTest(false); R.renderer.setViewport(0, 0, sr.width, sr.height);
+  [R.lines.def.visible, R.lines.att.visible] = lv;
+  const k = t - OFF_KT;
+  pip.classList.toggle('now', Math.abs(k) < 0.02);
+  $('pipTxt').textContent = Math.abs(k) < 0.02 ? 'Momento do passe' : 'Passe ' + (k < 0 ? 'daqui a ' : 'há ') + Math.abs(k).toFixed(2).replace('.', ',') + ' s';
+}""")
+rep("function hide3D() { stage.classList.remove('view3d');", "function hide3D() { $('pip').hidden = true; stage.classList.remove('view3d');")
+rep("  if (L.kind === 'offside') { poseOffside(L, t); return; }", "  if (L.kind === 'offside') { poseOffside(L, t); return; }\n  $('pip').hidden = true;")
 open('game.js', 'w').write(t)
 print('phase3 ok')
