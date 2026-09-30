@@ -189,7 +189,7 @@ function passInset(L, t) {
   pip.hidden = !on; if (!on) return;
   const pr = L.rig.list.find(o => o.q.id === oi.passer); if (!pr) { pip.hidden = true; return; }
   if (!R.cam2) R.cam2 = new R.T.PerspectiveCamera(32, 1.4, 0.1, 200);
-  const p = pr.r.outer.position, b = R.ball.position, rc = oi.snap.find(q => q.id === oi.receiver);
+  const p = pr.r.outer.position, b = t > OFF_KT && L.kickPt ? { x: L.kickPt.x, z: L.kickPt.y } : R.ball.position, rc = oi.snap.find(q => q.id === oi.receiver);
   const d = rc ? norm(rc.x - p.x, rc.z === undefined ? rc.y - p.z : rc.y - p.z) : { x: 1, y: 0 };
   const side = oi.ast.y < H / 2 ? -1 : 1, px = -d.y, py = d.x, sg = (py * side) >= 0 ? 1 : -1;
   const mx = (p.x + b.x) / 2, mz = (p.z + b.z) / 2;

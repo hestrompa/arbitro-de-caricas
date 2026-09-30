@@ -17,17 +17,17 @@ const KITS = {
 const TIERS = [
   { name: 'Distrital', games: 4, target: 6.5, var: false, derby: 'Dérbi da vila', clubs: [['Vila Nova', 'verde', 'branco'], ['Vila Velha', 'grena', 'branco'], ['Unidos da Ribeira', 'azul', 'branco'], ['Recreativo das Pedras', 'amarelo', 'preto'], ['Atlético da Serra', 'vermelho', 'branco'], ['Académico do Moinho', 'preto', 'branco']] },
   { name: 'Liga 3', games: 4, target: 7, var: false, derby: 'Dérbi do rio', clubs: [['Oriental da Foz', 'verde', 'branco'], ['Marítimo da Barra', 'laranja', 'branco'], ['Estrela do Norte', 'vermelho', 'branco'], ['Desportivo de Alvor', 'celeste', 'marinho'], ['União de Belmar', 'azul', 'branco'], ['Operário de Vale Fundo', 'preto', 'branco']] },
-  { name: 'Liga 2', games: 5, target: 7.5, var: true, derby: 'Dérbi da serra', clubs: [['Penafria FC', 'vermelho', 'branco'], ['Clube de Montalto', 'azul', 'branco'], ['Lusitano de Arcos', 'verde', 'branco'], ['Naval da Enseada', 'marinho', 'branco'], ['Imortal de Ferreiros', 'roxo', 'branco'], ['Juventude de Sertã', 'amarelo', 'marinho']] },
-  { name: 'Primeira Liga', games: 5, target: 8, var: true, derby: 'Clássico', clubs: [['Real Lusitano', 'vermelho', 'branco'], ['Clube Oceano', 'azul', 'branco'], ['Leões da Estrela', 'verde', 'branco'], ['Atlético Capital', 'grena', 'branco'], ['Vitória do Sul', 'preto', 'branco'], ['Desportivo Atlântico', 'celeste', 'marinho']] },
-  { name: 'Taça Europeia', games: 4, target: 8.3, var: true, derby: 'Dérbi de Velgrad', clubs: [['Dinamo Velgrad', 'azul', 'branco'], ['Lokomotiv Velgrad', 'vermelho', 'branco'], ['Olympique Mireval', 'celeste', 'marinho'], ['Athletic Norbridge', 'grena', 'branco'], ['Real Castellar', 'branco', 'roxo'], ['FC Lindenau', 'amarelo', 'preto']] },
-  { name: 'Mundial', games: 4, target: 7.5, var: true, cup: true, derby: 'Clássico sul-americano', clubs: [['Brasil', 'amarelo', 'azul'], ['Argentina', 'celeste', 'marinho', null, 'a'], ['França', 'marinho', 'branco', null, 'a'], ['Espanha', 'vermelho', 'branco', '#1f2f6b', 'a'], ['Alemanha', 'branco', 'preto', '#26272c', 'a'], ['Inglaterra', 'branco', 'vermelho', null, 'a'], ['Países Baixos', 'laranja', 'marinho', null, 'os'], ['Itália', 'azul', 'branco', null, 'a']] },
+  { name: 'Liga 2', games: 5, target: 7.4, var: true, derby: 'Dérbi da serra', clubs: [['Penafria FC', 'vermelho', 'branco'], ['Clube de Montalto', 'azul', 'branco'], ['Lusitano de Arcos', 'verde', 'branco'], ['Naval da Enseada', 'marinho', 'branco'], ['Imortal de Ferreiros', 'roxo', 'branco'], ['Juventude de Sertã', 'amarelo', 'marinho']] },
+  { name: 'Primeira Liga', games: 5, target: 7.8, var: true, derby: 'Clássico', clubs: [['Real Lusitano', 'vermelho', 'branco'], ['Clube Oceano', 'azul', 'branco'], ['Leões da Estrela', 'verde', 'branco'], ['Atlético Capital', 'grena', 'branco'], ['Vitória do Sul', 'preto', 'branco'], ['Desportivo Atlântico', 'celeste', 'marinho']] },
+  { name: 'Taça Europeia', games: 4, target: 8.1, var: true, derby: 'Dérbi de Velgrad', clubs: [['Dinamo Velgrad', 'azul', 'branco'], ['Lokomotiv Velgrad', 'vermelho', 'branco'], ['Olympique Mireval', 'celeste', 'marinho'], ['Athletic Norbridge', 'grena', 'branco'], ['Real Castellar', 'branco', 'roxo'], ['FC Lindenau', 'amarelo', 'preto']] },
+  { name: 'Mundial', games: 4, target: 7.6, var: true, cup: true, derby: 'Clássico sul-americano', clubs: [['Brasil', 'amarelo', 'azul'], ['Argentina', 'celeste', 'marinho', null, 'a'], ['França', 'marinho', 'branco', null, 'a'], ['Espanha', 'vermelho', 'branco', '#1f2f6b', 'a'], ['Alemanha', 'branco', 'preto', '#26272c', 'a'], ['Inglaterra', 'branco', 'vermelho', null, 'a'], ['Países Baixos', 'laranja', 'marinho', null, 'os'], ['Itália', 'azul', 'branco', null, 'a']] },
 ];
 const CUP_ROUNDS = ['Oitavos de final', 'Quartos de final', 'Meias-finais', 'Final'];
 const ATTRS = [
   { k: 'fis', name: 'Físico', txt: 'Corres mais depressa e cansas-te menos.' },
   { k: 'leit', name: 'Leitura de jogo', txt: 'Antecipas o lance e vês de mais perto.' },
   { k: 'aut', name: 'Autoridade', txt: 'Protestos mais brandos; os erros custam menos controlo.' },
-  { k: 'calma', name: 'Calma', txt: 'Mais tempo para decidir quando o público aperta.' },
+  { k: 'calma', name: 'Calma', txt: 'Menos nervos e mais tempo para decidir quando o público aperta.' },
 ];
 const STORIES = {
   subida: { txt: 'Os dois precisam de ganhar para chegar aos lugares de cima.', aggr: [0.08, 0.08], crowd: 8 },
@@ -63,7 +63,7 @@ function newCareer() {
 // atributos do árbitro no jogo em curso (5 = árbitro normal fora da carreira)
 function refAttr(k) { return S && S.career ? S.career.attrs[k] : 5; }
 function authK() { return 1.1 - refAttr('aut') * 0.02; }
-function decisionTime() { const c = refAttr('calma'); return Math.max(8, Math.round(15 - S.crowd / 25 * (1.4 - 0.08 * c) + (c - 5) * 0.4)); }
+function decisionTime() { const c = refAttr('calma'); return Math.max(7, Math.round(15 - S.crowd / 25 * (1.4 - 0.08 * c) + (c - 5) * 0.4 - (S.stress || 0) / 25)); }
 
 function hexDist(a, b) { const p = x => [1, 3, 5].map(i => parseInt(x.slice(i, i + 2), 16)), A = p(a), B = p(b); return Math.hypot(A[0] - B[0], A[1] - B[1], A[2] - B[2]); }
 function kitOf(club, alt) { const k = Object.assign({}, KITS[alt ? club[2] : club[1]]); if (!alt && club[3]) k.shorts = club[3]; if (!k.text) k.text = '#fff'; return k; }
@@ -87,7 +87,7 @@ function matchBrief() {
   else if (f.story) { const s = STORIES[f.story]; lines.push(s.txt); aggr[0] += s.aggr[0]; aggr[1] += s.aggr[1]; crowd += s.crowd; }
   [h, a].forEach((c, i) => {
     const g = C.grudge[c[0]] || 0;
-    if (g > 0) { lines.push('Os jogadores d' + cArt(c) + ' lembram-se de ti: no último jogo tiveram ' + (g > 1 ? g + ' decisões erradas' : 'uma decisão errada') + ' contra eles.'); aggr[i] += Math.min(0.3, 0.1 * g); }
+    if (g > 0) { lines.push('Os jogadores d' + cArt(c) + ' lembram-se de ti: no último jogo tiveram ' + (g > 1 ? g + ' decisões erradas' : 'uma decisão errada') + ' contra eles.'); aggr[i] += Math.min(0.3, 0.1 * g); lines.push('O capitão d' + cArt(c) + ' vai confiar menos em ti quando falares com ele.'); }
   });
   if (!T.var) lines.push('Não há VAR neste escalão: o que decidires fica decidido.');
   return { T, f, h, a, lines, aggr, crowd };
@@ -101,6 +101,8 @@ function startCareerMatch() {
   S.lanceK = 1.1 - 0.05 * ti; S.simK = 0.7 + 0.15 * ti;
   S.crowdBase = clamp(25 + 7 * ti + B.crowd, 10, 90); S.crowd = S.crowdBase;
   S.aggr = [0, 1].map(i => clamp(0.06 + 0.035 * ti + B.aggr[i], 0.05, 0.8));
+  S.stressBase = clamp(12 + 5 * ti + (B.f.story === 'derby' ? 12 : 0) - (C.attrs.calma - 3) * 1.5, 5, 60); S.stress = S.stressBase;
+  S.capTrust = [B.h, B.a].map(c => clamp(0.55 - 0.12 * (C.grudge[c[0]] || 0), 0.1, 0.9));
   $('career').hidden = true; $('brief').hidden = true;
   toast(B.T.name + ' · ' + roundName(B.T, C.round), 2.5);
 }
@@ -190,3 +192,23 @@ function renderCareer() {
 }
 function menuCareerLabel() { loadCareer(); $('careerBtn').textContent = C ? 'Continuar carreira' : 'Carreira'; }
 function panelIntoView(id) { const r = $(id).getBoundingClientRect(); if (r.bottom > window.innerHeight) $(id).scrollIntoView({ behavior: 'smooth', block: 'end' }); }
+
+// nervos do árbitro: sobem com erros, protestos, VAR e público; a calma trava-os
+function addStress(v) { if (!S || S.training) return; if (v > 0) v *= 1.25 - 0.05 * refAttr('calma'); S.stress = clamp((S.stress || 0) + v, 0, 100); }
+function stressStep(dt) { const tgt = (S.stressBase || 15) + Math.max(0, S.crowd - 55) * 0.4; S.stress += (tgt - S.stress) * 0.03 * dt; }
+function stressAfter(L) { if (L.training) return; addStress(L.pts === 1 ? -6 : L.pts > 0 ? 6 : 12); if (L.timedOut) addStress(6); }
+// câmara do árbitro com nervos: a imagem treme um pouco
+function camShake(L, dist) {
+  const k = L.ideal || L.varReview ? 0 : Math.max(0, ((L.stress || 0) - 40) / 60) * 0.022 * dist, t = performance.now() / 1000;
+  return { x: k * (Math.sin(t * 7.3) + 0.5 * Math.sin(t * 13.1)), y: k * 0.6 * Math.sin(t * 9.7 + 1), z: k * (Math.sin(t * 6.1 + 2) + 0.5 * Math.sin(t * 11.3)) };
+}
+// capitães: o 6 (ou quem ficar) leva a braçadeira e pode acalmar a equipa, se confiar em ti
+function captainOf(team) { const a = active().filter(p => p.team === team && p.role !== 'gk'); return a.find(p => p.role === 'cm') || a.find(p => p.role === 'rcb') || a[0]; }
+function talkCaptain(P) {
+  const cap = captainOf(P.team), tr = S.capTrust[P.team];
+  const ok = Math.random() < clamp(0.25 + tr * 0.6 - P.I * 0.25 + (refAttr('aut') - 5) * 0.03, 0.1, 0.9);
+  const who = 'o capitão ' + deT(P.team) + (cap ? ' (' + cap.num + ')' : '');
+  if (ok) { S.aggr[P.team] = Math.max(0.05, S.aggr[P.team] - 0.1); S.capTrust[P.team] = clamp(tr + 0.08, 0, 1); addStress(-6); return { dc: 4, msg: 'Falaste com ' + who + ': acalmou os colegas' }; }
+  S.capTrust[P.team] = clamp(tr - 0.1, 0, 1); addStress(3);
+  return { dc: -2, msg: 'Falaste com ' + who + ', mas não te deu ouvidos' };
+}

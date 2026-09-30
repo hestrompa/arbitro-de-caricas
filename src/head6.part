@@ -26,13 +26,15 @@ body { font-family: var(--body); font-size: 15px; line-height: 1.45; }
 button { font: inherit; color: inherit; cursor: pointer; }
 button:focus-visible { outline: 2px solid var(--whistle); outline-offset: 2px; }
 
-.hud { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
+.hud { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; }
 .team { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 600; font-size: 20px; letter-spacing: .04em; text-transform: uppercase; min-width: 0; }
 .team.away { justify-content: flex-end; }
 .dot { width: 14px; height: 14px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); }
 .score { font-family: var(--display); font-weight: 700; font-size: 34px; font-variant-numeric: tabular-nums; line-height: 1; display: flex; align-items: center; gap: 12px; }
 .clock { font-size: 15px; color: var(--whistle); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; letter-spacing: .06em; }
-.meters { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 16px; align-items: end; }
+.meters { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr auto; gap: 16px; align-items: end; }
+.meter-label .sh { display: none; }
+.choices.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .sound { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 3px 10px; font-family: var(--display); font-size: 14px; letter-spacing: .04em; white-space: nowrap; }
 .sound[aria-pressed="false"] { color: var(--muted); }
 .choices.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -129,7 +131,18 @@ td.next { color: var(--whistle); }
 .linkbtn:disabled { opacity: .4; cursor: default; }
 
 @media (max-width: 640px) {
-  .meters { grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+  .meters { grid-template-columns: repeat(4, minmax(0, 1fr)) auto; gap: 8px; }
+  .meter-label { font-size: 10px; letter-spacing: .02em; }
+  .meter-label b { display: none; }
+  .meter-label .lg { display: none; }
+  .meter-label .sh { display: inline; }
+  .sound { font-size: 0; width: 30px; height: 26px; padding: 0; }
+  .sound::before { content: '♪'; font-size: 15px; }
+  .sound[aria-pressed="false"] { text-decoration: line-through; }
+  .sound[aria-pressed="false"]::before { content: '♪̸'; }
+  .choices.four { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; }
+  .choices.four .choice { font-size: 14px; padding: 6px 2px; }
+  .choices.four .choice small { font-size: 10px; }
   .choices.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .scrub { gap: 4px; padding: 4px 6px; }
   .scrub button { min-width: 28px; height: 28px; padding: 0 6px; font-size: 13px; }
@@ -138,7 +151,8 @@ td.next { color: var(--whistle); }
   .pip { width: 40%; bottom: 50px; }
   .viewbtns button { padding: 4px 8px; font-size: 13px; }
   .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .team { font-size: 15px; }
+  .team { font-size: 13px; line-height: 1.1; gap: 6px; }
+  .team span:not(.dot) { overflow-wrap: anywhere; }
   .score { font-size: 26px; }
   .cap3d { font-size: 12px; }
   .ladder { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -160,9 +174,10 @@ td.next { color: var(--whistle); }
     <div class="team away"><span id="hn1">Laranjas</span><span class="dot" id="hd1" style="background: var(--orange)"></span></div>
   </header>
   <div class="meters">
-    <div class="meter"><div class="meter-label"><span>Controlo do jogo</span><b id="ctrlTxt">70</b></div><div class="bar"><i id="ctrlBar"></i></div></div>
+    <div class="meter"><div class="meter-label"><span><span class="lg">Controlo do jogo</span><span class="sh">Controlo</span></span><b id="ctrlTxt">70</b></div><div class="bar"><i id="ctrlBar"></i></div></div>
     <div class="meter"><div class="meter-label"><span>Energia</span><b id="staTxt">100</b></div><div class="bar"><i id="staBar" style="background: var(--whistle)"></i></div></div>
-    <div class="meter"><div class="meter-label"><span>Pressão do público</span><b id="crowdTxt">35</b></div><div class="bar"><i id="crowdBar" style="width: 35%; background: var(--muted)"></i></div></div>
+    <div class="meter"><div class="meter-label"><span><span class="lg">Pressão do público</span><span class="sh">Público</span></span><b id="crowdTxt">35</b></div><div class="bar"><i id="crowdBar" style="width: 35%; background: var(--muted)"></i></div></div>
+    <div class="meter"><div class="meter-label"><span>Nervos</span><b id="stTxt">15</b></div><div class="bar"><i id="stBar" style="width: 15%"></i></div></div>
     <button class="sound" type="button" id="soundBtn" aria-pressed="true">Som ligado</button>
   </div>
 
@@ -205,7 +220,7 @@ td.next { color: var(--whistle); }
           <kbd>1 a 5</kbd><span>siga, falta, amarelo, vermelho, simulação</span>
           <kbd>1 / 2</kbd><span>no fora de jogo: em jogo ou fora de jogo</span>
           <kbd>R</kbd><span>rever o lance em câmara lenta</span>
-          <kbd>1 a 3</kbd><span>nos protestos: ignorar, afastar, amarelo</span>
+          <kbd>1 a 4</kbd><span>nos protestos: ignorar, afastar, amarelo, falar com o capitão</span>
           <kbd>Espaço , .</kbd><span>depois de veres o lance: pausa e fotograma a fotograma</span>
         </div>
         <div class="row-actions"><button class="primary" id="startBtn" type="button">Apitar o início</button><button class="ghostbtn" id="careerBtn" type="button">Carreira</button><button class="ghostbtn" id="trainBtn" type="button">Treinar o VAR</button></div>
@@ -232,10 +247,11 @@ td.next { color: var(--whistle); }
   <section class="decide protest" id="protest" hidden>
     <div class="decide-top"><span id="protestMsg">Protestos</span><span>Intensidade</span></div>
     <div class="timer"><i id="protestBar" style="background: var(--bad)"></i></div>
-    <div class="choices three">
+    <div class="choices four">
       <button class="choice" type="button" id="pIgnore">Ignorar<small>1 · deixa falar</small></button>
       <button class="choice" type="button" id="pAway">Afastar<small>2 · gesto firme</small></button>
       <button class="choice" type="button" id="pCard"><span class="swatch" style="background: var(--whistle)"></span>Amarelo<small>3 · por protestos</small></button>
+      <button class="choice" type="button" id="pCap"><span class="swatch" style="background: #f2cf3a; border-radius: 2px; height: 4px"></span>Capitão<small id="pCapT">4 · confiança</small></button>
     </div>
   </section>
 

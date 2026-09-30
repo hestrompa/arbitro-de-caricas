@@ -117,7 +117,7 @@ function makeRig(T) {
   const numTex = new T.CanvasTexture(numCv);
   const numMesh = new T.Mesh(new T.PlaneGeometry(0.21, 0.21), new T.MeshStandardMaterial({ map: numTex, transparent: true, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4 }));
   const sp = B('spine02'); numMesh.position.set(0, 0.02, -0.135); numMesh.rotation.y = Math.PI; sp.add(numMesh);
-  return { outer, body, mesh, head: B('head'), neck: B('neck01'), spine: B('spine03'),
+  return { outer, body, mesh, bones, head: B('head'), neck: B('neck01'), spine: B('spine03'),
     hipL: B('upperleg01.R'), kneeL: B('lowerleg01.R'), ankleL: B('foot.R'), bootL,
     hipR: B('upperleg01.L'), kneeR: B('lowerleg01.L'), ankleR: B('foot.L'), bootR,
     armL: B('upperarm01.R'), elL: B('lowerarm01.R'), armR: B('upperarm01.L'), elR: B('lowerarm01.L'),
@@ -145,23 +145,116 @@ function styleRig(r, team, role, num, id) {
 }
 function placeRig(r, x, y, fx, fy) { r.outer.position.set(x, 0, y); r.outer.rotation.y = Math.atan2(fx, fy); }
 let _v = null;
+// ---- animações captadas (base de dados CMU, livre): corrida, trote, parado, quedas e remate
+let ANIM = null;
+const NB = 22;
+function anims() {
+  if (ANIM) return ANIM;
+  ANIM = {};
+  const A = window.ANIMS || {};
+  const dec = s => new Int16Array(Uint8Array.from(atob(s), c => c.charCodeAt(0)).buffer);
+  for (const k in A) {
+    const a = A[k];
+    ANIM[k] = { n: a.n, fps: a.fps, loop: a.loop, key: a.key || 0, q: Float32Array.from(dec(a.q), v => v / 32767), p: Float32Array.from(dec(a.p), v => v / 1000), dur: (a.loop ? a.n : a.n - 1) / a.fps };
+  }
+  return ANIM;
+}
+// escreve nos ossos a pose do clip no instante t (segundos); pp = vai e volta, para os clips parados
+function applyClip(r, name, t, pp) {
+  const a = anims()[name]; if (!a) return false;
+  if (pp) { const d = a.dur, m = ((t % (2 * d)) + 2 * d) % (2 * d); t = m > d ? 2 * d - m : m; }
+  let f = t * a.fps;
+  f = a.loop && !pp ? ((f % a.n) + a.n) % a.n : clamp(f, 0, a.n - 1);
+  const i0 = Math.floor(f), i1 = a.loop && !pp ? (i0 + 1) % a.n : Math.min(a.n - 1, i0 + 1), k = f - i0;
+  for (let b = 0; b < NB; b++) {
+    const o0 = (i0 * NB + b) * 4, o1 = (i1 * NB + b) * 4, q = a.q;
+    let x = q[o0] + (q[o1] - q[o0]) * k, y = q[o0 + 1] + (q[o1 + 1] - q[o0 + 1]) * k, z = q[o0 + 2] + (q[o1 + 2] - q[o0 + 2]) * k, w = q[o0 + 3] + (q[o1 + 3] - q[o0 + 3]) * k;
+    const l = Math.hypot(x, y, z, w) || 1; r.bones[b].quaternion.set(x / l, y / l, z / l, w / l);
+  }
+  const p = a.p, j0 = i0 * 3, j1 = i1 * 3;
+  r.body.rotation.set(0, 0, 0);
+  r.body.position.set(p[j0] + (p[j1] - p[j0]) * k, p[j0 + 1] + (p[j1 + 1] - p[j0 + 1]) * k, p[j0 + 2] + (p[j1 + 2] - p[j0 + 2]) * k);
+  return true;
+}
+// misturas: guarda a pose atual num buffer e interpola com outra
+const PBUF = [];
+function grabPose(r, d) {
+  const B = PBUF[d] || (PBUF[d] = { q: new Float32Array(NB * 4 + 4), p: new Float32Array(3) });
+  r.bones.forEach((b, i) => { const q = b.quaternion; B.q[i * 4] = q.x; B.q[i * 4 + 1] = q.y; B.q[i * 4 + 2] = q.z; B.q[i * 4 + 3] = q.w; });
+  const bq = r.body.quaternion; B.q[NB * 4] = bq.x; B.q[NB * 4 + 1] = bq.y; B.q[NB * 4 + 2] = bq.z; B.q[NB * 4 + 3] = bq.w;
+  B.p[0] = r.body.position.x; B.p[1] = r.body.position.y; B.p[2] = r.body.position.z;
+  return B;
+}
+function nlerpInto(A, B, w, set) {
+  for (let i = 0; i <= NB; i++) {
+    const o = i * 4; let s = 1;
+    if (A.q[o] * B.q[o] + A.q[o + 1] * B.q[o + 1] + A.q[o + 2] * B.q[o + 2] + A.q[o + 3] * B.q[o + 3] < 0) s = -1;
+    const x = A.q[o] + (s * B.q[o] - A.q[o]) * w, y = A.q[o + 1] + (s * B.q[o + 1] - A.q[o + 1]) * w, z = A.q[o + 2] + (s * B.q[o + 2] - A.q[o + 2]) * w, ww = A.q[o + 3] + (s * B.q[o + 3] - A.q[o + 3]) * w;
+    const l = Math.hypot(x, y, z, ww) || 1; set(i, x / l, y / l, z / l, ww / l);
+  }
+}
+let poseDepth = 0;
+function applyPose(r, o) {
+  if (o.mix) {
+    const [pa, pb, w] = o.mix;
+    if (w <= 0) return applyPose(r, pa);
+    if (w >= 1) return applyPose(r, pb);
+    const d = poseDepth; poseDepth += 2;
+    applyPose(r, pa); const A = grabPose(r, d);
+    applyPose(r, pb); const B = grabPose(r, d + 1);
+    poseDepth = d;
+    nlerpInto(A, B, w, (i, x, y, z, ww) => (i < NB ? r.bones[i].quaternion : r.body.quaternion).set(x, y, z, ww));
+    r.body.position.set(lerp(A.p[0], B.p[0], w), lerp(A.p[1], B.p[1], w), lerp(A.p[2], B.p[2], w));
+  } else if (o.clip) {
+    if (!applyClip(r, o.clip, o.t || 0, o.pp)) applyPose(r, o.alt || {});
+  } else {
+    for (const b of r.bones) b.quaternion.set(0, 0, 0, 1);
+    setLegacy(r, o);
+  }
+}
+const plantOf = o => o.mix ? plantOf(o.mix[2] >= 0.5 ? o.mix[1] : o.mix[0]) : o.clip ? (o.air ? 'none' : 'floor') : (!o.air && Math.abs(o.pitch || 0) < 0.6 && Math.abs(o.roll || 0) < 0.6 ? 'full' : 'none');
 function setPose(r, o) {
   if (!_v) _v = new R3.T.Vector3();
+  applyPose(r, o);
+  if (o.add) {
+    // gestos por cima do clip, rodados no referencial do osso pai (o clip pode trazer o braço torcido)
+    const A = o.add, T = R3.T, Z = new T.Vector3(0, 0, 1), q = new T.Quaternion(), pre = (b, a) => { if (a) b.quaternion.premultiply(q.setFromAxisAngle(Z, a)); };
+    pre(r.hipL, A.hlz); pre(r.hipR, A.hrz); pre(r.armL, A.alz); pre(r.armR, A.arz);
+  }
+  // pés assentes no relvado: o pé mais baixo toca no chão (clips: só não deixa o pé entrar na relva)
+  const pl = plantOf(o);
+  if (pl !== 'none') {
+    const y0 = r.body.position.y;
+    r.outer.updateMatrixWorld(true);
+    const low = Math.min(r.bootL.getWorldPosition(_v).y, r.bootR.getWorldPosition(_v).y) - 0.03;
+    if (pl === 'full' || low < 0) r.body.position.y = y0 - low / r.outer.scale.y;
+  }
+}
+// passada: parado, trote e corrida, com a cadência que a velocidade pede (amp ≈ velocidade / 7,5)
+function gait(u, amp) {
+  const an = anims();
+  if (!an.run) return legacyRun(u * 6.283, amp);
+  const jog = { clip: 'jog', t: u * an.jog.dur }, run = { clip: 'run', t: u * an.run.dur };
+  if (amp < 0.3) return { mix: [{ clip: 'idle', t: u * 0.4, pp: true }, jog, smooth(amp / 0.3)] };
+  if (amp < 0.7) return { mix: [jog, run, (amp - 0.3) / 0.4] };
+  return run;
+}
+function runAt(t, off, amp) {
+  const sp = Math.max(1.6, amp * 7.5), stride = 2.37 * Math.sqrt(sp / 3.7);
+  return gait(t * sp / stride + off / 6.283, amp);
+}
+const idleAt = (t, off) => ({ clip: 'idle', t: t + off * 0.7, pp: true, alt: { pitch: 0.02, hp: 0.05 } });
+function setLegacy(r, o) {
   r.hipL.rotation.set(o.hl || 0, 0, o.hlz || 0); r.kneeL.rotation.x = o.kl || 0; r.ankleL.rotation.x = o.fl || 0;
   r.hipR.rotation.set(o.hr || 0, 0, o.hrz || 0); r.kneeR.rotation.x = o.kr || 0; r.ankleR.rotation.x = o.fr || 0;
   r.armL.rotation.set(o.al || 0, 0, o.alz === undefined ? -0.1 : o.alz);
   r.armR.rotation.set(o.ar || 0, 0, o.arz === undefined ? 0.1 : o.arz);
   r.elL.rotation.x = o.el === undefined ? -0.25 : o.el; r.elR.rotation.x = o.er === undefined ? -0.25 : o.er;
   r.head.rotation.set(o.hp || 0, o.hy || 0, 0);
-  r.body.rotation.set(o.pitch || 0, 0, o.roll || 0); r.body.position.y = o.y || 0;
-  // pés assentes no relvado: o pé mais baixo toca no chão (exceto saltos, quedas e carrinhos)
-  if (!o.air && Math.abs(o.pitch || 0) < 0.6 && Math.abs(o.roll || 0) < 0.6) {
-    r.body.position.y = 0; r.outer.updateMatrixWorld(true);
-    const low = Math.min(r.bootL.getWorldPosition(_v).y, r.bootR.getWorldPosition(_v).y) - 0.03;
-    r.body.position.y = -low / r.outer.scale.y;
-  }
+  r.body.rotation.set(o.pitch || 0, 0, o.roll || 0); r.body.position.set(0, o.y || 0, 0);
 }
-function runPose(ph, amp) {
+const runPose = (ph, amp) => gait(ph / 6.283, amp);
+function legacyRun(ph, amp) {
   const s = Math.sin(ph);
   return { hl: -s * amp, hr: s * amp, kl: Math.max(0, Math.sin(ph + 1.3)) * amp * 1.7, kr: Math.max(0, Math.sin(ph + 1.3 + Math.PI)) * amp * 1.7,
     fl: Math.max(0, Math.sin(ph + 0.6)) * amp * 0.5, fr: Math.max(0, Math.sin(ph + 0.6 + Math.PI)) * amp * 0.5,
@@ -246,6 +339,11 @@ function resize3D() {
 // ---- fora de jogo: todos se mexem, o passe sai no instante OFF_KT e a bola viaja até ao recetor
 function poseOffActors(L, t) {
   const R = R3, oi = L.oi, k = t - OFF_KT;
+  if (L.kickPt === undefined && anims().kick) {
+    L.kickPt = null; poseOffActors(L, OFF_KT);
+    const e = L.rig.list.find(o => o.q.id === oi.passer);
+    if (e) { e.r.outer.updateMatrixWorld(true); const f = e.r.bootL.getWorldPosition(new R.T.Vector3()); L.kickPt = { x: f.x, y: f.z }; }
+  }
   const recv = oi.snap.find(q => q.id === oi.receiver), pb = oi.snap.find(q => q.id === oi.passer);
   const pdir = pb && recv ? norm(recv.x - pb.x, recv.y - pb.y) : { x: TEAMS[oi.team].dir, y: 0 };
   for (const { r, q, ph } of L.rig.list) {
@@ -255,19 +353,27 @@ function poseOffActors(L, t) {
       const kk = Math.min(k, 0.25);
       const x = q.x + q.vx * 0.35 * (k < 0 ? k : kk), y = q.y + q.vy * 0.35 * (k < 0 ? k : kk);
       placeRig(r, x, y, pdir.x, pdir.y);
+      const ck = anims().kick;
+      if (ck) {
+        // remate captado: o contacto com a bola cai exatamente no instante do passe
+        const k0 = -ck.key, run = runAt(t, ph, 0.45);
+        setPose(r, k < k0 ? run : { mix: [run, { clip: 'kick', t: k + ck.key }, smooth((k - k0) / 0.2)] });
+        continue;
+      }
       const sw = clamp((t - (OFF_KT - 0.3)) / 0.45, 0, 1);         // 0 = atrás, 0.67 = contacto, 1 = acompanhamento
-      if (t < OFF_KT - 0.3) setPose(r, runPose(t * 8 + ph, 0.45));
+      if (t < OFF_KT - 0.3) setPose(r, legacyRun(t * 8 + ph, 0.45));
       else setPose(r, { hr: lerp(0.75, -1.25, smooth(sw)), kr: 1.2 * (1 - smooth(sw)) + 0.1, fr: 0.5, hl: -0.1, kl: 0.25, pitch: -0.06, al: 0.4, ar: -0.3, alz: -0.7, arz: 0.5, el: -0.4, er: -0.4, hp: 0.25 });
       continue;
     }
     placeRig(r, q.x + q.vx * k, q.y + q.vy * k, sp > 0.5 ? q.vx : (oi.ball.x - q.x), sp > 0.5 ? q.vy : (oi.ball.y - q.y));
-    setPose(r, sp > 0.5 ? runPose(t * 10 + ph, Math.min(0.85, sp / 7.5)) : { pitch: 0.02, hp: 0.05 });
+    setPose(r, sp > 0.5 ? runAt(t, ph, Math.min(0.85, sp / 7.5)) : idleAt(t, ph));
   }
   // bola: no pé do passador até ao passe, depois segue para onde o recetor vai estar
   const side = { x: -pdir.y, y: pdir.x };                       // direita do passador
   const b0 = pb ? { x: pb.x + pdir.x * 0.32 + side.x * -0.1, y: pb.y + pdir.y * 0.32 + side.y * -0.1 } : { x: oi.ball.x, y: oi.ball.y };
+  if (L.kickPt) { b0.x = L.kickPt.x + pdir.x * 0.13; b0.y = L.kickPt.y + pdir.y * 0.13; }
   let bx = b0.x, by = b0.y;
-  if (t < OFF_KT && pb) { const lead = (OFF_KT - t) * 0.35; bx = b0.x - pb.vx * lead; by = b0.y - pb.vy * lead; }
+  if (t < OFF_KT && pb && !L.kickPt) { const lead = (OFF_KT - t) * 0.35; bx = b0.x - pb.vx * lead; by = b0.y - pb.vy * lead; }
   if (t > OFF_KT && recv) {
     const d0 = len(recv.x - b0.x, recv.y - b0.y), T = d0 / 19;
     const tx = recv.x + recv.vx * T, ty = recv.y + recv.vy * T, u = clamp(k / T, 0, 1);
@@ -343,7 +449,11 @@ function poseFoul(L, t) {
   placeRig(a, ax, ay, A.x, A.y);
   const yaw = Math.atan2(A.x, A.y), dxl = D.x * Math.cos(yaw) - D.y * Math.sin(yaw);
   const rollDir = -Math.sign(dxl) || 1, push = (dxl > 0 ? -1 : 1);
-  if (L.fall && t >= fallT) {
+  if (L.fall && t >= fallT && anims().dive) {
+    // queda captada: de cara para a frente (rasteira, simulação) ou de costas (pernas levadas no vermelho)
+    const u = t - fallT, nm = truth === 'vermelho' ? 'fallback' : 'dive';
+    setPose(a, { mix: [runAt(fallT, 0, 0.72), { clip: nm, t: u * (truth === 'simulacao' ? 0.95 : 1.15) }, smooth(u / 0.16)] });
+  } else if (L.fall && t >= fallT) {
     const u = t - fallT;
     if (truth === 'simulacao') {
       const k = smooth(u / 0.55);
@@ -361,11 +471,11 @@ function poseFoul(L, t) {
       setPose(a, o);
     }
   } else if (t >= TC && !L.fall) {
-    setPose(a, runPose(t * 11, 0.75 * Math.max(0.15, 1 - (t - TC) / 1.4)));
+    setPose(a, runAt(t, 0, 0.72 * Math.max(0.1, 1 - (t - TC) / 1.4)));
   } else {
-    const po = runPose(t * 11, 0.8);
+    const po = runAt(t, 0, 0.72);
     // a perna atingida é desviada no instante do contacto
-    if (truth !== 'siga' && truth !== 'simulacao' && t >= TC && t < fallT) po[st.z] = push * 0.6;
+    if (truth !== 'siga' && truth !== 'simulacao' && t >= TC && t < fallT) po.add = { [st.z]: push * 0.6 };
     setPose(a, po);
   }
 
@@ -385,25 +495,27 @@ function poseFoul(L, t) {
     dxp = C.x + D.x * glide * (1 - Math.exp(-u * 4)); dyp = C.y + D.y * glide * (1 - Math.exp(-u * 4));
   }
   placeRig(d, dxp, dyp, D.x, D.y);
+  // corrida captada até ao corte; depois do gesto volta a correr (mais devagar) ou fica no chão
+  const dAmp = vD / 7.5 * (t > TC ? Math.max(0.05, 1 - (t - TC) / 0.6) : 1), dRun = runAt(t, 1, dAmp);
   if (truth === 'siga' || truth === 'falta') {
-    const k = smooth((t - (TC - 0.3)) / 0.3), out = t > TC + 0.7 ? smooth(1 - (t - TC - 0.7) / 0.5) : 1;
-    if (k <= 0) setPose(d, runPose(t * 11.5, 0.8));
-    else setPose(d, { pitch: -0.12 * k * out, hr: -0.78 * k * out, kr: 0.1, fr: -0.3 * k, hl: -0.2 * k * out, kl: 0.95 * k * out, al: -0.5 * k, ar: 0.3 * k, alz: -0.5 * k, arz: 0.4 * k, el: -0.6, er: -0.5, hp: 0.35 * k });
+    const k = smooth((t - (TC - 0.3)) / 0.3), out = t > TC + 0.5 ? smooth(1 - (t - TC - 0.5) / 0.45) : 1;
+    setPose(d, k <= 0 ? dRun : { mix: [dRun, { pitch: -0.12 * k, hr: -0.78 * k, kr: 0.1, fr: -0.3 * k, hl: -0.2 * k, kl: 0.95 * k, al: -0.5 * k, ar: 0.3 * k, alz: -0.5 * k, arz: 0.4 * k, el: -0.6, er: -0.5, hp: 0.35 * k }, Math.min(1, k * 2.5) * out] });
   } else if (truth === 'amarelo') {
     // entrada tardia, pitões à frente, à altura da canela
     const k = smooth((t - (TC - 0.45)) / 0.35);
-    if (k <= 0) setPose(d, runPose(t * 12, 0.85));
-    else setPose(d, { pitch: -1.1 * k, y: -0.28 * k, hr: -0.5 * k, kr: 0, fr: -0.9 * k, hl: -0.1 * k, kl: 1.3 * k, al: 0.6 * k, ar: -0.3, alz: -0.9 * k, arz: 0.4, el: -0.3, er: -0.5, hp: 0.9 * k });
+    setPose(d, k <= 0 ? dRun : { mix: [dRun, { pitch: -1.1 * k, y: -0.28 * k, hr: -0.5 * k, kr: 0, fr: -0.9 * k, hl: -0.1 * k, kl: 1.3 * k, al: 0.6 * k, ar: -0.3, alz: -0.9 * k, arz: 0.4, el: -0.3, er: -0.5, hp: 0.9 * k }, Math.min(1, k * 2.5)] });
   } else if (truth === 'vermelho') {
-    // tesoura com os dois pés no ar à altura do joelho
+    // tesoura com os dois pés no ar à altura do joelho; depois cai de costas (queda captada)
     const k = smooth((t - (TC - 0.4)) / 0.3), air = Math.max(0, Math.sin(clamp((t - (TC - 0.4)) / 0.6, 0, 1) * Math.PI));
-    if (k <= 0) setPose(d, runPose(t * 12.5, 0.9));
-    else setPose(d, { air: true, pitch: -0.75 * k, y: 0.32 * air - (t > TC + 0.3 ? 0.25 * smooth((t - TC - 0.3) / 0.3) : 0), hr: -1.75 * k, kr: 0.05, fr: -0.8 * k, hl: -1.55 * k, kl: 0.15, fl: -0.8 * k, al: 0.9 * k, ar: 0.9 * k, alz: -1 * k, arz: 1 * k, el: -0.3, er: -0.3, hp: 0.6 * k });
+    const jump = { air: true, pitch: -0.75 * k, y: 0.32 * air, hr: -1.75 * k, kr: 0.05, fr: -0.8 * k, hl: -1.55 * k, kl: 0.15, fl: -0.8 * k, al: 0.9 * k, ar: 0.9 * k, alz: -1 * k, arz: 1 * k, el: -0.3, er: -0.3, hp: 0.6 * k };
+    const land = smooth((t - TC - 0.15) / 0.35), jumpP = k <= 0 ? dRun : { mix: [dRun, jump, Math.min(1, k * 2.5)] };
+    setPose(d, land <= 0 ? jumpP : { mix: [jumpP, { clip: 'fallback', t: 0.55 + (t - TC - 0.15), alt: jump }, land] });
   } else {
-    // simulação: trava, perna mal esticada, braços abertos a dizer que não tocou
+    // simulação: trava, perna mal esticada, e depois braços abertos a dizer que não tocou
     const k = smooth((t - (TC - 0.45)) / 0.35), arms = smooth((t - (TC + 0.3)) / 0.4);
-    if (k <= 0) setPose(d, runPose(t * 11.5, 0.8));
-    else setPose(d, { pitch: -0.3 * k, hr: -0.45 * k, kr: 0.2, hl: 0.2 * k, kl: 0.5 * k, alz: -1.25 * arms - 0.1, arz: 1.25 * arms + 0.1, al: -0.4 * arms, ar: -0.4 * arms, el: -0.3 - 0.8 * arms, er: -0.3 - 0.8 * arms });
+    const brake = { pitch: -0.3 * k, hr: -0.45 * k, kr: 0.2, hl: 0.2 * k, kl: 0.5 * k, el: -0.4, er: -0.4 };
+    const stand = { clip: 'idle', t: t, pp: true, alt: brake, add: { alz: -1.15 * arms, arz: 1.15 * arms } };
+    setPose(d, k <= 0 ? dRun : arms <= 0 ? { mix: [dRun, brake, Math.min(1, k * 2.5)] } : { mix: [brake, stand, Math.min(1, arms * 1.5)], add: stand.add });
   }
 
   // ---- bola
@@ -436,7 +548,7 @@ function poseFoul(L, t) {
     const x = o.o.x + o.o.vx * k, y = o.o.y + o.o.vy * k;
     const fx = sp > 0.6 ? o.o.vx : P.x - o.o.x, fy = sp > 0.6 ? o.o.vy : P.y - o.o.y;
     placeRig(o.r, x, y, fx, fy);
-    setPose(o.r, sp > 0.6 ? runPose(t * 10 + o.ph, Math.min(0.8, sp / 8)) : { pitch: Math.sin(t * 2 + o.ph) * 0.03 });
+    setPose(o.r, sp > 0.6 ? runAt(t, o.ph, Math.min(0.85, sp / 7.5)) : idleAt(t, o.ph));
   }
   return { ax, ay, dxp, dyp };
 }
@@ -482,7 +594,7 @@ function pose3D(L, t) {
     cx = clamp(cp.x, -2.5, W + 2.5); cy = clamp(cp.y, -2.5, H + 2.5); ch = 1.9;
     look = { x: lerp(ax, mid.x, 0.5), y: lerp(ay, mid.y, 0.5) };
     width = clamp(gap + 4, 6.5, 18);
-    placeRig(ref, L.ref.x, L.ref.y, P.x - L.ref.x, P.y - L.ref.y); setPose(ref, {}); ref.outer.visible = true;
+    placeRig(ref, L.ref.x, L.ref.y, P.x - L.ref.x, P.y - L.ref.y); setPose(ref, idleAt(t, 2)); ref.outer.visible = true;
   } else {
     cx = L.ref.x; cy = L.ref.y; ch = 1.75;
     const toP = norm(P.x - cx, P.y - cy);
