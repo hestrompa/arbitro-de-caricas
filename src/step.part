@@ -1,0 +1,20 @@
+  } else if (mode === 'lance' && S.lance && stage.classList.contains('view3d')) {
+    const L = S.lance, dur = lanceDur(L);
+    if (!L.paused) { L.time += dt * L.speed; if (L.time >= dur) { L.time = dur; L.seen = true; L.paused = true; } }
+    if (L.seen) {
+      // depois de ver o lance uma vez podes pausar e andar para trás e para a frente, mas o relógio da decisão corre
+      L.decideT -= dt;
+      $('decideTime').textContent = Math.max(0, Math.ceil(L.decideT)) + ' s';
+      $('timerBar').style.width = clamp(L.decideT / 15, 0, 1) * 100 + '%';
+      if (L.decideT <= 0) decide('siga', true);
+    } else { $('decideTime').textContent = 'a ver o lance'; $('timerBar').style.width = '100%'; }
+    syncScrub();
+  } else if (mode === 'fim' && reviewing && stage.classList.contains('view3d')) {
+    if (!reviewing.paused) {
+      reviewing.time += dt * reviewing.speed;
+      if (reviewing.time >= lanceDur(reviewing) + (reviewing.kind === 'offside' ? 1.5 : 0.8)) { reviewing.time = 0; reviewing.cam = null; }
+    }
+    syncScrub();
+  }
+}
+

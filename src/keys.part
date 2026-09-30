@@ -1,0 +1,13 @@
+window.addEventListener('keydown', e => {
+  const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+  const vk = { ' ': togglePlay, ',': () => stepFrame(-1), '.': () => stepFrame(1), ArrowLeft: () => stepFrame(-1), ArrowRight: () => stepFrame(1) };
+  if (mode === 'lance') {
+    const map = S.lance && S.lance.kind === 'offside' ? OKEYS : DKEYS;
+    if (map[k]) decide(map[k]); else if (k === 'r') replay(); else if (vk[k]) { vk[k](); e.preventDefault(); }
+    return;
+  }
+  if (mode === 'fim' && reviewing && stage.classList.contains('view3d') && vk[k]) { vk[k](); e.preventDefault(); return; }
+  if (mode === 'menu' && (k === 'Enter' || k === ' ')) { start(); e.preventDefault(); return; }
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' '].includes(k) && mode === 'play') e.preventDefault();
+  keys.add(k);
+});

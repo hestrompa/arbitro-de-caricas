@@ -1,0 +1,210 @@
+<title>Árbitro de Caricas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Barlow:wght@400;500;600&display=swap">
+<style>
+/* Layout: estádio à noite; placar no topo, relvado ao centro, apito (decisões) em baixo. Um só visual, escuro de propósito. */
+:root {
+  --night: #0e1712;
+  --panel: #16231b;
+  --line: #2a3d30;
+  --chalk: #eef0e6;
+  --muted: #9db3a3;
+  --whistle: #f2cf3a;
+  --blue: #3569dc;
+  --orange: #ee7d2c;
+  --bad: #e5533d;
+  --good: #58c27d;
+  --display: "Barlow Condensed", "Arial Narrow", system-ui, sans-serif;
+  --body: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { background: var(--night); color: var(--chalk); }
+body { font-family: var(--body); font-size: 15px; line-height: 1.45; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-inline: 16px; padding-block: 16px 32px; display: grid; gap: 12px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--whistle); outline-offset: 2px; }
+
+.hud { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
+.team { display: flex; align-items: center; gap: 10px; font-family: var(--display); font-weight: 600; font-size: 20px; letter-spacing: .04em; text-transform: uppercase; min-width: 0; }
+.team.away { justify-content: flex-end; }
+.dot { width: 14px; height: 14px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 2px rgba(255,255,255,.35); }
+.score { font-family: var(--display); font-weight: 700; font-size: 34px; font-variant-numeric: tabular-nums; line-height: 1; display: flex; align-items: center; gap: 12px; }
+.clock { font-size: 15px; color: var(--whistle); background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; letter-spacing: .06em; }
+.meters { display: grid; grid-template-columns: 1fr 1fr 1fr auto; gap: 16px; align-items: end; }
+.sound { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 3px 10px; font-family: var(--display); font-size: 14px; letter-spacing: .04em; white-space: nowrap; }
+.sound[aria-pressed="false"] { color: var(--muted); }
+.choices.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.protest { border-color: var(--bad); }
+.meter { display: grid; gap: 4px; }
+.meter-label { display: flex; justify-content: space-between; font-family: var(--display); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.meter-label b { color: var(--chalk); font-weight: 600; font-variant-numeric: tabular-nums; }
+.bar { height: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 99px; overflow: hidden; }
+.bar > i { display: block; height: 100%; width: 70%; background: var(--good); transition: width .25s, background-color .25s; }
+
+.stage { position: relative; width: 100%; aspect-ratio: 111 / 74; border-radius: 6px; overflow: hidden; background: #245f2f; box-shadow: 0 0 0 1px var(--line); touch-action: manipulation; }
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#c3d { visibility: hidden; }
+.stage.view3d #c3d { visibility: visible; }
+.cap3d { position: absolute; left: 12px; top: 10px; right: 12px; display: flex; justify-content: space-between; gap: 8px; font-family: var(--display); font-size: 15px; letter-spacing: .05em; text-transform: uppercase; pointer-events: none; }
+.cap3d span { background: rgba(10,16,12,.72); padding: 3px 8px; border-radius: 3px; }
+.viewbtns { position: absolute; left: 50%; bottom: 58px; transform: translateX(-50%); display: flex; gap: 6px; }
+.viewbtns button { background: rgba(10,16,12,.8); border: 1px solid var(--line); border-radius: 4px; padding: 5px 12px; font-family: var(--display); font-size: 15px; letter-spacing: .04em; white-space: nowrap; }
+.viewbtns button[aria-pressed="true"] { background: var(--whistle); color: #1a1a0e; border-color: var(--whistle); }
+.scrub { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; align-items: center; gap: 6px; background: rgba(10,16,12,.8); border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; }
+.scrub button { background: #1e2f24; border: 1px solid var(--line); border-radius: 4px; min-width: 34px; height: 30px; padding: 0 8px; font-family: var(--display); font-size: 15px; letter-spacing: .03em; white-space: nowrap; }
+.scrub button:disabled, .scrub input:disabled { opacity: .4; cursor: default; }
+.scrub .key { background: var(--whistle); color: #1a1a0e; border-color: var(--whistle); font-weight: 600; }
+.track { position: relative; flex: 1; min-width: 60px; display: flex; align-items: center; }
+.track input { width: 100%; margin: 0; accent-color: var(--whistle); }
+.track i { position: absolute; top: -4px; bottom: -4px; width: 2px; margin-left: -1px; background: var(--whistle); pointer-events: none; }
+.sctime { font-family: var(--display); font-size: 14px; font-variant-numeric: tabular-nums; color: var(--muted); min-width: 52px; text-align: right; }
+.flash { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; font-family: var(--display); font-weight: 700; font-size: clamp(40px, 9vw, 96px); letter-spacing: .1em; color: var(--whistle); text-shadow: 0 4px 24px rgba(0,0,0,.6); }
+.toast { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); background: rgba(10,16,12,.85); border: 1px solid var(--line); padding: 6px 12px; border-radius: 4px; font-family: var(--display); font-size: 17px; letter-spacing: .04em; white-space: nowrap; pointer-events: none; }
+
+.overlay { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(8,14,10,.78); padding: 16px; overflow: auto; }
+.card { max-width: 520px; display: grid; gap: 12px; }
+.card h1 { margin: 0; font-family: var(--display); font-weight: 700; font-size: clamp(34px, 6vw, 54px); line-height: .95; letter-spacing: .02em; text-transform: uppercase; text-wrap: balance; }
+.card h1 em { font-style: normal; color: var(--whistle); }
+.card p { margin: 0; color: var(--muted); max-width: 60ch; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 14px; }
+.keys kbd { font-family: var(--display); font-size: 14px; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 0 6px; color: var(--chalk); white-space: nowrap; }
+.primary { justify-self: start; background: var(--whistle); color: #1a1a0e; border: 0; border-radius: 4px; padding: 10px 20px; font-family: var(--display); font-weight: 700; font-size: 20px; letter-spacing: .06em; text-transform: uppercase; }
+
+.decide { display: grid; gap: 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 10px; }
+.decide-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-family: var(--display); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-size: 14px; }
+.timer { height: 4px; background: var(--line); border-radius: 99px; overflow: hidden; }
+.timer > i { display: block; height: 100%; width: 100%; background: var(--whistle); }
+.choices { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.choice { background: #1e2f24; border: 1px solid var(--line); border-radius: 4px; padding: 8px 4px; display: grid; justify-items: center; gap: 2px; font-family: var(--display); font-weight: 600; font-size: 17px; letter-spacing: .03em; }
+.choice small { font-family: var(--body); font-weight: 500; font-size: 11px; color: var(--muted); }
+.choice:hover { border-color: var(--muted); }
+.choice .swatch { width: 14px; height: 19px; border-radius: 2px; }
+.choice.ghost { background: transparent; }
+.choice:disabled { opacity: .45; cursor: default; }
+
+.help { margin: 0; color: var(--muted); font-size: 13px; }
+.review { display: grid; gap: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 16px; }
+.review h2 { margin: 0; font-family: var(--display); font-size: 26px; letter-spacing: .03em; text-transform: uppercase; }
+.grade { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.grade b { font-family: var(--display); font-size: 56px; line-height: 1; color: var(--whistle); font-variant-numeric: tabular-nums; }
+.grade span { color: var(--muted); }
+.table-wrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 14px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-family: var(--display); font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-size: 13px; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+td.ok { color: var(--good); font-weight: 600; }
+td.half { color: var(--whistle); font-weight: 600; }
+td.bad { color: var(--bad); font-weight: 600; }
+.linkbtn { background: none; border: 1px solid var(--line); border-radius: 3px; padding: 2px 8px; font-size: 13px; white-space: nowrap; }
+.ghostbtn { background: transparent; border: 1px solid var(--whistle); color: var(--whistle); border-radius: 4px; padding: 10px 18px; font-family: var(--display); font-weight: 600; font-size: 18px; letter-spacing: .05em; text-transform: uppercase; }
+.row-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+@media (max-width: 640px) {
+  .meters { grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+  .choices.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .scrub { gap: 4px; padding: 4px 6px; }
+  .scrub button { min-width: 28px; height: 28px; padding: 0 6px; font-size: 13px; }
+  .sctime { display: none; }
+  .viewbtns { bottom: 50px; }
+  .viewbtns button { padding: 4px 8px; font-size: 13px; }
+  .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .team { font-size: 15px; }
+  .score { font-size: 26px; }
+  .cap3d { font-size: 12px; }
+}
+</style>
+
+<div class="wrap">
+  <header class="hud">
+    <div class="team"><span class="dot" style="background: var(--blue)"></span><span>Azuis</span></div>
+    <div class="score"><span id="s0">0</span><span class="clock" id="clock">0'</span><span id="s1">0</span></div>
+    <div class="team away"><span>Laranjas</span><span class="dot" style="background: var(--orange)"></span></div>
+  </header>
+  <div class="meters">
+    <div class="meter"><div class="meter-label"><span>Controlo do jogo</span><b id="ctrlTxt">70</b></div><div class="bar"><i id="ctrlBar"></i></div></div>
+    <div class="meter"><div class="meter-label"><span>Energia</span><b id="staTxt">100</b></div><div class="bar"><i id="staBar" style="background: var(--whistle)"></i></div></div>
+    <div class="meter"><div class="meter-label"><span>Pressão do público</span><b id="crowdTxt">35</b></div><div class="bar"><i id="crowdBar" style="width: 35%; background: var(--muted)"></i></div></div>
+    <button class="sound" type="button" id="soundBtn" aria-pressed="true">Som ligado</button>
+  </div>
+
+  <div class="stage" id="stage">
+    <canvas id="c2d"></canvas>
+    <canvas id="c3d"></canvas>
+    <div class="cap3d" id="cap3d" hidden><span id="capL"></span><span id="capR"></span></div>
+    <div class="flash" id="flash" hidden>Lance!</div>
+    <div class="toast" id="toast" hidden></div>
+    <div class="viewbtns" id="viewBtns" hidden>
+      <button type="button" id="viewMine" aria-pressed="false">A tua vista</button>
+      <button type="button" id="viewIdeal" aria-pressed="true">Vista ideal</button>
+      <button type="button" id="viewClose">Fechar</button>
+    </div>
+    <div class="scrub" id="scrub" hidden>
+      <button type="button" id="scPlay" aria-label="Pausa">❚❚</button>
+      <button type="button" id="scBack" aria-label="Recuar um fotograma">‹</button>
+      <div class="track"><input type="range" id="scRange" min="0" max="1000" step="1" value="0" aria-label="Linha do tempo do lance"><i id="scMark"></i></div>
+      <button type="button" id="scFwd" aria-label="Avançar um fotograma">›</button>
+      <button type="button" class="key" id="scKey">Duelo</button>
+      <button type="button" id="scSpeed" aria-label="Velocidade">1x</button>
+      <span class="sctime" id="scTime"></span>
+    </div>
+    <div class="overlay" id="menu">
+      <div class="card">
+        <h1>Árbitro de <em>Caricas</em></h1>
+        <p>Onze contra onze, cinco minutos. Segue o jogo com a tua carica preta e amarela. Quando houver um lance, vês o momento em 3D a partir do sítio onde estás: se estiveres longe ou tapado, vês pior. Nos foras de jogo apertados vês o passe pelos olhos do assistente. Os Azuis jogam em casa: o público pressiona, os jogadores protestam e o VAR chama-te ao monitor quando erras num lance grave.</p>
+        <div class="keys">
+          <kbd>WASD / setas</kbd><span>mover o árbitro (ou toca no campo)</span>
+          <kbd>Shift</kbd><span>correr, gasta energia</span>
+          <kbd>1 a 5</kbd><span>siga, falta, amarelo, vermelho, simulação</span>
+          <kbd>1 / 2</kbd><span>no fora de jogo: em jogo ou fora de jogo</span>
+          <kbd>R</kbd><span>rever o lance em câmara lenta</span>
+          <kbd>1 a 3</kbd><span>nos protestos: ignorar, afastar, amarelo</span>
+          <kbd>Espaço , .</kbd><span>depois de veres o lance: pausa e fotograma a fotograma</span>
+        </div>
+        <div class="row-actions"><button class="primary" id="startBtn" type="button">Apitar o início</button><button class="ghostbtn" id="trainBtn" type="button">Treinar o VAR</button></div>
+      </div>
+    </div>
+  </div>
+
+  <section class="decide" id="decide" hidden>
+    <div class="decide-top"><span id="decideMsg">Qual é a tua decisão?</span><span id="decideTime"></span></div>
+    <div class="timer"><i id="timerBar"></i></div>
+    <div class="choices">
+      <button class="choice foul-choice" type="button" data-d="siga">Siga<small>1 · lance limpo</small></button>
+      <button class="choice foul-choice" type="button" data-d="falta">Falta<small>2 · livre</small></button>
+      <button class="choice foul-choice" type="button" data-d="amarelo"><span class="swatch" style="background: var(--whistle)"></span>Amarelo<small>3</small></button>
+      <button class="choice foul-choice" type="button" data-d="vermelho"><span class="swatch" style="background: var(--bad)"></span>Vermelho<small>4</small></button>
+      <button class="choice foul-choice" type="button" data-d="simulacao">Simulação<small>5 · amarelo ao atacante</small></button>
+      <button class="choice off-choice" type="button" data-d="emjogo" hidden>Em jogo<small>1 · segue o ataque</small></button>
+      <button class="choice off-choice" type="button" data-d="fora" hidden><span class="swatch" style="background: var(--whistle)"></span>Fora de jogo<small>2 · livre indireto</small></button>
+      <button class="choice ghost" type="button" id="replayBtn">Rever<small>R · câmara lenta</small></button>
+    </div>
+  </section>
+
+  <section class="decide protest" id="protest" hidden>
+    <div class="decide-top"><span id="protestMsg">Protestos</span><span>Intensidade</span></div>
+    <div class="timer"><i id="protestBar" style="background: var(--bad)"></i></div>
+    <div class="choices three">
+      <button class="choice" type="button" id="pIgnore">Ignorar<small>1 · deixa falar</small></button>
+      <button class="choice" type="button" id="pAway">Afastar<small>2 · gesto firme</small></button>
+      <button class="choice" type="button" id="pCard"><span class="swatch" style="background: var(--whistle)"></span>Amarelo<small>3 · por protestos</small></button>
+    </div>
+  </section>
+
+  <p class="help" id="help">O observador avalia cada decisão contra o que aconteceu de facto. No monitor do VAR, num fora de jogo, arrasta as duas linhas no relvado até às partes do corpo que contam (setas para afinar, Tab troca de linha). Erros baixam o controlo do jogo e deixam os jogadores mais nervosos; abaixo de 10 o jogo é interrompido.</p>
+
+  <section class="review" id="review" hidden>
+    <h2 id="revTitle">Relatório do observador</h2>
+    <div class="grade"><b id="grade">0.0</b><span id="gradeTxt"></span></div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Min.</th><th>O que foi</th><th>Decidiste</th><th>Viste de</th><th>Avaliação</th><th></th></tr></thead>
+        <tbody id="revBody"></tbody>
+      </table>
+    </div>
+    <div class="row-actions"><button class="primary" id="againBtn" type="button">Jogar outra vez</button></div>
+  </section>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
