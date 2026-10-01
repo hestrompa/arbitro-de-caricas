@@ -83,6 +83,8 @@ var var_mesh: Array = []
 var match_paused := false
 var end_data := {}
 var is_career := false
+var min_contact := 99.0    # menor distância entre as pernas do defesa e as do atacante à volta do contacto
+var contact_checked := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -371,6 +373,7 @@ func _params_for(truth: String, sd: float) -> Dictionary:
 
 func _restart() -> void:
 	t = 0.0
+	min_contact = 99.0; contact_checked = false
 	hit_done = false
 	free_ball = false
 	b3_free = false; b3_net = 0.0; bv3 = Vector3.ZERO
@@ -462,7 +465,14 @@ func _scene_process(delta: float) -> void:
 	if modo in ["lance", "var"] and jogo:
 		jogo.tick(delta)          # temporizadores da partida (o VAR do treino)
 		if not (modo in ["lance", "var"]): return
+	# fora de jogo: o momento do passe cai sempre exatamente em TC (é essa a imagem que se mede e se vê no VAR)
+	var snap_tc := lance == 9 and t < TC and t + dt >= TC
+	if snap_tc: dt = TC - t
+	# ao rever: para 3 s no passe, com as linhas certas
+	if modo == "rever" and lance == 9 and is_equal_approx(t, TC) and sc.get("held", 0.0) < 3.0:
+		sc.held = sc.get("held", 0.0) + dt; dt = 0.0
 	t += dt
+	if snap_tc: t = TC
 	# VAR no fora de jogo: a imagem para no momento do passe
 	if modo == "var" and lance == 9 and t >= TC:
 		if not sc.has("lines"):
@@ -493,6 +503,9 @@ func _scene_process(delta: float) -> void:
 		p.ground()
 		p.mat.set_shader_parameter("flutter", clamp(p.speed / 6.0, 0.0, 1.0) if not p.rag else 0.3)
 	_separate(all)
+	if lance <= 4 and t > TC - 0.4 and t < TC + 1.3: _track_contact()
+	if lance <= 4 and t >= TC + 1.3 and not contact_checked: _check_contact()
+	if lance == 9 and is_equal_approx(t, TC) and sc.get("measured_t", -1.0) != t: _measure_offside()
 	# o árbitro (só se vê fora da tua vista)
 	if refj.node.visible:
 		var rd := (P - REF).normalized()
@@ -517,22 +530,44 @@ func _scene_process(delta: float) -> void:
 func _physics_process(pdt: float) -> void:
 	for p in [att, def] + extras: p.physics_step(pdt, t)
 
-# os outros aproximam-se do lance e param a uns metros
+# os outros vêm a correr com a jogada (chegam ao sítio onde estavam no momento do lance),
+# travam quando há o contacto e depois aproximam-se do lance, uns a correr, outros a trote
 func _extras_step(dt: float) -> void:
 	var ab := att.body_pos()
+	var hit := Vector2(ab.x, ab.z)
 	for i in extras.size():
 		var e: Jogador = extras[i]
-		if not e.node.visible: continue
-		var cu: Vector2 = e.get_meta("cur")
-		var stop := 3.6 + float(i) * 1.1
-		var to := Vector2(ab.x, ab.z) - cu
-		var dist := to.length()
-		var v := 0.0
-		if t > 0.4 and dist > stop: v = min(3.0, (dist - stop) * 1.5)
-		if v > 0.0: cu += to.normalized() * v * dt
-		e.set_meta("cur", cu)
-		e.move(cu, to.normalized(), v)
-		e.play("jog" if v > 0.6 else "idle", 0.4)
+		if not e.node.visible or e.rag or e.phase != "anim": continue
+		var spot: Vector2 = e.get_meta("spot")
+		var vv: Vector2 = e.get_meta("v", Vector2.ZERO)
+		if vv.length() < 1.5:
+			var to0 := P - spot
+			vv = to0.normalized() * clamp(to0.length() / 2.5, 1.5, 4.5) if to0.length() > 3.0 else A * 2.0
+		vv = vv.limit_length(7.5)
+		var cu: Vector2
+		var sp: float
+		var face: Vector2
+		if t < TC:
+			cu = spot + vv * (t - TC)
+			sp = vv.length(); face = vv.normalized()
+			e.set_meta("cur", cu); e.set_meta("vel", vv)
+		else:
+			cu = e.get_meta("cur")
+			var vel: Vector2 = e.get_meta("vel", vv)
+			var to := hit - cu
+			var stop := 2.6 + float(i) * 0.9
+			if t < TC + 0.5 + float(i) * 0.12:
+				vel *= exp(-dt * 2.5)
+			else:
+				var want := Vector2.ZERO
+				if to.length() > stop: want = to.normalized() * min(5.5 - float(i) * 0.5, (to.length() - stop) * 2.0)
+				vel = vel.lerp(want, clamp(dt * 3.0, 0.0, 1.0))
+			cu += vel * dt
+			e.set_meta("cur", cu); e.set_meta("vel", vel)
+			sp = vel.length()
+			face = vel.normalized() if sp > 1.2 else (to.normalized() if to.length() > 0.1 else e.dir)
+		e.move(cu, face, sp)
+		e.play("run" if sp > 4.2 else ("jog" if sp > 0.7 else "idle"), 0.3)
 # nas cenas paradas (cantos, golos) os outros mexem-se pouco, de frente para a bola
 func _extras_idle(dt: float) -> void:
 	for i in extras.size():
@@ -786,7 +821,27 @@ func _offside(dt: float) -> void:
 			b3 = Vector3(q.x, 0.11, q.y)
 	if not hit_done and t >= TC:
 		hit_done = true
-		outcome = "%s por %s m" % [Partida.LABEL[L.truth], ("%.2f" % absf(L.oi.margin)).replace(".", ",")]
+
+# A verdade do fora de jogo mede-se no corpo 3D que se vê, no instante do passe: a parte mais adiantada
+# do atacante (sem braços) contra a do penúltimo defesa (o guarda-redes conta-se como último) e a bola.
+func _measure_offside() -> void:
+	sc.measured_t = t
+	var dv := Vector3(float(sc.dir), 0, 0)
+	var ax: float = att.extreme(dv).x * float(sc.dir)
+	var dx := -INF
+	for e in sc.list:
+		var s: Dictionary = e[1]
+		if int(s.team) == int(L.oi.team) or s.role == "gk": continue
+		var x: float = (e[0] as Jogador).extreme(dv).x * float(sc.dir)
+		if x > dx: dx = x; sc.line_j = e[0]
+	var bx: float = b3.x * float(sc.dir)
+	var line: float = maxf(dx, bx)
+	var m: float = ax - line
+	sc.true_lines = [ax * float(sc.dir), line * float(sc.dir)]
+	if L.is_empty() or L.has("decided"): return
+	L.oi.margin = m
+	L.truth = "fora" if m > 0 else "emjogo"
+	outcome = "%s por %d cm" % [Partida.LABEL[L.truth], int(round(absf(m) * 100))]
 
 # 10) golo em análise: o atacante usa o braço (ou só o ombro) antes de rematar
 func _goalfoul(dt: float) -> void:
@@ -865,15 +920,13 @@ func _camera() -> void:
 		var shake := Vector3(sin(t * 3.1) * 0.02, sin(t * 4.3) * 0.015, 0) + Vector3(amp * (sin(tm * 7.3) + 0.5 * sin(tm * 13.1)), amp * 0.6 * sin(tm * 9.7 + 1), amp * (sin(tm * 6.1 + 2) + 0.5 * sin(tm * 11.3)))
 		cam.fov = 38 if eye.distance_to(look) < 25 else 30
 		cam.look_at_from_position(eye + shake, look + shake * 0.5)
+	elif lance == 9 and modo in ["var", "rever"] and t >= TC - 0.01:
+		_var_camera()
 	elif cam_mode == 1:
 		if lance == 9:
 			var sy: float = -7.0 if float(sc.ast.y) < H / 2 else H + 7.0
-			if modo == "var" and t >= TC:
-				cam.fov = 40
-				cam.look_at_from_position(Vector3(sc.line_x, 16, float(sc.recv.y) + (6 if sy > H / 2 else -6)), Vector3(sc.line_x, 0, sc.recv.y))
-			else:
-				cam.fov = 34
-				cam.look_at_from_position(Vector3(sc.line_x, 9, sy), Vector3(sc.line_x, 0.3, sc.recv.y))
+			cam.fov = 34
+			cam.look_at_from_position(Vector3(sc.line_x, 9, sy), Vector3(sc.line_x, 0.3, sc.recv.y))
 			return
 		if lance == 8:
 			var B: Vector2 = sc.B
@@ -906,12 +959,40 @@ func _camera() -> void:
 		cam.fov = 40
 		cam.look_at_from_position(Vector3(c3.x, 1.6, c3.y), Vector3(a3.x, 0.6, a3.z))
 
+# câmaras do VAR no fora de jogo (C troca): 1 câmara da linha, de lado e com zoom nos dois;
+# 2 de cima, perto; 3 rasante, ao nível da relva
+func _var_camera() -> void:
+	var a3 := att.body_pos()
+	var d3 := (sc.get("line_j", def) as Jogador).body_pos()
+	var mx := (a3.x + d3.x) * 0.5
+	var my := (a3.z + d3.z) * 0.5
+	var span := absf(a3.z - d3.z) + 3.0
+	var sy: float = -6.0 if float(sc.ast.y) < H / 2 else H + 6.0
+	match cam_mode:
+		2:
+			cam.fov = 45
+			cam.look_at_from_position(Vector3(mx, maxf(6.0, span * 1.1), my + (0.5 if sy > H / 2 else -0.5)), Vector3(mx, 0, my))
+		3:
+			var eye := Vector3(mx, 1.0, my + (span * 0.5 + 6.0) * (1.0 if sy > H / 2 else -1.0))
+			cam.fov = 40
+			cam.look_at_from_position(eye, Vector3(mx, 0.7, my))
+		_:
+			var eye := Vector3(mx, 12.0, sy)
+			var look := Vector3(mx, 0.6, my)
+			var dist := eye.distance_to(look)
+			cam.fov = clamp(rad_to_deg(2.0 * atan((span * 0.5 + 1.2) / dist)), 6.0, 40.0)
+			cam.look_at_from_position(eye, look)
+
 # linhas do VAR no fora de jogo
 func _var_lines() -> void:
 	var on := modo == "var" and lance == 9 and sc.has("lines")
+	# ao rever depois de decidir: as linhas certas, medidas no corpo
+	var real := modo == "rever" and lance == 9 and sc.has("true_lines") and t >= TC
 	for i in 2:
-		var_mesh[i].visible = on
-		if on:
+		var_mesh[i].visible = on or real
+		if real:
+			var_mesh[i].position = Vector3(float(sc.true_lines[i]), 0.02, H / 2); var_mesh[i].scale = Vector3(1.6, 1, 1)
+		elif on:
 			var_mesh[i].position = Vector3(var_line[i], 0.02, H / 2)
 			var_mesh[i].scale = Vector3(2.2 if i == var_sel else 1.0, 1, 1)
 
@@ -1023,7 +1104,7 @@ func _lance_ui(delta: float) -> void:
 		var sub := "Decisão de campo: " + str(Partida.DEC_LABEL.get(L.get("var_first", ""), "")) + " · C câmara · R repetir · S lento"
 		if lance == 9 and sc.has("lines"):
 			var gap: float = (var_line[0] - var_line[1]) * float(sc.dir)
-			sub = "Linhas: Tab troca (vermelha = atacante, azul = penúltimo defesa) · setas mexem · atacante %s %d cm %s" % ["", int(round(absf(gap) * 100)), "à frente" if gap > 0 else "atrás"]
+			sub = "Linhas: Tab troca (vermelha = atacante, azul = penúltimo defesa) · setas mexem · C câmara · atacante %s %d cm %s" % ["", int(round(absf(gap) * 100)), "à frente" if gap > 0 else "atrás"]
 		ui.info("MONITOR DO VAR · %d'" % L.minute, sub)
 	if dec_shown:
 		if not paused: dec_left -= delta
@@ -1057,6 +1138,9 @@ func _replay() -> void:
 func _cam_next() -> void:
 	if modo == "lance":
 		ui.toast("No jogo só vês o que o árbitro viu. As outras câmaras são do VAR e da revisão.", 2.5); return
+	if lance == 9 and modo in ["var", "rever"] and t >= TC - 0.01:
+		cam_mode = cam_mode % 3 + 1
+		ui.toast(["", "Câmara da linha", "De cima", "Rasante"][cam_mode], 1.2); return
 	cam_mode = (cam_mode + 1) % 4
 
 # ---------- gestos do árbitro ----------
@@ -1375,16 +1459,28 @@ func _settle(p: Jogador, dt: float, _d: Vector2) -> void:
 # 1) entrada: a força e o ângulo do toque decidem o que acontece ao atacante; ou simula
 func _tackle(dt: float) -> void:
 	if not hit_done: _att_run(dt, vA)
-	var C := P - D * 0.8
+	# na simulação o defesa trava antes: o pé fica a um metro do atacante, que se atira na mesma
+	var C := P - D * (0.8 if not sim_dive else 2.5)
+	# corte limpo: o atacante empurra a bola um pouco mais e o defesa chega à bola antes de chegar ao homem
+	if clean:
+		C = P + A * 1.0 - D * 0.75
+		if t > TC - 0.5 and t < TC - 0.45 and not free_ball: bvel = A * (vA + 2.4)
+	# carrinho: nas faltas a sério e nos cortes limpos o defesa atira-se de pés para a frente e desliza
+	var sl := lance == 0 and not sim_dive and (clean or force >= 0.82)
+	if sl: C += D * 0.4
 	var dp: Vector2
 	if t < TC: dp = C - D * vD * (TC - t)
 	else: dp = C + D * 1.6 * (1.0 - exp(-(t - TC) * 3.0))
-	def.move(dp, D, vD if t < TC else max(0.0, vD * exp(-(t - TC) * 3.0)))
-	if t > TC - 0.62: def.play("kick", 0.1)
-	if t > TC + 0.9: def.play("jog", 0.3)
+	if sl and def.phase == "anim" and not hit_done and t >= TC - 0.36: def.slide(D, vD)
+	if def.phase == "anim":
+		def.move(dp, D, vD if t < TC else max(0.0, vD * exp(-(t - TC) * 3.0)))
+		if t > TC - 0.62 and not sl: def.play("kick", 0.1)
+		elif sl and t < TC: def.play("run", 0.1)
+		if t > TC + 0.9: def.play("jog", 0.3)
 	# o pé do defesa vai mesmo ao tornozelo (ou à bola, na simulação)
 	var leg := _leg_of(att, def.bone_world("foot_R"))
 	var tgt := att.bone_world("foot_" + leg) + Vector3(0, 0.05, 0) if not (sim_dive or clean) else Vector3(bpos.x, 0.11, bpos.y)
+	if sim_dive: tgt = Vector3(P.x - D.x * 1.5, 0.1, P.y - D.y * 1.5)
 	if stamp and not clean: tgt = att.bone_world("foot_" + leg) - Vector3(A.x, 0, A.y) * 0.1 + Vector3(0, 0.07, 0)
 	var w: float = clamp(1.0 - abs(t - TC) / 0.28, 0.0, 1.0)
 	def.ik = {"foot_R": [tgt, w]}
@@ -1394,8 +1490,8 @@ func _tackle(dt: float) -> void:
 		var v3 := Vector3(A.x, 0, A.y) * vA
 		if sim_dive:
 			free_ball = true; bvel = A * 3.0
-			outcome = "SIMULAÇÃO: o defesa só toca na bola; o atacante atira-se"
-			await get_tree().create_timer(0.14).timeout
+			outcome = "SIMULAÇÃO: o defesa trava e não lhe toca; o atacante atira-se"
+			await get_tree().create_timer(0.18).timeout
 			att.hurt = 1.0
 			att.fall(v3 * 1.1 + Vector3(0, 1.6, 0), [], Vector3.ZERO, "dive", 0.9)
 			return
@@ -1403,7 +1499,7 @@ func _tackle(dt: float) -> void:
 		if clean:
 			outcome = "corte limpo: o defesa tira a bola, o atacante só tropeça (siga)"
 			bvel = (D * 0.9 - A * 0.2).normalized() * 9.0
-			att.push(D * 1.0); att.hit(Vector3(0.5, 0.0, 0.4 * side))
+			att.hit(Vector3(0.3, 0.0, 0.25 * side))
 			att.play("jog", 0.2)
 		elif force < 0.78:
 			outcome = "toque leve no tornozelo: desequilibra, não cai (falta discutível)"
@@ -1412,13 +1508,33 @@ func _tackle(dt: float) -> void:
 		elif force < 1.12:
 			outcome = "falta: toque claro, cai pelo impacto"
 			att.hurt = 0.4
-			att.fall(v3, ["lowerleg01_" + leg, "foot_" + leg], Vector3(D.x, 0.0, D.y) * 2.3 * force, "dive", 0.55)
+			att.fall(v3 * 0.9, ["lowerleg01_" + leg, "foot_" + leg], Vector3(D.x, 0.0, D.y) * 1.3 * force - Vector3(A.x, 0, A.y) * 1.5, "dive", 0.6)
 		else:
 			outcome = "falta forte (amarelo/vermelho): entrada a varrer com força"
 			att.hurt = 1.0
-			att.fall(v3 * 1.05, ["lowerleg01_" + leg, "foot_" + leg, "upperleg01_" + leg], Vector3(D.x, 0.15, D.y) * 3.4 * force, "dive", 0.45, Vector3(A.x, 0, A.y).cross(Vector3.UP) * -2.0 * side)
+			att.fall(v3 * 0.95, ["lowerleg01_" + leg, "foot_" + leg, "upperleg01_" + leg], Vector3(D.x, 0.1, D.y) * 1.7 * force - Vector3(A.x, 0, A.y) * 2.0, "dive", 0.6, Vector3(A.x, 0, A.y).cross(Vector3.UP) * -0.8 * side)
 		def.hit(Vector3(-1.6 * force, 1.0, 0.0))
+		if def.phase == "desliza": def.slide_hit()
 	if hit_done: _settle(att, dt, A)
+
+# A verdade tem de bater com o que se vê: mede-se a distância real entre as pernas dos dois.
+const LEGS := ["foot_L", "foot_R", "lowerleg01_L", "lowerleg01_R"]
+func _track_contact() -> void:
+	if lance != 0 and lance != 4: return
+	for a in LEGS:
+		var pa := att.bone_world(a)
+		for b in LEGS:
+			var pb := def.bone_world(b)
+			min_contact = minf(min_contact, pa.distance_to(pb))
+
+func _check_contact() -> void:
+	contact_checked = true
+	if lance != 0 and lance != 4: return
+	# simulação em que, afinal, as pernas se tocaram: é falta
+	if sim_dive and min_contact < 0.3:
+		outcome = "houve toque na perna: falta"
+		if not L.is_empty() and not L.has("decided") and L.truth == "simulacao": L.truth = "falta"
+	if OS.is_debug_build(): print("contacto ", "sim" if sim_dive else ("limpo" if clean else "falta"), " %.2f m" % min_contact)
 
 # 2) empurrão nas costas: o defesa chega por trás e empurra com as duas mãos
 func _push(dt: float) -> void:
@@ -1481,7 +1597,8 @@ func _pull(dt: float) -> void:
 # 4) ombro a ombro: correm lado a lado e chocam; quem perde o duelo desequilibra-se (ou cai, se o choque for forte)
 func _shoulder(dt: float) -> void:
 	var perp := Vector2(-A.y, A.x) * side
-	var gap: float = lerp(1.6, 0.4, clamp(t / TC, 0.0, 1.0))
+	# correm lado a lado e, no último instante, o defesa encosta com o ombro (sem se atravessarem)
+	var gap: float = lerp(1.6, 0.9, clamp(t / (TC - 0.35), 0.0, 1.0)) if t < TC - 0.35 else lerp(0.9, 0.5, clamp((t - TC + 0.35) / 0.35, 0.0, 1.0))
 	if not hit_done:
 		att.move(P + A * vA * (t - TC), A, vA)
 		def.move(P + A * vA * (t - TC) - A * 0.15 + perp * gap, A, vA)
@@ -1510,6 +1627,7 @@ func _separate(all: Array) -> void:
 	for i in all.size():
 		for j in range(i + 1, all.size()):
 			if all[i].rag and all[j].rag: continue
+			if all[i].phase == "desliza" or all[j].phase == "desliza": continue
 			var push := Vector2.ZERO
 			for a in g[i]:
 				for b in g[j]:

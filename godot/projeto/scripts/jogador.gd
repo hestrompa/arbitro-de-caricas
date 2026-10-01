@@ -46,7 +46,12 @@ var team := 0
 var num := 0
 
 var state := ""
-var phase := "anim"               # anim | queda | chao | levantar
+var phase := "anim"               # anim | queda | chao | levantar | desliza
+var slide_p := Vector2.ZERO       # carrinho: posição, direção, velocidade e travagem
+var slide_d := Vector2.ZERO
+var slide_v := 0.0
+var slide_dec := 3.5
+var slideT := 0.0
 var pos := Vector2.ZERO
 var dir := Vector2(0, 1)
 var speed := 0.0
@@ -236,6 +241,9 @@ func update(dt: float, t: float) -> void:
 	if phase == "levantar":
 		_getup_step(dt)
 		return
+	if phase == "desliza":
+		_slide_step(dt)
+		return
 	if rag and phase != "levantar":
 		ragT += dt
 		sim.influence = clamp(ragT / 0.1, 0.0, 1.0)
@@ -331,6 +339,7 @@ func bone_world(name: String) -> Vector3:
 
 func body_pos() -> Vector3:
 	if rag: return bones[0].global_position
+	if phase == "desliza": return skel.global_transform * skel.get_bone_global_pose(0).origin * Vector3(1, 0, 1)
 	if phase == "levantar": return skel.global_transform * skel.get_bone_global_pose(0).origin * Vector3(1, 0, 1)
 	return node.position
 
@@ -402,6 +411,44 @@ func _drive(anim_name: String, tm: float, strength: float, custom: Dictionary) -
 		if ang > 0.001: w += err.get_axis().normalized() * ang * 14.0
 		ch.angular_velocity = ch.angular_velocity.lerp(w, s)
 
+# ---------- carrinho ----------
+# Deita-se de lado/costas com as pernas à frente (início da captura de levantar de costas) e desliza
+# na direção d; trava devagar até ao contacto e depressa depois. Quando para, levanta-se.
+func slide(d: Vector2, v: float) -> void:
+	if rag or phase != "anim": return
+	phase = "desliza"; slideT = 0.0
+	slide_d = d; slide_v = v; slide_dec = 3.5
+	var bp := body_pos()
+	slide_p = Vector2(bp.x, bp.z)
+	state = ""
+	play("getup_back", 0.14, 0.05)
+	anim.speed_scale = 0.4
+	node.rotation.y = atan2(d.y, -d.x)
+
+func slide_hit() -> void:
+	slide_dec = 11.0
+
+func _slide_step(dt: float) -> void:
+	slideT += dt
+	anim.advance(dt)
+	if anim.current_animation_position > 0.3: anim.speed_scale = 0.0
+	slide_p += slide_d * slide_v * dt
+	slide_v = maxf(0.0, slide_v - slide_dec * dt)
+	# a raiz da pose sentada não está na origem: põe a anca no sítio pedido
+	var r: Vector3 = node.global_transform.basis * skel.get_bone_global_pose(0).origin
+	node.position.x = slide_p.x - r.x
+	node.position.z = slide_p.y - r.z
+	var low := 99.0
+	for i in skel.get_bone_count(): low = min(low, skel.get_bone_global_pose(i).origin.y)
+	node.position.y = 0.06 - low
+	_ik()
+	if slide_v <= 0.0 and slideT > 0.5:
+		# levanta-se a partir da pose sentada
+		ik.clear()
+		phase = "levantar"; getup_anim = "getup_back"; anim.speed_scale = 1.0
+		getupT = anim.current_animation_position
+		pos = slide_p
+
 # ---------- levantar-se ----------
 func get_up() -> void:
 	if phase != "chao": return
@@ -453,6 +500,7 @@ func reset() -> void:
 	rag = false; phase = "anim"; ragT = 0.0
 	sim.influence = 0.0
 	for ab in proxies: ab.collision_layer = L_PROXY
+	slide_v = 0.0
 	state = ""; off = Vector2.ZERO; lift = 0.0; jump = 0.0; sp = Vector3.ZERO; sv = Vector3.ZERO
 	stag = Vector2.ZERO; stagv = Vector2.ZERO; ik.clear(); layer = ""; layer_w = 0.0; lean = Vector3.ZERO; hurt = 0.0
 
@@ -470,10 +518,69 @@ func gpts() -> Array:
 	return out
 
 func ground() -> void:
-	if rag or phase == "levantar": return
+	if rag or phase == "levantar" or phase == "desliza": return
 	var low := 99.0
 	for q in gpts(): low = min(low, q[0].y - (q[2] if q[2] > 0.0 else q[1]))
 	var base: float = low - lift - jump
 	var want: float = max(0.0, -base)
 	lift = want if want > lift else lerp(lift, want, 0.3)
 	node.position.y = lift + jump
+
+# ---------- medição no corpo visível (fora de jogo) ----------
+# Calcula a pele do corpo no CPU (mesmos pesos que a placa gráfica usa) e devolve o ponto mais avançado
+# numa direção. Os braços não contam (lei 11): vértices que pertencem sobretudo ao braço ficam de fora.
+static var _vc := {}
+func _vcache() -> Dictionary:
+	if not _vc.is_empty(): return _vc
+	var mi: MeshInstance3D = node.find_children("*", "MeshInstance3D", true, false)[0]
+	var a: Array = mi.mesh.surface_get_arrays(0)
+	var vs: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+	var bs: PackedInt32Array = a[Mesh.ARRAY_BONES]
+	var ws: PackedFloat32Array = a[Mesh.ARRAY_WEIGHTS]
+	var skin: Skin = mi.skin
+	var bind_bone: Array = []
+	var arm: Array = []
+	for k in skin.get_bind_count():
+		var nm := String(skin.get_bind_name(k))
+		bind_bone.append(bi.get(nm, 0))
+		arm.append(nm.begins_with("upperarm") or nm.begins_with("lowerarm") or nm.begins_with("wrist"))
+	var keep := PackedInt32Array()
+	for i in vs.size():
+		var aw := 0.0
+		for j in 4:
+			if arm[bs[i * 4 + j]]: aw += ws[i * 4 + j]
+		if aw < 0.5: keep.append(i)
+	_vc = {"vs": vs, "bs": bs, "ws": ws, "skin": skin, "bind_bone": bind_bone, "keep": keep}
+	return _vc
+
+func extreme(dv: Vector3) -> Vector3:
+	var c := _vcache()
+	var skin: Skin = c.skin
+	var bb: Array = c.bind_bone
+	var M: Array = []
+	var gt := skel.global_transform
+	for k in skin.get_bind_count():
+		M.append(gt * skel.get_bone_global_pose(bb[k]) * skin.get_bind_pose(k))
+	var vs: PackedVector3Array = c.vs
+	var bs: PackedInt32Array = c.bs
+	var ws: PackedFloat32Array = c.ws
+	var best := -INF
+	var bp := Vector3.ZERO
+	for i in c.keep:
+		var v := vs[i]
+		var p := Vector3.ZERO
+		for j in 4:
+			var w := ws[i * 4 + j]
+			if w > 0.0: p += (M[bs[i * 4 + j]] as Transform3D) * v * w
+		var d := p.dot(dv)
+		if d > best: best = d; bp = p
+	# chuteiras (caixas presas aos pés)
+	for f in ["foot_L", "foot_R"]:
+		var g := gt * skel.get_bone_global_pose(bi[f])
+		for cx in [-0.049, 0.049]:
+			for cy in [-0.077, -0.063]:
+				for cz in [0.05 - 0.135, 0.05 + 0.135]:
+					var p2 := g * Vector3(cx, cy, cz)
+					var d2 := p2.dot(dv)
+					if d2 > best: best = d2; bp = p2
+	return bp

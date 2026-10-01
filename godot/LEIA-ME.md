@@ -23,6 +23,11 @@ Tudo o que havia na versão do browser também está aqui:
 - No fim aparece o relatório do observador: lances interpretáveis (não penalizam), coerência de critério, jornal, momentos do jogo e "Ver lance".
 - A carreira tem escalões do Distrital à Champions, épocas, tabela de árbitros, jornais, castigos e memória dos jogadores. Fica guardada no próprio dispositivo.
 
+## Verdade dos lances em 3D
+
+- Fora de jogo: mede-se no corpo que se vê, no instante do passe. Conta a parte mais adiantada do atacante (pés, pernas, tronco, cabeça; os braços não) contra a do penúltimo defesa e a bola. No VAR, C troca entre a câmara da linha (de lado, com zoom), de cima e rasante. Ao rever um lance já decidido, a imagem para 3 s no passe com as linhas certas.
+- Entradas: mede-se a distância entre as pernas dos dois. Na simulação o defesa trava a mais de meio metro e o atacante atira-se sem toque; se houver toque, passa a falta. Nas faltas a sério e nos cortes limpos o defesa entra de carrinho (desliza de lado, pés à frente); no corte limpo chega à bola antes do homem.
+
 ## Treino de lances 3D
 
 N muda de lance; R repete com outro toque (força e ângulo novos). A verdade do lance aparece em cima depois do contacto.
