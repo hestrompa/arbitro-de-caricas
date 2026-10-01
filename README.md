@@ -8,6 +8,10 @@ Abre o `index.html` num browser moderno. Não precisa de instalação nem de ser
 
 Com o GitHub Pages ligado (Settings → Pages → Deploy from a branch → `main` / root), o jogo fica em https://hestrompa.github.io/arbitro-de-caricas/. Aberto aí no telemóvel, o menu mostra "Instalar a app" (Android) ou usa-se "Adicionar ao ecrã principal" (iPhone). Depois de instalado abre em ecrã inteiro e funciona sem internet.
 
+## Versão Godot (em curso)
+
+O jogo está a passar para o Godot 4. O primeiro lance 3D já corre em Godot e pode ser jogado no browser em `jogar-godot/` (com o GitHub Pages ligado). Detalhes em [godot/LEIA-ME.md](godot/LEIA-ME.md).
+
 ## Como se joga
 
 - Segues o jogo com a carica preta e amarela: WASD, setas ou toque no campo. Shift faz correr e gasta energia.
