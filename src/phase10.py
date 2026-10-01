@@ -28,5 +28,13 @@ rep("""stage.addEventListener('pointerdown', e => {
 });""")
 rep("startGoalFoul, startLine, fkCheck,", "startGoalFoul, startLine, fkCheck, showCard, capTap, careerPlayers,")
 rep("// ---------- desenho 2D ----------", open('p15.js').read() + '\n// ---------- desenho 2D ----------')
+
+# correção: depois da troca de campo ao intervalo, o golo e o pontapé de baliza contam pela equipa que defende aquela baliza (não pelo lado do campo)
+rep("""    const side = b.x < 0 ? 0 : 1;              // 0 = baliza dos Azuis
+    if (Math.abs(b.y - H / 2) < GOAL_W / 2 && b.z < 2.4) { goal(1 - side); return; }""",
+"""    const side = ownGoalX(0) === (b.x < 0 ? 0 : W) ? 0 : 1;   // equipa que defende esta baliza (muda ao intervalo)
+    if (Math.abs(b.y - H / 2) < GOAL_W / 2 && b.z < 2.4) { goal(1 - side); return; }""")
+rep("gk.x = side === 0 ? 3 : W - 3;", "gk.x = ownGoalX(side) ? W - 3 : 3;")
+
 open('game.js', 'w').write(t)
 print('phase10 ok')

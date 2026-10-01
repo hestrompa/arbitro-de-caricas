@@ -762,7 +762,7 @@ function physics(dt) {
   // saída
   if (b.y < 0 || b.y > H) { throwIn(); return; }
   if (b.x < 0 || b.x > W) {
-    const side = b.x < 0 ? 0 : 1;              // 0 = baliza dos Azuis
+    const side = ownGoalX(0) === (b.x < 0 ? 0 : W) ? 0 : 1;   // equipa que defende esta baliza (muda ao intervalo)
     if (Math.abs(b.y - H / 2) < GOAL_W / 2 && b.z < 2.4) { goal(1 - side); return; }
     if (b.last === side) corner(1 - side, b.y < H / 2 ? 0.5 : H - 0.5); else goalKick(side);
     return;
@@ -813,7 +813,7 @@ function throwIn() {
 function goalKick(side) {
   const b = S.ball, gk = active().find(p => p.team === side && p.role === 'gk');
   Object.assign(b, { vx: 0, vy: 0, vz: 0, z: 0, target: null, trail: [], offInfo: null });
-  if (gk) { gk.x = side === 0 ? 3 : W - 3; gk.y = H / 2; b.owner = gk; gk.cd = 1.2; gk.setPiece = true; stallCheck(gk); }
+  if (gk) { gk.x = ownGoalX(side) ? W - 3 : 3; gk.y = H / 2; b.owner = gk; gk.cd = 1.2; gk.setPiece = true; stallCheck(gk); }
   S.pause = 0.9;
 }
 function corner(team, y) {
