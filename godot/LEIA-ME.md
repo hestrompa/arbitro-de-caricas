@@ -14,13 +14,16 @@ Para jogar no browser: `https://hestrompa.github.io/arbitro-de-caricas/jogar-god
 
 ## Partida
 
-No menu escolhe "Jogar partida". O jogo corre visto de cima (5 minutos reais = 90 minutos). Moves o árbitro com WASD ou setas (Shift para correr) ou clicando/tocando no campo.
+No menu: "Jogar partida", "Carreira", "Treinar o VAR", "Primeiro jogo guiado" (tutorial) e "Treino de lances 3D". O jogo corre visto de cima com caricas (5 minutos reais = 90 minutos). Moves o árbitro com WASD, setas ou clicando no campo (Shift para correr). Se tocares numa carica, abre-se a ficha do jogador.
 
-Quando há uma entrada duvidosa, o jogo passa para 3D e mostra o lance visto de onde estás (a distância e quem está a tapar contam). Depois decides: Siga (Z), Falta (X), Amarelo (C), Vermelho (V) ou Simulação (B), ou com os botões. Tens 7 segundos; podes rever o lance duas vezes (R), já com as outras câmaras (1-4).
+Tudo o que havia na versão do browser também está aqui:
+- Os lances são em 3D e vistos de onde estás: entradas, empurrões, puxões, ombro a ombro, pisões, disputas no ar, mão na bola, faltas em cantos, golos em análise, bola na linha e foras de jogo vistos pelo assistente.
+- Decides com as teclas 1 a 6 ou com os botões. R revê o lance e C muda de câmara. O VAR tem linhas de fora de jogo (Tab troca de linha, as setas mexem-na).
+- A partida tem lei da vantagem, livres com barreira e spray, perdas de tempo, tempo de compensação, intervalo com troca de campo e conversa, protestos, capitães, banco, público, nervos, rádio, comentário, voz e gestos do árbitro em 3D.
+- No fim aparece o relatório do observador: lances interpretáveis (não penalizam), coerência de critério, jornal, momentos do jogo e "Ver lance".
+- A carreira tem escalões do Distrital à Champions, épocas, tabela de árbitros, jornais, castigos e memória dos jogadores. Fica guardada no próprio dispositivo.
 
-A decisão tem consequências no jogo: livre, penálti dentro da área, cartões (dois amarelos = expulso), e o controlo do jogo sobe ou desce. No fim aparece a nota do observador e a lista de lances.
-
-## Treino de lances
+## Treino de lances 3D
 
 N muda de lance; R repete com outro toque (força e ângulo novos). A verdade do lance aparece em cima depois do contacto.
 

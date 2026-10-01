@@ -52,6 +52,7 @@ var dir := Vector2(0, 1)
 var speed := 0.0
 var off := Vector2.ZERO
 var lift := 0.0
+var jump := 0.0                   # salto (bola no ar)
 var rag := false
 var ragT := 0.0
 var drive_anim := "dive"
@@ -226,7 +227,7 @@ func move(p: Vector2, d: Vector2, v: float) -> void:
 	pos = p; dir = d; speed = v
 	if rag: return
 	var q := p + off + stag
-	node.position = Vector3(q.x, lift, q.y)
+	node.position = Vector3(q.x, lift + jump, q.y)
 	node.rotation.y = atan2(d.x, d.y)
 	if clip_speed.has(state) and v > 0.3: anim.speed_scale = clamp(v / clip_speed[state], 0.6, 1.45)
 	else: anim.speed_scale = 1.0
@@ -452,7 +453,7 @@ func reset() -> void:
 	rag = false; phase = "anim"; ragT = 0.0
 	sim.influence = 0.0
 	for ab in proxies: ab.collision_layer = L_PROXY
-	state = ""; off = Vector2.ZERO; lift = 0.0; sp = Vector3.ZERO; sv = Vector3.ZERO
+	state = ""; off = Vector2.ZERO; lift = 0.0; jump = 0.0; sp = Vector3.ZERO; sv = Vector3.ZERO
 	stag = Vector2.ZERO; stagv = Vector2.ZERO; ik.clear(); layer = ""; layer_w = 0.0; lean = Vector3.ZERO; hurt = 0.0
 
 # ---------- contacto com o chão e com os outros ----------
@@ -472,7 +473,7 @@ func ground() -> void:
 	if rag or phase == "levantar": return
 	var low := 99.0
 	for q in gpts(): low = min(low, q[0].y - (q[2] if q[2] > 0.0 else q[1]))
-	var base: float = low - lift
+	var base: float = low - lift - jump
 	var want: float = max(0.0, -base)
 	lift = want if want > lift else lerp(lift, want, 0.3)
-	node.position.y = lift
+	node.position.y = lift + jump
