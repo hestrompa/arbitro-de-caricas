@@ -90,6 +90,18 @@ button:focus-visible { outline: 2px solid var(--whistle); outline-offset: 2px; }
 #decide[data-kind="foul-box"] .choices { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 #decide[data-kind="offside"] .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 #decide[data-kind="mao"] .choices, #decide[data-kind="canto"] .choices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+#decide[data-kind="golo"] .choices, #decide[data-kind="linha"] .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.say { position: absolute; left: 50%; top: 44px; transform: translateX(-50%); width: max-content; max-width: min(560px, 86%); background: #f7f7f2; color: #15161a; padding: 8px 14px; border-radius: 14px; font-size: 15px; font-weight: 600; line-height: 1.3; text-align: center; box-shadow: 0 4px 18px rgba(0,0,0,.45); pointer-events: none; }
+.say::after { content: ""; position: absolute; left: 50%; bottom: -8px; margin-left: -8px; border: 8px solid transparent; border-bottom: 0; border-top-color: #f7f7f2; }
+.paper { background: #f1ece0; color: #1d1d1b; border-radius: 4px; padding: 12px 14px; display: grid; gap: 5px; font-family: Georgia, "Times New Roman", serif; }
+.paper .pname { display: flex; justify-content: space-between; gap: 8px; font-family: var(--display); font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: #6b5f45; border-bottom: 1px solid #cfc6b0; padding-bottom: 4px; }
+.paper .pname b { color: #b5452c; letter-spacing: .08em; }
+.paper h3 { margin: 0; font-size: 21px; line-height: 1.15; text-wrap: balance; }
+.paper p { margin: 0; font-size: 14px; color: #3a3a36; }
+.paper .quote { font-style: italic; }
+tr.me td { color: var(--whistle); font-weight: 600; }
+.papers { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 14px; }
+.papers small { display: block; color: var(--muted); font-size: 12px; }
 .ask { border-color: var(--whistle); }
 .ticker { position: absolute; left: 10px; top: 10px; max-width: 70%; background: rgba(8,14,10,.72); border-left: 3px solid var(--whistle); padding: 4px 10px; font-size: 13px; color: var(--chalk); border-radius: 2px; pointer-events: none; opacity: .9; }
 .ticker.fresh { animation: tick 6s forwards; }
@@ -213,6 +225,7 @@ td.next { color: var(--whistle); }
     <div class="flash" id="flash" hidden>Lance!</div>
     <div class="toast" id="toast" hidden></div>
     <div class="ticker" id="ticker" hidden></div>
+    <div class="say" id="refSay" hidden></div>
     <div class="viewbtns" id="viewBtns" hidden>
       <button type="button" id="viewMine" aria-pressed="false">A tua vista</button>
       <button type="button" id="viewIdeal" aria-pressed="true">Vista ideal</button>
@@ -245,7 +258,7 @@ td.next { color: var(--whistle); }
           <kbd>Shift</kbd><span>correr, gasta energia</span>
           <kbd>1 a 6</kbd><span>siga, falta, amarelo, vermelho, simulação, vantagem</span>
           <kbd>1 a 3</kbd><span>mão na bola e cantos: siga, penálti ou livre, e a variante com cartão</span>
-          <kbd>1 / 2</kbd><span>no fora de jogo: em jogo ou fora de jogo</span>
+          <kbd>1 / 2</kbd><span>no fora de jogo e nos golos: em jogo ou fora, golo válido ou anulado, entrou ou não</span>
           <kbd>R</kbd><span>rever o lance em câmara lenta</span>
           <kbd>1 a 4</kbd><span>nos protestos: ignorar, afastar, amarelo, falar com o capitão</span>
           <kbd>Espaço , .</kbd><span>depois de veres o lance: pausa e fotograma a fotograma</span>
@@ -266,12 +279,16 @@ td.next { color: var(--whistle); }
       <button class="choice" type="button" data-k="foul" data-d="vermelho"><span class="swatch" style="background: var(--bad)"></span>Vermelho<small>4</small></button>
       <button class="choice" type="button" data-k="foul" data-d="simulacao">Simulação<small>5 · amarelo ao atacante</small></button>
       <button class="choice" type="button" data-k="foul" data-d="vantagem">Vantagem<small>6 · deixa seguir</small></button>
-      <button class="choice" type="button" data-k="offside" data-d="emjogo" hidden>Em jogo<small>1 · segue o ataque</small></button>
-      <button class="choice" type="button" data-k="offside" data-d="fora" hidden><span class="swatch" style="background: var(--whistle)"></span>Fora de jogo<small>2 · livre indireto</small></button>
+      <button class="choice" type="button" data-k="offside" data-d="emjogo" hidden>Em jogo<small id="ojSmall">1 · segue o ataque</small></button>
+      <button class="choice" type="button" data-k="offside" data-d="fora" hidden><span class="swatch" style="background: var(--whistle)"></span>Fora de jogo<small id="foraSmall">2 · livre indireto</small></button>
       <button class="choice" type="button" data-k="mao" data-d="mao" hidden>Mão<small id="maoSmall">2 · penálti</small></button>
       <button class="choice" type="button" data-k="mao" data-d="maoAmarelo" hidden><span class="swatch" style="background: var(--whistle)"></span>Mão + amarelo<small>3 · deliberada</small></button>
       <button class="choice" type="button" data-k="canto" data-d="penalti" hidden>Penálti<small>2 · falta do defesa</small></button>
       <button class="choice" type="button" data-k="canto" data-d="ataque" hidden>Falta atacante<small>3 · livre para a defesa</small></button>
+      <button class="choice" type="button" data-k="golo" data-d="valido" hidden>Golo válido<small>1 · ombro com ombro</small></button>
+      <button class="choice" type="button" data-k="golo" data-d="anular" hidden>Anular<small>2 · falta do atacante</small></button>
+      <button class="choice" type="button" data-k="linha" data-d="entrou" hidden>Golo<small>1 · entrou toda</small></button>
+      <button class="choice" type="button" data-k="linha" data-d="naoEntrou" hidden>Não entrou<small>2 · siga o jogo</small></button>
       <button class="choice ghost" type="button" id="replayBtn">Rever<small>R · câmara lenta</small></button>
     </div>
   </section>
@@ -312,6 +329,16 @@ td.next { color: var(--whistle); }
         <p class="small" id="carFinals" hidden></p>
       </div>
     </div>
+    <div class="car-grid">
+      <div id="carRank">
+        <h3>Classificação dos árbitros</h3>
+        <table><thead><tr><th>#</th><th>Árbitro</th><th>Jogos</th><th>Média</th></tr></thead><tbody id="carTable"></tbody></table>
+      </div>
+      <div id="carPapersWrap" hidden>
+        <h3>Nos jornais</h3>
+        <ul class="papers" id="carPapers"></ul>
+      </div>
+    </div>
     <div class="row-actions"><button class="ghostbtn" id="carMenu" type="button">Menu</button><button class="linkbtn" id="carReset" type="button">Apagar carreira</button></div>
   </section>
 
@@ -319,6 +346,7 @@ td.next { color: var(--whistle); }
     <h2 id="revTitle">Relatório do observador</h2>
     <div class="grade"><b id="grade">0.0</b><span id="gradeTxt"></span></div>
     <p class="news" id="careerNote" hidden></p>
+    <div class="paper" id="paper" hidden><div class="pname"><span id="paperName"></span><b id="paperStars"></b></div><h3 id="paperHead"></h3><p id="paperBody"></p><p class="quote" id="paperQuote"></p></div>
     <div class="summary"><h3>Momentos do jogo</h3><ol class="moments" id="sumList"></ol>
       <details class="feed"><summary>Relato completo · <span id="feedCount"></span></summary><ol class="moments" id="feedList"></ol></details></div>
     <div class="table-wrap">
@@ -402,7 +430,7 @@ function newMatch() {
     pause: 0, lanceCd: 10, incidents: [], lance: null, toastT: 0, over: null, markT: 0,
     // assistentes: 0 na linha de cima cobre a metade esquerda, 1 na de baixo cobre a direita
     ast: [{ x: W / 4, y: -1.6, flagT: 0 }, { x: W * 3 / 4, y: H + 1.6, flagT: 0 }], offsides: 0,
-    crowd: 35, protest: null, protests: [], sndT: 0, stress: 15, stressBase: 15, capTrust: [0.5, 0.5], varN: 0, manage: [], added: 0, stall: null, stallN: 0, warned: [false, false], pendCard: null, ask: null, feed: [], addMin: 0,
+    crowd: 35, protest: null, protests: [], sndT: 0, stress: 15, stressBase: 15, capTrust: [0.5, 0.5], varN: 0, manage: [], fk: null, coach: null, coachW: [0, 0], coachOff: [false, false], coachN: 0, gesture: null, lastOff: null, anulados: 0, paper: null, added: 0, stall: null, stallN: 0, warned: [false, false], pendCard: null, ask: null, feed: [], addMin: 0,
   };
   kickoff(0);
 }
@@ -574,7 +602,7 @@ function shoot(p, pen) {
   const gy = H / 2 + (Math.random() < 0.5 ? -1 : 1) * rand(0.3, 1) * GOAL_W * (pen ? 0.45 : 0.62);
   const n = norm(gx - b.x, gy - b.y);
   const sp = pen ? 22 : rand(19, 26);
-  Object.assign(b, { owner: null, kicker: p, vx: n.x * sp, vy: n.y * sp, vz: pen ? rand(0, 2.5) : rand(0, 4.2), z: 0.1, last: p.team, noPick: p, noPickT: 0.4, target: null, penalty: !!pen });
+  Object.assign(b, { owner: null, kicker: p, shotFrom: { x: p.x, y: p.y }, vx: n.x * sp, vy: n.y * sp, vz: pen ? rand(0, 2.5) : rand(0, 4.2), z: 0.1, last: p.team, noPick: p, noPickT: 0.4, target: null, penalty: !!pen });
   if (mode === 'play') { Sfx.kick(clamp(1.2 - len(b.x - S.ref.x, b.y - S.ref.y) / 45, 0.2, 1)); setTimeout(() => { if (S && S.ball.owner === null && mode === 'play') Sfx.ooh(); }, 700); }
   p.dribble = null;
 }
@@ -693,12 +721,14 @@ function physics(dt) {
   }
   if (!best) return;
   const oi = b.offInfo; b.offInfo = null;
+  if (oi && best.id === oi.receiver && oi.margin > -1.8 && oi.margin <= 1.2 && !best.off) S.lastOff = { oi, t: S.t, n: S.incidents.length, o: S.offsides };
   if (oi && best.id === oi.receiver && oi.margin > -1.0 && !best.off) {
     if (oi.margin > 1.2) { flagOffside(oi); return; }
     if (S.lanceCd <= 0) { startOffside(oi); return; }
     if (assistantCall(oi)) { flagOffside(oi); return; }
   }
   if (handCheck(best, sp)) return;
+  if (lineCheck(best, sp)) return;
   if (best.role === 'gk' && sp > 12 && b.last !== best.team) {
     const saveP = b.penalty ? 0.28 : clamp(0.95 - (sp - 12) * 0.03, 0.55, 0.9);
     if (Math.random() > saveP) { b.noPick = best; b.noPickT = 0.5; return; }          // passa pelo guarda-redes
@@ -737,7 +767,7 @@ function corner(team, y) {
   S.pause = 1.1;
   if (p) cornerCheck(team, p);
 }
-function goal(team) {
+function goalAward(team) {
   S.score[team]++; S.added += 0.4;
   $('s' + team).textContent = S.score[team];
   toast('Golo ' + deT(team) + '!', 2.2);
@@ -884,6 +914,7 @@ function decide(d, timedOut) {
   if (!S.noVar && !L.varDone && !timedOut && needsVar(L, d) && Math.random() < 0.9) { startVar(L, d); return; }
   L.decided = d; L.timedOut = !!timedOut;
   if (L.kind === 'offside') { decideOffside(L, d, timedOut); return; }
+  if (L.scene && L.goalCtx) { decideGoal(L, d, timedOut); return; }
   if (L.scene) { decideScene(L, d, timedOut); return; }
   let pts = 0, dc = 0;
   const atkT = L.att.team, defT = L.def.team;
@@ -922,6 +953,7 @@ function decide(d, timedOut) {
       b.owner = att; b.last = att.team; att.cd = 0.9; att.setPiece = true; b.target = null;
       active().forEach(p => { if (p.team !== att.team) { const dd = len(p.x - att.x, p.y - att.y); if (dd < 6) { const n = norm(p.x - att.x, p.y - att.y); p.x = att.x + n.x * 6; p.y = att.y + n.y * 6; } } });
       if (!msg) msg = 'Livre para ' + artT(att.team);
+      fkCheck(att);
     }
     if (L.inBox) msg = (msg ? msg + ' · ' : '') + 'Penálti para ' + artT(att.team);
   } else if (d === 'vantagem') {
@@ -944,10 +976,12 @@ function decide(d, timedOut) {
   if (against !== null) crowdReact(against, wrong);
   const sev = d === 'vermelho' ? 0.6 : d === 'amarelo' ? 0.35 : d === 'simulacao' ? 0.35 : foul ? (L.inBox ? 0.5 : 0.12) : 0.18;
   feedDecision(L, d, msg);
-  hide3D(); showDecide(false); toast(msg, 2.6);
-  mode = 'play'; S.pause = Math.max(S.pause, 1.2);
-  protestAfter(against, sev, wrong);
-  if (S.control <= 10) endMatch('abandonado');
+  finishDecision(L, d, msg, () => {
+    hide3D(); toast(msg, 2.6);
+    mode = 'play'; S.pause = Math.max(S.pause, 1.2);
+    protestAfter(against, sev, wrong);
+    if (S.control <= 10) endMatch('abandonado');
+  });
 }
 
 function decideOffside(L, d, timedOut) {
@@ -961,7 +995,8 @@ function decideOffside(L, d, timedOut) {
   S.control = clamp(S.control + dc, 0, 100);
   S.incidents.push(L); stressAfter(L); S.added += 0.2;
   let msg;
-  if (d === 'fora') { flagOffside(L.oi); msg = 'Fora de jogo: livre para ' + artT(1 - L.oi.team); }
+  if (L.goal !== undefined) msg = goalVerdict(L, d !== 'fora');
+  else if (d === 'fora') { flagOffside(L.oi); msg = 'Fora de jogo: livre para ' + artT(1 - L.oi.team); }
   else {
     const r = S.players[L.oi.receiver], b = S.ball;
     b.owner = r; b.last = r.team; b.target = null; r.cd = 0.4;
@@ -974,10 +1009,12 @@ function decideOffside(L, d, timedOut) {
   const against = d === 'fora' ? L.oi.team : 1 - L.oi.team;
   crowdReact(against, !ok);
   feedDecision(L, d, msg);
-  hide3D(); showDecide(false); toast(msg, 2.4);
-  mode = 'play'; S.pause = Math.max(S.pause, 1);
-  protestAfter(against, d === 'fora' ? 0.28 : 0.18, !ok);
-  if (S.control <= 10) endMatch('abandonado');
+  finishDecision(L, d, msg, () => {
+    hide3D(); toast(msg, 2.4);
+    mode = 'play'; S.pause = Math.max(S.pause, 1);
+    protestAfter(against, d === 'fora' ? 0.28 : 0.18, !ok);
+    if (S.control <= 10) endMatch('abandonado');
+  });
 }
 
 function penalty(att) {
@@ -1066,7 +1103,7 @@ function init3D() {
   for (let i = 0; i < 6; i++) { bg.beginPath(); bg.arc(10 + i * 22, i % 2 ? 18 : 44, 7, 0, Math.PI * 2); bg.fill(); }
   const ball = new T.Mesh(new T.SphereGeometry(0.11, 20, 16), new T.MeshStandardMaterial({ map: new T.CanvasTexture(ballTex), roughness: 0.45 }));
   ball.castShadow = true; scene.add(ball);
-  R3 = { T, renderer, scene, cam, rigs, ball, sun, lines, stadium };
+  R3 = { T, renderer, scene, cam, rigs, ball, sun, lines, stadium, postMat };
   return R3;
 }
 
@@ -1378,7 +1415,7 @@ function show3D(L, review) {
   captions3D(L);
   if (!review && L.varReview) { $('decideMsg').textContent = (L.training ? 'Treino do VAR. A decisão em campo foi ' : 'Revisão no monitor do VAR. Decidiste ') + DEC_LABEL[L.varFirst].toLowerCase() + '. Confirmas ou mudas?'; showDecide(true); }
   else if (!review) {
-    $('decideMsg').textContent = L.kind === 'offside'
+    $('decideMsg').textContent = L.kind === 'offside' && L.goal !== undefined ? goalOffMsg(L) : L.kind === 'offside'
       ? 'Passe aos ' + L.minute + "'. Bandeira " + (L.flag ? 'levantada' : 'em baixo') + '. O recetor estava em jogo?'
       : lanceMsg(L);
     showDecide(true);
@@ -1703,6 +1740,7 @@ function calibFoul(L) {
 
 function pose3D(L, t) {
   const R = R3; if (!R) return;
+  if (!L.scene) glassPosts(null);
   if (L.kind === 'offside') { poseOffside(L, t); return; }
   if (L.scene) { poseScene(L, t); return; }
   $('pip').hidden = true;
@@ -1849,6 +1887,7 @@ function crowdReact(against, wrong) {
 }
 const FOUL = d => d === 'falta' || d === 'amarelo' || d === 'vermelho';
 function needsVar(L, d) {
+  if (L.goalCtx && L.kind !== 'offside') return d !== L.truth;
   if (L.scene) return L.inBox && scenePen(L, d) !== scenePen(L, L.truth);
   if (L.kind === 'offside') return (d === 'fora') !== (L.truth === 'fora') && Math.abs(L.oi.margin) > 0.03;
   if (d === L.truth) return false;
@@ -1856,7 +1895,7 @@ function needsVar(L, d) {
   if (L.inBox && FOUL(d) !== FOUL(L.truth)) return true;                      // penálti
   return false;
 }
-function varEligible(L, d) { if (L.scene) return L.inBox && (scenePen(L, d) || scenePen(L, L.truth)); return L.kind === 'offside' || d === 'vermelho' || L.truth === 'vermelho' || (L.inBox && (FOUL(d) || FOUL(L.truth))); }
+function varEligible(L, d) { if (L.goalCtx) return true; if (L.scene) return L.inBox && (scenePen(L, d) || scenePen(L, L.truth)); return L.kind === 'offside' || d === 'vermelho' || L.truth === 'vermelho' || (L.inBox && (FOUL(d) || FOUL(L.truth))); }
 function startVar(L, d) {
   L.varFirst = d; L.varDone = true;
   if (!L.training) { S.varN++; S.added += 0.7; feed('O VAR chama o árbitro ao monitor.', 'var'); S.control = clamp(S.control - 4 * authK(), 0, 100); addStress(10); }
@@ -1903,6 +1942,7 @@ function varReadout(L) {
 // protestos: os jogadores prejudicados vão ter com o árbitro
 function protestAfter(team, sev, wrong) {
   if (team === null || team === undefined || mode !== 'play' || S.training) return;
+  coachCheck(team, sev, wrong);
   const I = clamp(sev - (refAttr('aut') - 5) * 0.04 + (wrong ? 0.35 : 0) + S.aggr[team] * 0.3 + (team === HOME ? S.crowd / 100 * 0.15 : 0) + rand(-0.1, 0.1), 0, 1);
   if (I < 0.3) return;
   const ps = active().filter(p => p.team === team && p.role !== 'gk').sort((a, b) => len(a.x - S.ref.x, a.y - S.ref.y) - len(b.x - S.ref.x, b.y - S.ref.y)).slice(0, 1 + Math.round(I * 3));
@@ -2118,6 +2158,7 @@ function careerAfter(grade, kind) {
   S.career.done = true;
   const T = TIERS[C.tier], g = Math.round(grade * 10) / 10, round = C.round;
   C.sg.push(g);
+  career2(g);
   C.log.unshift({ s: C.season, t: C.tier, r: round, h: S.career.h, a: S.career.a, sc: S.score.slice(), g });
   C.log = C.log.slice(0, 30);
   const gain = 1 + (g >= 8 ? 1 : 0) + (g >= 9 ? 1 : 0);
@@ -2139,18 +2180,20 @@ function careerAfter(grade, kind) {
       else endSeason('Média de ' + f1(avg) + ': ficas na ' + T.name + ' mais uma época (para subir precisavas de ' + f1(T.target) + ').', C.tier);
     }
   }
+  if (C.posNote) msg += ' ' + C.posNote;
   msg += ' +' + gain + (gain > 1 ? ' pontos' : ' ponto') + ' de atributo.';
   saveCareer();
   note.textContent = msg; note.hidden = false;
   $('againBtn').textContent = 'Continuar carreira';
 }
 function endSeason(news, tier) {
-  C.news = news; C.tier = clamp(tier, 0, TIERS.length - 1); C.season++; C.round = 0; C.sg = []; C.fixtures = makeFixtures(C.tier);
+  C.news = news + (C.rankNote ? ' ' + C.rankNote : ''); C.rankNote = ''; C.tier = clamp(tier, 0, TIERS.length - 1); C.season++; C.round = 0; C.sg = []; C.fixtures = makeFixtures(C.tier); C.refs = makeRefs(C.tier, 0);
 }
 
 // ecrã da carreira: resumo do próximo jogo no relvado, escada e atributos por baixo
 function openCareer() {
   if (!C) newCareer();
+  migrateCareer();
   mode = 'menu'; reviewing = null; hide3D();
   $('menu').hidden = true; $('review').hidden = true; $('help').hidden = true; $('toast').hidden = true; $('protest').hidden = true; $('decide').hidden = true;
   renderCareer(); newMatch();
@@ -2191,6 +2234,7 @@ function renderCareer() {
     btn.addEventListener('click', () => { if (!C.pts || C.attrs[a.k] >= 10) return; C.attrs[a.k]++; C.pts--; saveCareer(); renderCareer(); });
     row.append(tx, bar, btn); at.appendChild(row);
   });
+  renderCareer2();
   $('carFinals').hidden = !C.finals; $('carFinals').textContent = C.finals ? 'Finais do Mundial apitadas: ' + C.finals : '';
 }
 function menuCareerLabel() { loadCareer(); $('careerBtn').textContent = C ? 'Continuar carreira' : 'Carreira'; }
@@ -2235,6 +2279,8 @@ function choicesFor(L) {
   document.querySelectorAll('#decide .choice[data-d]').forEach(b => { b.hidden = !b.dataset.k.split(' ').includes(k) || (b.dataset.d === 'vantagem' && !!(L && L.inBox)); });
   if (k === 'mao') $('maoSmall').textContent = '2 · ' + (L.inBox ? 'penálti' : 'livre');
   $('faltaSmall').textContent = '2 · ' + (k === 'foul' && L && L.inBox ? 'penálti' : 'livre');
+  const gl = k === 'offside' && L && L.goal !== undefined;
+  $('ojSmall').textContent = '1 · ' + (gl ? 'golo válido' : 'segue o ataque'); $('foraSmall').textContent = '2 · ' + (gl ? 'golo anulado' : 'livre indireto');
 }
 const pinfo = p => ({ id: p.id, team: p.team, num: p.num, role: p.role });
 function pickTruth(w) { let r = Math.random() * Object.values(w).reduce((a, b) => a + b, 0); for (const [k, v] of Object.entries(w)) { r -= v; if (r <= 0) return k; } return Object.keys(w)[0]; }
@@ -2377,6 +2423,8 @@ function advPlay(L) {
 }
 
 function lanceMsg(L) {
+  if (L.kind === 'golo') return 'Golo ' + deT(L.goal) + ' aos ' + L.minute + "'. Antes do remate, o " + L.att.num + ' fez falta sobre o ' + L.def.num + '?';
+  if (L.kind === 'linha') return (L.save ? 'Defesa em cima da linha aos ' + L.minute + "'. " : 'Golo ' + deT(L.goal) + '? ') + 'A bola passou toda a linha de golo?';
   if (L.kind === 'mao') return 'Aos ' + L.minute + "' a bola bateu no " + L.def.num + ' ' + deT(L.def.team) + (L.inBox ? ', dentro da área' : '') + '. Foi mão?';
   if (L.kind === 'canto') return (L.cross ? 'Cruzamento' : 'Canto') + ' aos ' + L.minute + "'. Houve falta na área?";
   const d = S.players[L.def.id], bits = [];
@@ -2415,7 +2463,7 @@ function decideScene(L, d, timedOut) {
   } else if (d === 'mao' || d === 'maoAmarelo') {
     const [tk] = nearest(active().filter(p => p.team === atkT && p.role !== 'gk'), L.P.x, L.P.y);
     b.x = L.P.x; b.y = L.P.y; tk.x = L.P.x - TEAMS[atkT].dir * 0.8; tk.y = L.P.y; b.owner = tk; b.last = atkT; tk.cd = 0.9; tk.setPiece = true;
-    msg = 'Mão na bola: livre para ' + artT(atkT); against = defT;
+    msg = 'Mão na bola: livre para ' + artT(atkT); against = defT; fkCheck(tk);
   } else {
     const keep = def.off ? active().find(p => p.team === defT) : def;
     b.x = keep.x; b.y = keep.y; b.owner = keep; b.last = defT; keep.cd = 0.5;
@@ -2428,10 +2476,12 @@ function decideScene(L, d, timedOut) {
   if (d !== 'siga') Sfx.whistle(d === 'maoAmarelo' || pen ? 'long' : 'short');
   if (against !== null) crowdReact(against, pts < 1);
   feedDecision(L, d, msg);
-  hide3D(); showDecide(false); toast(msg, 2.6);
-  mode = 'play'; S.pause = Math.max(S.pause, 1.2);
-  protestAfter(against, sev, pts < 1);
-  if (S.control <= 10) endMatch('abandonado');
+  finishDecision(L, d, msg, () => {
+    hide3D(); toast(msg, 2.6);
+    mode = 'play'; S.pause = Math.max(S.pause, 1.2);
+    protestAfter(against, sev, pts < 1);
+    if (S.control <= 10) endMatch('abandonado');
+  });
 }
 
 // ---------- 3D dos lances novos ----------
@@ -2590,10 +2640,10 @@ function sceneCam(L, t, look, width, ideal) {
   L.cam.x = lerp(L.cam.x, look.x, 0.12); L.cam.y = lerp(L.cam.y, look.y, 0.12); L.cam.fov = lerp(L.cam.fov, vfov, 0.08);
   R.cam.fov = L.cam.fov; R.cam.updateProjectionMatrix();
   R.cam.position.set(cx, ch, cy);
-  const sh = camShake(L, camDist); R.cam.lookAt(L.cam.x + sh.x, 1 + sh.y, L.cam.y + sh.z);
+  const sh = camShake(L, camDist); R.cam.lookAt(L.cam.x + sh.x, (L.ideal && ideal.lh !== undefined ? ideal.lh : 1) + sh.y, L.cam.y + sh.z);
   R.renderer.render(R.scene, R.cam);
 }
-function poseScene(L, t) { $('pip').hidden = true; if (L.kind === 'mao') poseHand(L, t); else poseCorner(L, t); }
+function poseScene(L, t) { $('pip').hidden = true; glassPosts(L); if (L.kind === 'mao') poseHand(L, t); else if (L.kind === 'golo') poseGoalFoul(L, t); else if (L.kind === 'linha') poseLine(L, t); else poseCorner(L, t); }
 
 // guarda-redes: sai a correr e atira-se aos pés (queda captada)
 function gkPose(L, d, t, dRun) {
@@ -2725,7 +2775,8 @@ function feedDecision(L, d, msg) {
   if (L.training) return;
   const kind = d === 'amarelo' || d === 'vermelho' || d === 'simulacao' || d === 'maoAmarelo' ? 'card' : /Penálti/.test(msg) ? 'pen' : 'info';
   let intro = '';
-  if (L.kind === 'offside') intro = pickOf(['Passe em profundidade para ' + who(S.players[L.oi.receiver].num, L.oi.team) + ': ', 'Bola nas costas da defesa: ']);
+  if (L.goalCtx) intro = pickOf(['Revisão do golo: ', 'Antes de validar o golo: ', 'Golo em análise: ']);
+  else if (L.kind === 'offside') intro = pickOf(['Passe em profundidade para ' + who(S.players[L.oi.receiver].num, L.oi.team) + ': ', 'Bola nas costas da defesa: ']);
   else if (L.kind === 'mao') intro = pickOf(['Remate do ' + L.att.num + ' e a bola bate no ' + L.def.num + ': ', 'A bola bate no ' + L.def.num + ' ' + deT(L.def.team) + ': ']);
   else if (L.kind === 'canto') intro = pickOf(['Muita luta na área no canto: ', 'Empurrões na área no canto ' + deT(L.att.team) + ': ']);
   else if (L.def.role === 'gk') intro = 'O guarda-redes sai aos pés do ' + L.att.num + ': ';
@@ -2852,6 +2903,556 @@ function animStadium() {
   }).catch(() => { /* dentro do artefacto não há manifesto */ });
 })();
 
+// ---------- fase 6: lances de golo (falta antes do golo, fora de jogo, linha de golo) e livres diretos ----------
+Object.assign(LABEL, { valido: 'Golo limpo', anular: 'Falta do atacante antes do golo', entrou: 'A bola entrou toda', naoEntrou: 'A bola não entrou toda' });
+Object.assign(DEC_LABEL, { valido: 'Golo válido', anular: 'Golo anulado', entrou: 'Golo', naoEntrou: 'Não entrou' });
+Object.assign(KEYS5, { golo: { '1': 'valido', '2': 'anular' }, linha: { '1': 'entrou', '2': 'naoEntrou' } });
+Object.assign(KEYLBL, { golo: 'Contacto', linha: 'Linha' });
+const LINE_IN = 0.17;                         // centro da bola a 17 cm da linha (meia linha + raio): passou toda
+
+// o golo só conta depois de o árbitro ver o lance que interessa
+function goal(team) { if (goalCheck(team)) return; goalAward(team); }
+function goalCheck(team) {
+  const b = S.ball, lo = S.lastOff; S.lastOff = null;
+  if (mode !== 'play' || S.training || b.penalty || S.lanceCd > 9) return false;
+  const k = b.kicker && b.kicker.team === team && !b.kicker.off ? b.kicker : null;
+  if (!k) return false;
+  if (lo && S.t - lo.t < 6 && lo.oi.team === team && lo.n === S.incidents.length && lo.o === S.offsides && Math.random() < 0.85) { startGoalOffside(lo.oi, team); return true; }
+  const r = Math.random();
+  if (r < 0.3 && b.shotFrom && startGoalFoul(team, k)) return true;
+  if (r > 0.85 && startLine(team, k, 'entrou', false)) return true;
+  return false;
+}
+// fora de jogo no passe que deu o golo: o assistente não levantou a bandeira
+function startGoalOffside(oi, team) {
+  startOffside(oi);
+  Object.assign(S.lance, { flag: false, goal: team, goalCtx: true, dflt: 'emjogo' });
+  $('flash').textContent = 'Golo?';
+}
+function goalOffMsg(L) { return 'Golo ' + deT(L.goal) + ' aos ' + L.minute + "'. A bandeira ficou em baixo. No passe da jogada, o recetor estava em jogo?"; }
+
+// falta do atacante antes do remate: empurra o defesa com o braço ou é só ombro com ombro
+function startGoalFoul(team, k) {
+  const b = S.ball, gx = oppGoalX(team), dirIn = gx > W / 2 ? 1 : -1;
+  const G = { x: gx + dirIn * 0.3, y: clamp(b.y, H / 2 - GOAL_W / 2 + 0.5, H / 2 + GOAL_W / 2 - 0.5) };
+  let Pk = { x: b.shotFrom.x, y: b.shotFrom.y };
+  const dg = len(G.x - Pk.x, G.y - Pk.y), want = clamp(dg, 9, 22), nn = norm(Pk.x - G.x, Pk.y - G.y);
+  Pk = { x: G.x + nn.x * want, y: G.y + nn.y * want };
+  const def = active().filter(p => p.team !== team && p.role !== 'gk').sort((p, q) => len(p.x - Pk.x, p.y - Pk.y) - len(q.x - Pk.x, q.y - Pk.y))[0];
+  const gk = active().find(p => p.team !== team && p.role === 'gk');
+  if (!def || !gk) return false;
+  const A = norm(G.x - Pk.x, G.y - Pk.y), perp = { x: -A.y, y: A.x }, s = Math.random() < 0.5 ? 1 : -1;
+  const truth = pickTruth({ valido: 0.55, anular: 0.45 });
+  const vA = 6, CT = 1.45, KT = CT + 0.4, HT = KT + want / 24;
+  const C = { x: Pk.x - A.x * vA * (KT - CT), y: Pk.y - A.y * vA * (KT - CT) };
+  const others = active().filter(p => p !== k && p !== def && p !== gk && len(p.x - Pk.x, p.y - Pk.y) < 32).map(snapOf);
+  startScene({ kind: 'golo', truth, P: C, C, Pk, G, A, D: A, perp, s, vA, CT, KT, HT, keyT: CT, dur: HT + 1.5, dirIn, gx,
+    inBox: inOwnBox(1 - team, Pk.x, Pk.y), att: pinfo(k), def: pinfo(def), taker: pinfo(gk), others, goal: team, goalCtx: true, dflt: 'valido',
+    fall: truth === 'anular' || Math.random() < 0.45 }, perp, [k, def, gk], 'Golo?');
+  return true;
+}
+// bola em cima da linha: o guarda-redes tira-a de lá; passou toda ou não?
+function startLine(team, k, truth, save) {
+  const b = S.ball, gx = oppGoalX(team), dirIn = gx > W / 2 ? 1 : -1;
+  const gk = active().find(p => p.team !== team && p.role === 'gk');
+  if (!gk) return false;
+  const m = truth === 'entrou' ? rand(0.2, 0.31) : rand(0.0, 0.14);
+  const Y = clamp(b.y, H / 2 - GOAL_W / 2 + 0.7, H / 2 + GOAL_W / 2 - 0.7);
+  const B = { x: gx + dirIn * m, y: Y, h: rand(0.2, 0.45) };
+  const sf = b.shotFrom || { x: gx - dirIn * 15, y: H / 2 + rand(-7, 7) };
+  const nn = norm(sf.x - B.x, sf.y - B.y), dd = clamp(len(sf.x - B.x, sf.y - B.y), 8, 20);
+  const Pk = { x: B.x + nn.x * dd, y: B.y + nn.y * dd }, A = { x: -nn.x, y: -nn.y };
+  const KT = 0.9, HT = KT + dd / 24;
+  const others = active().filter(p => p !== k && p !== gk && len(p.x - B.x, p.y - B.y) < 30).map(snapOf);
+  startScene({ kind: 'linha', truth, P: { x: gx - dirIn * 0.6, y: Y }, B, Pk, A, D: A, KT, HT, keyT: HT + 0.15, dur: HT + 1.6, dirIn, gx, m,
+    inBox: true, att: pinfo(k), def: pinfo(gk), others, goal: team, goalCtx: true, dflt: save ? 'naoEntrou' : 'entrou', save: !!save }, { x: 0, y: 1 }, [k, gk], save ? 'Entrou?' : 'Golo?');
+  return true;
+}
+// defesa do guarda-redes em cima da linha (o remate não chegou a ser golo no 2D)
+function lineCheck(gk, sp) {
+  const b = S.ball, k = b.kicker;
+  if (mode !== 'play' || S.training || S.lanceCd > 0 || gk.role !== 'gk' || b.last === gk.team || !k || k.team === gk.team || sp < 12 || b.penalty) return false;
+  if (Math.abs(b.x - ownGoalX(gk.team)) > 2.2 || Math.abs(b.y - H / 2) > GOAL_W / 2 || Math.random() > 0.3) return false;
+  return startLine(k.team, k, pickTruth({ naoEntrou: 0.65, entrou: 0.35 }), true);
+}
+
+// decisão nos lances de golo
+function goalVerdict(L, allowed) {
+  const team = L.goal, b = S.ball;
+  Object.assign(b, { vx: 0, vy: 0, vz: 0, z: 0, target: null, trail: [], offInfo: null, penalty: false });
+  if (allowed) { goalAward(team); return L.kind === 'linha' && L.save ? 'A bola entrou toda: golo ' + deT(team) : 'Golo validado'; }
+  S.anulados = (S.anulados || 0) + 1;
+  if (L.kind === 'offside') { flagOffside(L.oi); return 'Golo anulado por fora de jogo'; }
+  if (L.kind === 'golo') {
+    const d0 = S.players[L.def.id], tk = d0.off ? active().find(p => p.team === d0.team && p.role !== 'gk') : d0;
+    tk.x = clamp(L.C.x, 1, W - 1); tk.y = clamp(L.C.y, 1, H - 1);
+    Object.assign(b, { x: tk.x, y: tk.y, owner: tk, last: tk.team }); tk.cd = 0.9; tk.setPiece = true;
+    return 'Golo anulado: falta do ' + L.att.num + ' ' + deT(team);
+  }
+  const gk = S.players[L.def.id];
+  gk.x = L.gx - L.dirIn * 1.2; gk.y = L.B.y;
+  Object.assign(b, { x: gk.x, y: gk.y, owner: gk, last: gk.team }); gk.cd = 1.1;
+  return L.save ? 'Não entrou toda: o guarda-redes salvou' : 'Golo anulado: a bola não entrou toda';
+}
+function decideGoal(L, d, timedOut) {
+  const ok = d === L.truth;
+  let pts = ok ? 1 : 0, dc = ok ? 4 : -12;
+  if (timedOut) dc -= 4;
+  if (L.varFirst) { if (pts === 1) { pts = 0.7; dc = 1; } else { pts = 0; dc = -15; } }
+  if (dc < 0) dc *= authK();
+  S.control = clamp(S.control + dc, 0, 100);
+  L.pts = pts; S.incidents.push(L); stressAfter(L); S.added += 0.3;
+  const allowed = d === 'valido' || d === 'entrou';
+  let msg = goalVerdict(L, allowed);
+  const against = allowed ? 1 - L.goal : L.goal;
+  if (L.varFirst) msg = (pts > 0 ? 'Corrigido com o VAR · ' : 'Mantiveste contra o VAR · ') + msg;
+  else if (!S.noVar && !timedOut) msg += ' · VAR confirmou';
+  if (!allowed) Sfx.whistle('short');
+  crowdReact(against, pts < 1);
+  feedDecision(L, d, msg);
+  finishDecision(L, d, msg, () => {
+    hide3D(); toast(msg, 2.6);
+    mode = 'play'; S.pause = Math.max(S.pause, 1.2);
+    protestAfter(against, allowed ? 0.4 : 0.5, pts < 1);
+    if (S.control <= 10) endMatch('abandonado');
+  });
+}
+
+// ---------- 3D dos lances de golo ----------
+// postes translúcidos na câmara da linha, para se ver a bola encostada à linha
+function glassPosts(L) {
+  const m = R3 && R3.postMat; if (!m) return;
+  const on = !!(L && L.kind === 'linha' && L.ideal);
+  if (m.transparent !== on) { m.transparent = on; m.opacity = on ? 0.18 : 1; m.depthWrite = !on; m.needsUpdate = true; }
+}
+function poseGoalFoul(L, t) {
+  const { a, d, tk } = L.rig, { Pk, G, A, perp, s, vA, CT, KT, HT } = L;
+  // atacante: corre para a baliza e remata em KT
+  const apos = t < KT ? { x: Pk.x - A.x * vA * (KT - t), y: Pk.y - A.y * vA * (KT - t) } : { x: Pk.x + A.x * Math.min(t - KT, 0.35) * 2, y: Pk.y + A.y * Math.min(t - KT, 0.35) * 2 };
+  placeRig(a, apos.x, apos.y, A.x, A.y);
+  const ck = anims().kick, kk = t - KT, run = runAt(t, 0, t < KT ? 0.8 : Math.max(0.15, 0.8 - kk));
+  let po = ck && kk >= -ck.key ? { mix: [run, { clip: 'kick', t: kk + ck.key }, smooth((kk + ck.key) / 0.2)] } : run;
+  const shove = L.truth === 'anular' ? Math.max(0, Math.sin(clamp((t - (CT - 0.3)) / 0.55, 0, 1) * Math.PI)) : 0;
+  setPose(a, po);
+  if (shove > 0) {                                                  // braço esticado para o peito do defesa
+    const v = new R3.T.Vector3(perp.x * s + A.x * 0.15, -0.12, perp.y * s + A.y * 0.15).normalize(), rot = a.outer.rotation.y;
+    aimArm(a, v.x * Math.cos(rot) - v.z * Math.sin(rot) >= 0, v, shove);
+  }
+  // defesa: colado ao lado do atacante; depois do contacto fica para trás (e às vezes cai)
+  let dp = { x: apos.x - A.x * 0.25 + perp.x * s * 0.66, y: apos.y - A.y * 0.25 + perp.y * s * 0.66 };
+  if (t > CT) {
+    const u = t - CT, side = L.truth === 'anular' ? 1.5 * (1 - Math.exp(-u * 3)) : 0.35 * (1 - Math.exp(-u * 3)), back = Math.min(u, 1.2) * (L.truth === 'anular' || L.fall ? vA * 0.75 : vA * 0.45);
+    dp = { x: dp.x + perp.x * s * side - A.x * back, y: dp.y + perp.y * s * side - A.y * back };
+  }
+  placeRig(d, dp.x, dp.y, A.x, A.y);
+  const dRun = runAt(t, 1.3, t < CT ? 0.8 : Math.max(0.15, 0.8 - (t - CT) * 0.6));
+  if (L.fall && t > CT) { const u = t - CT - (L.truth === 'anular' ? 0.02 : 0.12); setPose(d, u < 0 ? dRun : { mix: [dRun, L.truth === 'anular' ? { clip: 'fallback', t: 0.3 + u } : { clip: 'dive', t: 0.1 + u * 1.1 }, smooth(u / 0.15)] }); }
+  else setPose(d, dRun);
+  // guarda-redes: atira-se para o lado do remate, sem chegar
+  const gpos = { x: L.gx - L.dirIn * 1.3, y: lerp(H / 2, Pk.y, 0.15) }, gs = G.y >= gpos.y ? 1 : -1;
+  placeRig(tk, gpos.x, gpos.y, -L.dirIn * 0.35, gs);
+  const gu = t - (HT - 0.45);
+  setPose(tk, gu < 0 ? idleAt(t, 3) : { mix: [idleAt(t, 3), { clip: 'dive', t: gu * 1.1 }, smooth(gu / 0.12)] });
+  // bola: nos pés do atacante, remate em KT, rede em HT
+  const b0 = { x: Pk.x + A.x * 0.45, y: Pk.y + A.y * 0.45 };
+  let bx, by, bh;
+  if (t < KT) { bx = apos.x + A.x * 0.55; by = apos.y + A.y * 0.55; bh = 0.11; R3.ball.rotation.x += 0.15; }
+  else if (t < HT) { const u = (t - KT) / (HT - KT); bx = lerp(b0.x, G.x, u); by = lerp(b0.y, G.y, u); bh = lerp(0.11, 0.8, u) + Math.sin(u * Math.PI) * 0.5; R3.ball.rotation.x += 0.35; }
+  else { const u = t - HT, sd = Math.min(1.3, 6 * (1 - Math.exp(-u * 4)) / 4); bx = G.x + A.x * sd; by = G.y + A.y * sd; bh = Math.max(0.11, 0.8 - u * 1.8); }
+  R3.ball.position.set(bx, bh, by);
+  poseOthers5(L, t, KT, Pk);
+  const mid = { x: (apos.x + dp.x) / 2, y: (apos.y + dp.y) / 2 }, k2 = smooth((t - KT) / 0.8);
+  const look = { x: lerp(mid.x, (mid.x + G.x) / 2, k2), y: lerp(mid.y, (mid.y + G.y) / 2, k2) };
+  const C = L.C, side = { x: -perp.x * s, y: -perp.y * s };
+  sceneCam(L, t, look, lerp(8, len(G.x - mid.x, G.y - mid.y) + 6, k2), { x: C.x - A.x * 6.5 + side.x * 1.6, y: C.y - A.y * 6.5 + side.y * 1.6, h: 2.5, look: { x: C.x + A.x * 1.2, y: C.y + A.y * 1.2 }, w: 6.5 });
+}
+function poseLine(L, t) {
+  const { a, d } = L.rig, { B, Pk, A, KT, HT, dirIn, gx } = L;
+  const kp = kickPoint(L, a, Pk, A);
+  poseKicker(a, Pk, A, t, KT);
+  // guarda-redes recua para a linha e cai de costas em cima da bola
+  const sy = B.y >= H / 2 ? 1 : -1, back = smooth(t / HT);
+  const gp = { x: gx - dirIn * lerp(2.4, 1.05, back), y: lerp(H / 2 + (B.y - H / 2) * 0.4, B.y - sy * 0.35, back) };
+  placeRig(d, gp.x, gp.y, -dirIn, 0);
+  const gu = t - (HT - 0.38);
+  setPose(d, gu < 0 ? runAt(t, 2, 0.35) : { mix: [runAt(t, 2, 0.35), { clip: 'fallback', t: 0.25 + gu }, smooth(gu / 0.15)] });
+  // bola: chega à linha em HT, fica presa uns instantes e o guarda-redes puxa-a para fora
+  const b0 = kp ? { x: kp.x + A.x * 0.13, y: kp.y + A.y * 0.13 } : Pk;
+  let bx, by, bh;
+  if (t < KT) { bx = b0.x; by = b0.y; bh = 0.11; }
+  else if (t < HT) { const u = (t - KT) / (HT - KT); bx = lerp(b0.x, B.x, u); by = lerp(b0.y, B.y, u); bh = lerp(0.11, B.h, u) + Math.sin(u * Math.PI) * 0.6; R3.ball.rotation.x += 0.35; }
+  else if (t < HT + 0.32) { const u = t - HT; bx = B.x + dirIn * 0.01 * Math.sin(u * 30); by = B.y; bh = Math.max(0.11, B.h - u * 0.6); }
+  else { const u = smooth((t - HT - 0.32) / 0.6); bx = lerp(B.x, gx - dirIn * 0.85, u); by = B.y; bh = Math.max(0.11, B.h - 0.19 - u * 0.2); }
+  R3.ball.position.set(bx, bh, by);
+  poseOthers5(L, t, HT, B);
+  const ny = H / 2 + sy * (GOAL_W / 2 + 4.2);
+  if (L.ideal) { const c = $('capL'), inRight = (B.y > ny) ? dirIn < 0 : dirIn > 0, hint = ' · baliza do lado ' + (inRight ? 'direito' : 'esquerdo'); if (!c.textContent.includes('baliza')) c.textContent += hint; }
+  sceneCam(L, t, { x: lerp(Pk.x, B.x, smooth((t - KT + 0.3) / 0.7)), y: lerp(Pk.y, B.y, smooth((t - KT + 0.3) / 0.7)) }, 9,
+    { x: gx, y: ny, h: 0.75, look: { x: gx, y: B.y }, lh: Math.max(0.15, B.h - 0.1), w: 2.6 });
+}
+
+// ---------- livres diretos: barreira a 9,15 m ----------
+function fkCheck(tk) {
+  if (S.training || !tk || tk.off || mode === 'fim') return;
+  const team = tk.team, gx = oppGoalX(team), d = len(gx - tk.x, H / 2 - tk.y);
+  if (d < 17 || d > 31 || Math.abs(tk.y - H / 2) > 17 || inOwnBox(1 - team, tk.x, tk.y)) return;
+  const spot = { x: tk.x, y: tk.y }, toG = norm(gx - spot.x, H / 2 - spot.y), perp = { x: -toG.y, y: toG.x };
+  const short = Math.random() < 0.6, wd = short ? rand(6.3, 8.2) : rand(9.05, 9.6), n = d < 23 ? 4 : 3;
+  const C0 = { x: spot.x + toG.x * wd, y: spot.y + toG.y * wd };
+  const defs = active().filter(p => p.team !== team && p.role !== 'gk' && !p.off).sort((p, q) => len(p.x - C0.x, p.y - C0.y) - len(q.x - C0.x, q.y - C0.y)).slice(0, n);
+  S.fk = { team, tk: tk.id, spot, toG, perp, d, wd, d0: wd, tgt: wd, wall: defs.map(p => p.id), t: 0, phase: 'set', short, creep: short && Math.random() < 0.45 };
+  tk.x = spot.x - toG.x * 1.0; tk.y = spot.y - toG.y * 1.0; tk.vx = tk.vy = 0; tk.cd = 99;
+  fkPlace(S.fk);
+}
+function fkPlace(F) {
+  const n = F.wall.length;
+  F.wall.forEach((id, i) => {
+    const p = S.players[id]; if (!p || p.off) return;
+    const dd = F.wd + (F.creepId === id ? -F.creepD : 0);
+    p.x = F.spot.x + F.toG.x * dd + F.perp.x * (i - (n - 1) / 2) * 0.85; p.y = F.spot.y + F.toG.y * dd + F.perp.y * (i - (n - 1) / 2) * 0.85; p.vx = p.vy = 0;
+  });
+}
+const fx1 = v => v.toFixed(1).replace('.', ',');
+function fkStep(dt) {
+  const F = S.fk; if (!F) return;
+  const tk = S.players[F.tk];
+  if (tk.off || S.ball.owner !== tk) { S.fk = null; return; }
+  F.t += dt; S.pause = Math.max(S.pause, 0.05);
+  F.wd += clamp(F.tgt - F.wd, -2.5 * dt, 2.5 * dt);
+  if (F.creepId !== undefined && F.creepD < 1.2) F.creepD += dt * 0.8;
+  fkPlace(F);
+  if (F.phase === 'set' && F.t > 1.6) {
+    F.phase = 'ask';
+    askOpen('Livre direto ' + deT(F.team) + ' a ' + Math.round(F.d) + ' m da baliza. Olha para a barreira: está a 9,15 m?', 'Livre direto',
+      [{ d: 'bater', label: 'Mandar bater', small: 'a barreira está bem' }, { d: 'medir', label: 'Medir 9,15 m', small: 'spray e recuar' }, { d: 'amarelo', label: 'Amarelo', small: 'a quem não recua', sw: 'var(--whistle)' }],
+      c => fkFirst(c), 0);
+  } else if (F.phase === 'creep' && F.t > F.creepAt) {
+    F.phase = 'ask2';
+    const p = S.players[F.creepId];
+    askOpen('Já com o spray no chão, o ' + p.num + ' ' + deT(p.team) + ' volta a adiantar-se na barreira.', 'Livre direto',
+      [{ d: 'deixar', label: 'Deixar', small: 'é só um passo' }, { d: 'afastar', label: 'Afastar outra vez', small: 'mais um aviso' }, { d: 'amarelo', label: 'Amarelo', small: 'não respeita a distância', sw: 'var(--whistle)' }],
+      c => fkSecond(c, p), 0);
+  } else if (F.phase === 'kick' && F.t > F.kickAt) fkKick(F, tk);
+}
+function fkFirst(c) {
+  const F = S.fk; if (!F) return;
+  const ok = !F.short, best = ok ? 'bater' : 'medir';
+  const pts = c === best ? 1 : (!ok && c === 'amarelo') ? 0.5 : (ok && c === 'medir') ? 0.6 : 0;
+  let dc = pts === 1 ? 2 : pts >= 0.5 ? -1 : -5; if (dc < 0) dc *= authK();
+  S.control = clamp(S.control + dc, 0, 100);
+  let msg;
+  if (c === 'medir') { F.sprayed = true; F.tgt = 9.15; S.added += 0.2; msg = 'Spray no chão: barreira a 9,15 m'; S.ref.tx = clamp(F.spot.x + F.toG.x * 9.15 + F.perp.x * 3, -2, W + 2); S.ref.ty = clamp(F.spot.y + F.toG.y * 9.15 + F.perp.y * 3, -2, H + 2); }
+  else if (c === 'amarelo') {
+    const p = S.players[F.wall[0]]; F.tgt = 9.15; F.sprayed = true;
+    p.yellow++; msg = 'Amarelo ao ' + p.num + ' ' + deT(p.team) + ' por não respeitar a distância';
+    if (p.yellow >= 2) { p.off = true; msg = 'Segundo amarelo: ' + p.num + ' ' + deT(p.team) + ' expulso'; F.wall = F.wall.filter(id => id !== p.id); }
+    Sfx.whistle('long'); feed(msg + '.', 'card');
+  } else { msg = F.short ? 'Mandaste bater com a barreira a ' + fx1(F.wd) + ' m' : 'Barreira no sítio: pode bater'; if (F.short) protestAfterSoon(F.team); }
+  S.manage.push({ minute: minuteNow(), what: 'Livre direto: barreira a ' + fx1(F.d0) + ' m', dec: { bater: 'Mandar bater', medir: 'Medir 9,15 m', amarelo: 'Amarelo' }[c], pts,
+    why: pts === 1 ? 'Certo' : ok ? (c === 'medir' ? 'A barreira já estava bem: perdeste tempo' : 'Cartão sem razão: a barreira estava bem') : (c === 'amarelo' ? 'Primeiro mede e afasta; o cartão é para quem insiste' : 'A barreira estava perto demais') });
+  toast(msg, 2);
+  if (c === 'medir' && F.creep) { F.phase = 'creep'; F.creepAt = F.t + 2.2; F.creepId = F.wall[Math.floor(Math.random() * F.wall.length)]; F.creepD = 0; }
+  else { F.phase = 'kick'; F.kickAt = F.t + (c === 'bater' ? 0.8 : 1.8); }
+}
+function fkSecond(c, p) {
+  const F = S.fk; if (!F) return;
+  const pts = c === 'amarelo' ? 1 : c === 'afastar' ? 0.5 : 0;
+  let dc = pts === 1 ? 2 : pts > 0 ? -1 : -4; if (dc < 0) dc *= authK();
+  S.control = clamp(S.control + dc, 0, 100);
+  let msg = c === 'deixar' ? 'Deixaste o ' + p.num + ' adiantado' : c === 'afastar' ? 'Voltaste a afastar o ' + p.num : 'Amarelo ao ' + p.num + ' ' + deT(p.team) + ': não respeitou a distância';
+  if (c === 'amarelo') { p.yellow++; if (p.yellow >= 2) { p.off = true; msg = 'Segundo amarelo: ' + p.num + ' ' + deT(p.team) + ' expulso'; F.wall = F.wall.filter(id => id !== p.id); } Sfx.whistle('long'); feed(msg + '.', 'card'); }
+  if (c !== 'deixar') F.creepId = undefined;
+  S.manage.push({ minute: minuteNow(), what: 'Jogador volta a adiantar-se na barreira', dec: { deixar: 'Deixar', afastar: 'Afastar outra vez', amarelo: 'Amarelo' }[c], pts,
+    why: pts === 1 ? 'Certo: depois do spray, quem avança leva amarelo' : c === 'afastar' ? 'Já tinha sido avisado: era amarelo' : 'Deixaste a barreira encurtar' });
+  toast(msg, 2);
+  F.phase = 'kick'; F.kickAt = F.t + 1.2;
+}
+function protestAfterSoon(team) { S.pause = Math.max(S.pause, 0.3); setTimeout(() => { if (S && mode === 'play' && !S.fk) protestAfter(team, 0.3, true); }, 2600); }
+function fkKick(F, tk) {
+  S.fk = null; tk.cd = 0;
+  const b = S.ball;
+  shoot(tk, false);
+  // remate por cima da barreira: desce a tempo de entrar (ou não)
+  const sp = Math.max(14, len(b.vx, b.vy)), tg = F.d / sp, zg = rand(0.5, 2.6);
+  b.vz = (zg + 0.5 * G * tg * tg) / tg;
+  S.pause = 0;
+  feed('Livre direto ' + deT(F.team) + ': o ' + tk.num + ' bate por cima da barreira.', 'info');
+}
+// spray no relvado
+function drawFK() {
+  const F = S && S.fk; if (!F || !F.sprayed) return;
+  const s = view.s, P = (x, y) => [view.ox + x * s, view.oy + y * s];
+  const c = { x: F.spot.x + F.toG.x * 9.15, y: F.spot.y + F.toG.y * 9.15 }, hw = F.wall.length * 0.55 + 0.8;
+  ctx.save(); ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = Math.max(1.5, 0.16 * s); ctx.setLineDash([0.35 * s, 0.2 * s]);
+  ctx.beginPath(); ctx.moveTo(...P(c.x - F.perp.x * hw, c.y - F.perp.y * hw)); ctx.lineTo(...P(c.x + F.perp.x * hw, c.y + F.perp.y * hw)); ctx.stroke();
+  ctx.setLineDash([]); ctx.beginPath(); ctx.arc(...P(F.spot.x, F.spot.y), 0.6 * s, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+}
+
+// ---------- fase 6: o árbitro em 3D comunica a decisão (cartão, gesto e uma frase aos jogadores) ----------
+const GOAL_OK = d => d === 'valido' || d === 'entrou';
+function refSays(L, d) {
+  const tag = L.varFirst && L.varFirst !== d ? 'Vi as imagens. ' : '';
+  const p = L.def && S.players[L.def.id], second = p && p.off && (d === 'amarelo' || d === 'maoAmarelo');
+  let s;
+  if (L.kind === 'offside') s = L.goal !== undefined ? (d === 'fora' ? 'Golo anulado: estavas em fora de jogo no passe.' : 'Estava em jogo. O golo conta!') : d === 'fora' ? 'Fora de jogo: estavas à frente do penúltimo defesa.' : 'Estava em jogo, siga!';
+  else if (L.kind === 'golo') s = d === 'valido' ? 'Foi ombro com ombro. O golo conta!' : 'Empurraste o defesa antes do remate. Golo anulado.';
+  else if (L.kind === 'linha') s = d === 'entrou' ? 'A bola passou toda a linha. É golo!' : 'Não passou toda a linha. Não há golo.';
+  else if (L.kind === 'mao') s = d === 'siga' ? 'Braço junto ao corpo, posição natural. Siga!' : d === 'mao' ? 'Braço aberto, a fazer o corpo maior. É mão.' : 'Mão deliberada a cortar o remate: amarelo.';
+  else if (L.kind === 'canto') s = d === 'siga' ? 'Disputa normal na área. Siga, levanta-te!' : d === 'penalti' ? 'Empurrou-o pelas costas. Penálti!' : 'Afastaste o defesa com o braço. Falta atacante.';
+  else s = {
+    siga: 'Jogou a bola primeiro. Siga!',
+    falta: L.inBox ? 'Chegaste atrasado e derrubaste-o. Penálti!' : 'Chegaste atrasado. Falta.',
+    amarelo: L.why === 'reiterada' ? 'Já são faltas a mais. Amarelo.' : L.why === 'tatica' ? 'Cortaste o contra-ataque. Amarelo.' : 'Entrada imprudente. Amarelo.',
+    vermelho: 'Entrada com força excessiva, pões o adversário em risco. Vermelho!',
+    simulacao: 'Atiraste-te para o chão. Amarelo por simulação.',
+    vantagem: 'Vantagem! Joguem, joguem!',
+  }[d] || 'Siga!';
+  if (second) s += ' É o segundo: rua!';
+  return tag + s;
+}
+// que gesto fazer e quem fica à frente do árbitro
+function gestOf(L, d) {
+  const att = L.att && S.players[L.att.id], def = L.def && S.players[L.def.id];
+  const atkT = L.kind === 'offside' ? L.oi.team : L.goal !== undefined ? L.goal : att ? att.team : 0;
+  const pen = { x: oppGoalX(atkT) - TEAMS[atkT].dir * SPOT, y: H / 2 };
+  if (d === 'vermelho') return { type: 'card', col: 'red', who: def };
+  if (d === 'amarelo' || d === 'maoAmarelo' || d === 'simulacao') { const w = d === 'simulacao' ? att : def; return { type: 'card', col: 'yellow', second: !!(w && w.off), who: w }; }
+  if (d === 'fora') return { type: 'up', who: att };
+  if (d === 'vantagem') return { type: 'adv', who: null };
+  if (GOAL_OK(d) || (L.goal !== undefined && d === 'emjogo')) return { type: 'point', to: { x: W / 2, y: H / 2 }, elev: -0.12, who: null, run: true };
+  if (d === 'anular' || d === 'ataque') return { type: 'point', dir: { x: TEAMS[1 - atkT].dir, y: 0 }, elev: 0.12, who: att };
+  if ((L.scene && scenePen(L, d)) || (!L.scene && L.kind !== 'offside' && FOUL(d) && L.inBox)) return { type: 'point', to: pen, elev: -0.55, who: def };
+  if (FOUL(d) || d === 'mao') return { type: 'point', dir: { x: TEAMS[atkT].dir, y: 0 }, elev: 0.12, who: def };
+  return { type: 'siga', who: att };
+}
+function gestSpot(L) {
+  const p = L.kind === 'offside' ? { x: L.oi.recvX, y: L.oi.recvY } : L.kind === 'linha' ? { x: L.gx - L.dirIn * 4, y: L.B.y } : L.kind === 'golo' ? L.C : L.P;
+  return { x: clamp(p.x, 3, W - 3), y: clamp(p.y, 3, H - 3) };
+}
+function finishDecision(L, d, msg, after) {
+  showDecide(false);
+  if (!R3 || !stage.classList.contains('view3d') || S.noGesture) { after(); return; }
+  const g = gestOf(L, d), say = refSays(L, d);
+  S.gesture = { L, d, g, t: 0, dur: g.type === 'card' && g.second ? 3.2 : 2.6, after };
+  mode = 'gesto';
+  $('scrub').hidden = true; $('viewBtns').hidden = true; $('pip').hidden = true;
+  $('capL').textContent = 'Decisão do árbitro · toca para continuar'; $('capR').textContent = DEC_LABEL[d] || '';
+  $('refSay').textContent = say; $('refSay').hidden = false;
+  if (g.type === 'card') Sfx.whistle('short');
+}
+function gestureEnd() {
+  const G = S && S.gesture; if (!G) return;
+  S.gesture = null; $('refSay').hidden = true;
+  if (R3) { R3.ball.visible = true; if (CARD) CARD.visible = false; }
+  G.after();
+}
+function gestureStep(dt) { const G = S.gesture; G.t += dt; if (G.t >= G.dur) gestureEnd(); }
+stage.addEventListener('pointerdown', () => { if (mode === 'gesto') gestureEnd(); });
+
+let CARD = null;
+const IDQ = { x: 0, y: 0, z: 0, w: 1 };
+function cardMesh(ref) {
+  if (CARD) return CARD;
+  const T = R3.T, m = new T.Mesh(new T.BoxGeometry(0.1, 0.14, 0.008), new T.MeshBasicMaterial({ color: '#f2cf3a' }));
+  const dir = ref.handR.position.clone().normalize();
+  m.position.copy(dir.multiplyScalar(0.16)); ref.handR.add(m);
+  return (CARD = m);
+}
+// aponta o braço inteiro (ombro→pulso) para uma direção do mundo, com o cotovelo esticado
+function aimArm(r, right, v, w) {
+  if (w <= 0) return;
+  const T = R3.T, up = right ? r.armR : r.armL, lo = right ? r.elR : r.elL, hd = right ? r.handR : r.handL;
+  lo.quaternion.slerp(new T.Quaternion(IDQ.x, IDQ.y, IDQ.z, IDQ.w), w * 0.85);
+  r.outer.updateMatrixWorld(true);
+  const a = up.getWorldPosition(new T.Vector3()), b = hd.getWorldPosition(new T.Vector3());
+  const cur = b.sub(a).normalize(), want = cur.clone().lerp(v, w).normalize();
+  const qw = new T.Quaternion().setFromUnitVectors(cur, want), pq = up.parent.getWorldQuaternion(new T.Quaternion());
+  up.quaternion.premultiply(pq.clone().invert().multiply(qw).multiply(pq));
+}
+function poseGesture(G) {
+  const R = R3, T = R.T, L = G.L, t = G.t, g = G.g;
+  R.rigs.forEach(r => r.outer.visible = false); R.ball.visible = false; R.lines.def.visible = R.lines.att.visible = false;
+  glassPosts(null);
+  const P = gestSpot(L);
+  let u = norm(L.ref.x - P.x, L.ref.y - P.y); if (!u.x && !u.y) u = { x: 0, y: 1 };
+  const ref = R.rigs[22], pl = R.rigs[0];
+  styleRig(ref, -1);
+  const Rp = { x: P.x + u.x * 2.3, y: P.y + u.y * 2.3 }, F = { x: -u.x, y: -u.y };
+  if (g.who) { styleRig(pl, g.who.team, g.who.role, g.who.num, g.who.id); placeRig(pl, P.x, P.y, u.x, u.y); setPose(pl, g.type === 'card' ? { clip: 'idle', t: t + 1, pp: true, add: { alz: -0.5, arz: 0.5 } } : idleAt(t, 1)); pl.outer.visible = true; }
+  // golo validado: o árbitro dá uns passos para o meio-campo enquanto aponta
+  let rp = Rp, face = F;
+  if (g.type === 'point' && g.run) { const dc = norm(g.to.x - Rp.x, g.to.y - Rp.y), m = Math.min(t, 1.6) * 1.3; rp = { x: Rp.x + dc.x * m, y: Rp.y + dc.y * m }; face = norm(lerp(F.x, dc.x, 0.6), lerp(F.y, dc.y, 0.6)); }
+  placeRig(ref, rp.x, rp.y, face.x, face.y); ref.outer.visible = true;
+  setPose(ref, g.run && t < 1.6 ? runAt(t, 0, 0.3) : idleAt(t, 2));
+  const w = smooth((t - 0.15) / 0.4), rot = ref.outer.rotation.y, xAx = new T.Vector3(Math.cos(rot), 0, -Math.sin(rot)), fwd = new T.Vector3(Math.sin(rot), 0, Math.cos(rot)), upV = new T.Vector3(0, 1, 0);
+  const card = cardMesh(ref); card.visible = false;
+  if (g.type === 'card' || g.type === 'up') {
+    aimArm(ref, true, upV.clone().multiplyScalar(1).add(xAx.clone().multiplyScalar(0.12)).add(fwd.clone().multiplyScalar(0.1)).normalize(), w);
+    if (g.type === 'card') { card.visible = w > 0.3; card.material.color.set(g.col === 'red' || (g.second && t > 1.6) ? '#d8322f' : '#f2cf3a'); }
+  } else if (g.type === 'adv') {
+    for (const right of [true, false]) aimArm(ref, right, fwd.clone().add(xAx.clone().multiplyScalar(right ? 0.22 : -0.22)).add(upV.clone().multiplyScalar(0.05)).normalize(), w);
+  } else if (g.type === 'point') {
+    const dir = g.to ? norm(g.to.x - rp.x, g.to.y - rp.y) : g.dir, c = Math.cos(g.elev);
+    const v = new T.Vector3(dir.x * c, Math.sin(g.elev), dir.y * c).normalize();
+    aimArm(ref, v.dot(xAx) >= 0, v, w);
+  } else {
+    aimArm(ref, true, fwd.clone().multiplyScalar(0.75).add(xAx.clone().multiplyScalar(0.25)).add(upV.clone().multiplyScalar(-0.35 + 0.3 * Math.sin(t * 5))).normalize(), w);
+  }
+  // câmara de frente para o árbitro, com o jogador ao lado
+  const side = { x: -u.y, y: u.x };
+  if (g.run) {                                                         // golo: câmara à frente do árbitro, que corre para o meio-campo
+    const dc = norm(g.to.x - Rp.x, g.to.y - Rp.y), sd = { x: -dc.y, y: dc.x };
+    rp = { x: rp.x + dc.x * 4.5 + sd.x * 2.2, y: rp.y + dc.y * 4.5 + sd.y * 2.2 }; u = { x: dc.x, y: dc.y };
+    const cx = clamp(rp.x, -3, W + 3), cy = clamp(rp.y, -3, H + 3), lk = ref.outer.position, dist = Math.max(1, len(lk.x - cx, lk.z - cy));
+    R.cam.fov = clamp(2 * Math.atan(1.5 / dist) * 180 / Math.PI, 14, 55); R.cam.updateProjectionMatrix();
+    R.cam.position.set(cx, 1.6, cy); R.cam.lookAt(lk.x, 1.25, lk.z); R.renderer.render(R.scene, R.cam); return;
+  }
+  let cx = rp.x - u.x * 3.8 + side.x * 3.4, cy = rp.y - u.y * 3.8 + side.y * 3.4;
+  if (cx < -3 || cx > W + 3 || cy < -3 || cy > H + 3) { cx = rp.x - u.x * 3.8 - side.x * 3.4; cy = rp.y - u.y * 3.8 - side.y * 3.4; }
+  cx = clamp(cx, -3, W + 3); cy = clamp(cy, -3, H + 3);
+  const look = { x: lerp(rp.x, P.x, 0.3), y: lerp(rp.y, P.y, 0.3) }, dist = Math.max(1, len(look.x - cx, look.y - cy));
+  const vfov = clamp(2 * Math.atan(Math.tan(Math.atan(4.6 / 2 / dist)) / R.cam.aspect) * 180 / Math.PI, 14, 55);
+  R.cam.fov = Math.max(vfov, 2 * Math.atan(1.35 / dist) * 180 / Math.PI); R.cam.updateProjectionMatrix();
+  R.cam.position.set(cx, 1.6, cy); R.cam.lookAt(look.x, 1.3, look.y);
+  R.renderer.render(R.scene, R.cam);
+}
+
+// ---------- fase 6: carreira 2.0 (épocas longas, jornais, treinadores e classificação dos árbitros) ----------
+const SEASON_GAMES = [6, 6, 7, 7, 6];
+TIERS.forEach((t, i) => { if (!t.cup) t.games = SEASON_GAMES[i]; });
+const REF_NAMES = ['Rui Matos', 'Carla Pinto', 'Nuno Teixeira', 'Sofia Ramos', 'Hélder Costa', 'Marta Faria', 'Tiago Lobo', 'Inês Barros', 'Paulo Seabra', 'Joana Prata', 'Vasco Nunes', 'Ana Lemos', 'Bruno Sá', 'Filipa Rocha', 'Duarte Leal', 'Rita Calado'];
+const COACH_F = ['Abel', 'Jorge', 'Carlos', 'Vítor', 'Leonel', 'Manuel', 'Sérgio', 'Fernando', 'Artur', 'Rogério', 'Beatriz', 'Luísa'];
+const COACH_L = ['Fontes', 'Mourão', 'Guerreiro', 'Pacheco', 'Valente', 'Carvalhal', 'Bento', 'Simões', 'Quaresma', 'Lacerda', 'Rebelo', 'Peixoto'];
+const PAPERS = ['Gazeta da Carica', 'O Apito', 'Diário do Relvado', 'A Bancada'];
+const hashS = s => { let h = 7; for (const ch of s) h = (h * 31 + ch.charCodeAt(0)) % 100003; return h; };
+function coachName(team) { const n = TEAMS[team].name, h = hashS(n); return COACH_F[h % COACH_F.length] + ' ' + COACH_L[Math.floor(h / 7) % COACH_L.length]; }
+const gauss = () => (Math.random() + Math.random() + Math.random() - 1.5) * 1.15;
+const simGrade = sk => Math.round(clamp(sk + gauss() * 0.75, 3.5, 9.8) * 10) / 10;
+function makeRefs(ti, played) {
+  const T = TIERS[ti], names = REF_NAMES.slice().sort(() => Math.random() - 0.5).slice(0, 7);
+  return names.map(n => { const sk = T.target + rand(-1.1, 0.45); return { n, sk, g: Array.from({ length: played || 0 }, () => simGrade(sk)) }; });
+}
+function migrateCareer() {
+  if (!C) return;
+  const T = TIERS[C.tier];
+  if (!T.cup && C.fixtures.length < T.games) {
+    const extra = makeFixtures(C.tier).slice(C.fixtures.length), hasDerby = C.fixtures.some(f => f.story === 'derby');
+    extra.forEach(f => { if (hasDerby && f.story === 'derby') { f.story = null; do { f.h = Math.floor(Math.random() * 6); f.a = Math.floor(Math.random() * 6); } while (f.h === f.a || f.h + f.a === 1); } });
+    C.fixtures = C.fixtures.concat(extra);
+  }
+  if (!C.refs) C.refs = makeRefs(C.tier, C.sg.length);
+  if (!C.papers) C.papers = [];
+  saveCareer();
+}
+function refTable() {
+  const avg = g => g.length ? g.reduce((a, b) => a + b, 0) / g.length : 0;
+  return [{ n: 'Tu', me: true, g: C.sg }].concat(C.refs).map(r => ({ n: r.n, me: !!r.me, j: r.g.length, a: avg(r.g) })).sort((p, q) => q.a - p.a || (q.me ? 1 : 0) - (p.me ? 1 : 0));
+}
+// depois de cada jogo da carreira: os outros árbitros também apitam e a tabela mexe
+function career2(g) {
+  const T = TIERS[C.tier];
+  C.posNote = ''; C.rankNote = '';
+  if (S.paper) { C.papers.unshift({ s: C.season, t: C.tier, r: C.round, p: S.paper.paper, h: S.paper.head, st: S.paper.stars, q: S.paper.quote }); C.papers = C.papers.slice(0, 8); }
+  if (T.cup || !C.refs) return;
+  C.refs.forEach(r => r.g.push(simGrade(r.sk)));
+  const tb = refTable(), pos = tb.findIndex(r => r.me) + 1;
+  C.posNote = 'Estás em ' + pos + '.º na classificação dos árbitros.';
+  if (C.round + 1 >= T.games) {
+    C.rankNote = 'Acabaste a época em ' + pos + '.º lugar entre ' + tb.length + ' árbitros' + (pos === 1 ? ': árbitro do ano, +2 pontos de atributo.' : '.');
+    if (pos === 1) C.pts += 2;
+  }
+}
+function renderCareer2() {
+  const T = TIERS[C.tier], tb = $('carTable'), wrap = $('carRank');
+  wrap.hidden = !!T.cup || !C.refs;
+  if (!wrap.hidden) {
+    tb.textContent = '';
+    refTable().forEach((r, i) => {
+      const tr = document.createElement('tr'); if (r.me) tr.className = 'me';
+      [String(i + 1), r.n, String(r.j), r.j ? r.a.toFixed(1).replace('.', ',') : '–'].forEach(c => { const td = document.createElement('td'); td.textContent = c; tr.appendChild(td); });
+      tb.appendChild(tr);
+    });
+  }
+  const pl = $('carPapers'); pl.textContent = '';
+  (C.papers || []).slice(0, 5).forEach(p => {
+    const li = document.createElement('li'), b = document.createElement('b'), sm = document.createElement('small');
+    b.textContent = p.h; sm.textContent = p.p + ' · ' + '★'.repeat(p.st) + '☆'.repeat(5 - p.st) + ' · ' + TIERS[p.t].name + (p.q ? ' · ' + p.q : '');
+    li.append(b, sm); pl.appendChild(li);
+  });
+  $('carPapersWrap').hidden = !(C.papers && C.papers.length);
+}
+
+// jornal do dia seguinte: título, estrelas para o árbitro e o que disse o treinador
+function paperOf(grade, kind) {
+  const inc = S.incidents.filter(l => !l.training), wrong = inc.filter(l => l.pts < 1);
+  const h = TEAMS[0].name, a = TEAMS[1].name, sc = S.score[0] + '–' + S.score[1], game = h + ' ' + sc + ' ' + a;
+  const stars = kind === 'abandonado' ? 1 : grade >= 9 ? 5 : grade >= 8 ? 4 : grade >= 6.5 ? 3 : grade >= 5 ? 2 : 1;
+  const big = wrong.find(l => l.goalCtx) || wrong.find(l => l.inBox && l.kind !== 'offside') || wrong.find(l => l.decided === 'vermelho' || l.truth === 'vermelho') || wrong.find(l => l.kind === 'offside');
+  let head;
+  if (kind === 'abandonado') head = 'Jogo interrompido: o árbitro perdeu o controlo no ' + game;
+  else if (big) {
+    const d = big.decided, t = big.truth;
+    if (big.goalCtx) head = (GOAL_OK(d) || (big.kind === 'offside' && d === 'emjogo') ? 'Golo ilegal validado' : 'Golo limpo anulado') + ' marca o ' + game;
+    else if (big.kind === 'offside') head = (d === 'fora' ? 'Fora de jogo inventado' : 'Fora de jogo por assinalar') + ' no ' + game;
+    else if (big.inBox) head = (scenePen(big, d) || (!big.scene && FOUL(d)) ? 'Penálti inventado' : 'Penálti por marcar') + ' no ' + game;
+    else head = (d === 'vermelho' ? 'Vermelho exagerado' : t === 'vermelho' ? 'Vermelho perdoado' : 'Erro grave') + ' no ' + game;
+  } else if (inc.some(l => l.varFirst && l.pts > 0)) head = 'O VAR salva o árbitro no ' + game;
+  else if (grade >= 8.5) head = pickOf(['Arbitragem de luxo no ' + game, 'Ninguém falou do árbitro no ' + game + ', e isso é um elogio', 'Árbitro impecável no ' + game]);
+  else if (grade >= 6.5) head = pickOf(['Arbitragem segura no ' + game, game + ': jogo bem conduzido, com uma ou outra dúvida']);
+  else head = pickOf(['Árbitro em noite difícil no ' + game, 'Muitas dúvidas na arbitragem do ' + game]);
+  // treinador mais prejudicado fala; se ninguém foi prejudicado, o que perdeu elogia ou resmunga
+  const wr = S.career ? S.career.wrong : [0, 0];
+  const lost = S.score[0] < S.score[1] ? 0 : S.score[1] < S.score[0] ? 1 : -1;
+  let ct = wr[0] > wr[1] ? 0 : wr[1] > wr[0] ? 1 : wr[0] > 0 ? (lost >= 0 ? lost : 0) : lost;
+  let quote = '';
+  if (ct >= 0) {
+    const n = coachName(ct), bad = wr[ct] > 0 || (!S.career && wrong.length >= 2);
+    quote = n + ' (' + TEAMS[ct].name + '): «' + (bad ? pickOf(['Hoje não perdemos com o adversário, perdemos com o árbitro.', 'Vi o que toda a gente viu. O árbitro decidiu o jogo.', 'Há decisões que não se explicam. Vamos fazer queixa.', 'Trabalhamos a semana toda para isto? Não aceito.'])
+      : stars >= 4 ? pickOf(['Perdemos, mas o árbitro esteve bem. Não há desculpas.', 'O árbitro foi justo. Fomos piores.']) : pickOf(['Não vou falar da arbitragem.', 'Há lances que vou rever com calma.'])) + '»';
+  }
+  const right = inc.filter(l => l.pts === 1).length;
+  const body = 'Nota do jornal para o árbitro: ' + stars + ' em 5. ' + right + ' de ' + inc.length + ' decisões certas' + (S.anulados ? ', ' + S.anulados + (S.anulados > 1 ? ' golos anulados' : ' golo anulado') : '') + (S.varN ? ', ' + S.varN + ' ida' + (S.varN > 1 ? 's' : '') + ' ao VAR' : '') + '.';
+  return { paper: pickOf(PAPERS), head, body, stars, quote };
+}
+function paperShow(grade, kind) {
+  const el = $('paper');
+  if (S.training || kind === 'treino') { el.hidden = true; S.paper = null; return; }
+  const P = S.paper = paperOf(grade, kind);
+  $('paperName').textContent = P.paper; $('paperStars').textContent = '★'.repeat(P.stars) + '☆'.repeat(5 - P.stars);
+  $('paperHead').textContent = P.head; $('paperBody').textContent = P.body; $('paperQuote').textContent = P.quote; $('paperQuote').hidden = !P.quote;
+  el.hidden = false;
+}
+
+// treinador fora da área técnica: aviso, amarelo e, se insistir, vermelho
+function coachCheck(team, sev, wrong) {
+  if (S.training || S.coach || (S.coachOff && S.coachOff[team]) || (S.coachN || 0) >= 2) return;
+  if (Math.random() > 0.04 + (wrong ? 0.15 : 0) + sev * 0.08 + S.aggr[team] * 0.1) return;
+  S.coach = { team, t: 0 };
+}
+function coachStep(dt) {
+  const Co = S.coach; if (!Co || S.pause > 0 || S.fk) return;
+  Co.t += dt; if (Co.t < 1.5) return;
+  S.coach = null; S.coachN = (S.coachN || 0) + 1;
+  const team = Co.team, lv = S.coachW[team], name = coachName(team), cardD = lv >= 2 ? 'vermelho' : 'amarelo';
+  askOpen('O treinador ' + deT(team) + ', ' + name + ', sai da área técnica aos gritos' + (lv ? ' outra vez' + (lv >= 2 ? ', já com amarelo' : ', depois do aviso') : '') + '.', 'Banco',
+    [{ d: 'ignorar', label: 'Ignorar', small: 'deixa-o falar' }, { d: 'avisar', label: 'Mandar sentar', small: 'aviso ao 4.º árbitro' }, { d: cardD, label: lv >= 2 ? 'Vermelho' : 'Amarelo', small: lv >= 2 ? 'expulso para a bancada' : 'cartão ao treinador', sw: lv >= 2 ? 'var(--bad)' : 'var(--whistle)' }],
+    c => {
+      const best = lv === 0 ? 'avisar' : cardD;
+      const pts = c === best ? 1 : c === 'ignorar' ? (lv === 0 ? 0.3 : 0) : 0.5;
+      let dc = pts === 1 ? 3 : pts >= 0.5 ? -1 : -4; if (dc < 0) dc *= authK();
+      S.control = clamp(S.control + dc, 0, 100);
+      let msg;
+      if (c === 'ignorar') { S.aggr[team] += 0.1; msg = 'Deixaste o treinador ' + deT(team) + ' protestar'; }
+      else if (c === 'avisar') { S.coachW[team] = Math.max(lv, 1); msg = 'O 4.º árbitro manda sentar o treinador ' + deT(team); }
+      else if (c === 'amarelo') { S.coachW[team] = 2; msg = 'Amarelo ao treinador ' + deT(team) + ', ' + name; Sfx.whistle('short'); }
+      else { S.coachOff[team] = true; msg = 'Vermelho: ' + name + ' vai para a bancada'; Sfx.whistle('long'); if (team === HOME) { S.crowd = clamp(S.crowd + 12, 0, 100); Sfx.boo(0.6); } }
+      S.manage.push({ minute: minuteNow(), what: 'Treinador ' + deT(team) + ' a protestar' + (lv === 1 ? ' (já avisado)' : lv >= 2 ? ' (já com amarelo)' : ''), dec: { ignorar: 'Ignorar', avisar: 'Mandar sentar', amarelo: 'Amarelo', vermelho: 'Vermelho' }[c], pts,
+        why: pts === 1 ? 'Certo' : c === 'ignorar' ? 'O banco também se gere: devias ter agido' : lv === 0 ? 'Primeira vez: bastava mandá-lo sentar' : lv === 1 ? 'Já tinha sido avisado: era amarelo' : 'Com amarelo e a insistir: era vermelho' });
+      feed(msg + '.', c === 'amarelo' || c === 'vermelho' ? 'card' : 'info');
+      toast(msg, 2.2);
+    }, 0);
+}
+
 // ---------- desenho 2D ----------
 let view = { s: 10, ox: 20, oy: 20, dpr: 1 };
 function resize2D() {
@@ -2912,6 +3513,7 @@ function draw2D() {
     for (const id of S.protest.ids) { const p = S.players[id]; ctx.fillText('!', view.ox + p.x * s, view.oy + (p.y - 1.6) * s); }
   }
   if (S.stall) { const p = S.players[S.stall.id]; ctx.fillStyle = '#f2cf3a'; ctx.font = '700 ' + Math.round(1.5 * s) + 'px "Barlow Condensed", sans-serif'; ctx.textAlign = 'center'; ctx.fillText('⏱ ' + Math.ceil(S.stall.t), view.ox + p.x * s, view.oy + (p.y - 1.7) * s); }
+  drawFK();
   for (const a of S.ast) {
     drawCap(a.x, a.y, CAP_R * 0.8, '#8c8f93', '#15161a', '', '#f2cf3a', false);
     const X = view.ox + a.x * s, Y = view.oy + a.y * s, up = a.flagT > 0;
@@ -2962,12 +3564,14 @@ function step(dt) {
     refStep(dt);
     astStep(dt);
     S.crowd += ((S.crowdBase || 35) - S.crowd) * 0.02 * dt; stressStep(dt);
-    addedTimeCheck(); pendStep(dt); stallStep(dt);
+    addedTimeCheck(); pendStep(dt); stallStep(dt); fkStep(dt); coachStep(dt);
     if (mode !== 'play') return;
     if (S.training) { S.lanceCd = 1e9; S.training.next -= dt; if (S.training.next <= 0 && S.pause <= 0) trainNext(); }
     if (S.pause > 0) { S.pause -= dt; physics(0); }
     else { aiStep(dt); physics(dt); }
     if (S.toastT > 0) { S.toastT -= dt; if (S.toastT <= 0) $('toast').hidden = true; }
+  } else if (mode === 'gesto' && S.gesture) {
+    gestureStep(dt);
   } else if (mode === 'pergunta' && S.ask) {
     askStep(dt); physics(0);
   } else if (mode === 'protesto' && S.protest) {
@@ -2981,7 +3585,7 @@ function step(dt) {
       L.decideT -= dt;
       $('decideTime').textContent = Math.max(0, Math.ceil(L.decideT)) + ' s';
       $('timerBar').style.width = clamp(L.decideT / 15, 0, 1) * 100 + '%';
-      if (L.decideT <= 0) decide('siga', true);
+      if (L.decideT <= 0) decide(L.dflt || 'siga', true);
     } else { $('decideTime').textContent = 'a ver o lance'; $('timerBar').style.width = '100%'; }
     syncScrub();
   } else if (mode === 'fim' && reviewing && stage.classList.contains('view3d')) {
@@ -3000,7 +3604,8 @@ function frame(now) {
   if (stage.classList.contains('view3d')) {
     const L = mode === 'fim' ? reviewing : (S && S.lance);
     animStadium();
-    if (L && L.rig) pose3D(L, Math.min(L.time, lanceDur(L)));
+    if (mode === 'gesto' && S.gesture) poseGesture(S.gesture);
+    else if (L && L.rig) pose3D(L, Math.min(L.time, lanceDur(L)));
   } else draw2D();
   if (S) hud();
   requestAnimationFrame(frame);
@@ -3009,7 +3614,7 @@ function frame(now) {
 // ---------- fim e revisão ----------
 let reviewing = null;
 function endMatch(kind) {
-  mode = 'fim'; showDecide(false); hide3D(); $('toast').hidden = true; $('protest').hidden = true; S.protest = null; $('ask').hidden = true; S.ask = null; S.pendCard = null;
+  mode = 'fim'; showDecide(false); hide3D(); $('toast').hidden = true; $('protest').hidden = true; S.protest = null; $('ask').hidden = true; S.ask = null; S.pendCard = null; S.fk = null; S.coach = null; S.gesture = null; $('refSay').hidden = true;
   Sfx.whistle('end');
   S.over = kind;
   const inc = S.incidents;
@@ -3031,7 +3636,7 @@ function endMatch(kind) {
     const cls = l.pts === 1 ? 'ok' : (l.pts > 0 ? 'half' : 'bad');
     const off = l.kind === 'offside';
     const why = l.missAdv ? 'Certo, mas havia vantagem' : l.decided === 'vantagem' && l.adv && l.pts < 1 ? 'Vantagem certa, cartão errado' : l.decided === 'vantagem' && !l.adv && l.pts < 1 ? 'Não havia vantagem: a bola era do adversário' : l.training ? (l.pts === 1 ? (l.decided === l.varFirst ? 'Certo · confirmaste a decisão de campo' : 'Certo · corrigiste a decisão de campo') : 'Errado · decisão de campo era ' + DEC_LABEL[l.varFirst].toLowerCase()) : l.varFirst ? (l.pts > 0 ? 'Corrigido com o VAR' : 'Errado, mesmo depois do VAR') : l.pts === 1 ? 'Certo' : (l.timedOut ? 'Sem decisão' : off ? (l.flag === (l.truth === 'fora') ? 'Errado · a bandeira estava certa' : 'Errado · o assistente enganou-se e seguiste-o') : (l.clarity < 0.45 ? 'Errado · estavas mal colocado' : 'Errado · viste bem, decidiste mal'));
-    const what = off ? LABEL[l.truth] + ' por ' + Math.abs(l.oi.margin).toFixed(1).replace('.', ',') + ' m' : LABEL[l.truth] + (l.why ? ' (' + WHY[l.why] + ')' : '');
+    const what = off ? LABEL[l.truth] + ' por ' + Math.abs(l.oi.margin).toFixed(1).replace('.', ',') + ' m' : LABEL[l.truth] + (l.why ? ' (' + WHY[l.why] + ')' : '') + (l.kind === 'linha' ? ' · ' + Math.abs(Math.round((l.m - LINE_IN) * 100)) + ' cm ' + (l.m >= LINE_IN ? 'para lá' : 'a faltar') : '') + (l.goal !== undefined && l.kind === 'offside' ? ' · no golo' : '');
     const seen = off ? 'Assistente ' + (l.mis < 0.8 ? 'alinhado' : 'a ' + l.mis.toFixed(1).replace('.', ',') + ' m') + ' · bandeira ' + (l.flag ? 'levantada' : 'em baixo') : Math.round(l.dist) + ' m · clareza ' + Math.round(l.clarity * 100) + '%';
     const cells = [l.minute + "'" + (l.inBox ? ' · área' : ''), what, DEC_LABEL[l.decided] + (l.cardLater && l.cardLater !== 'nenhum' ? ' + ' + DEC_LABEL[l.cardLater].toLowerCase() : '') + (l.timedOut ? ' (tempo)' : ''), seen, why];
     cells.forEach((c, ci) => { const td = document.createElement('td'); td.textContent = c; if (ci === 4) td.className = cls; tr.appendChild(td); });
@@ -3043,6 +3648,7 @@ function endMatch(kind) {
   try { const best = Number(localStorage.getItem('arbitro-best') || 0); if (grade > best) localStorage.setItem('arbitro-best', grade.toFixed(1)); } catch (e) { /* sem armazenamento */ }
   $('review').hidden = false; $('help').hidden = true;
   manageRows(); summaryRows();
+  paperShow(grade, kind);
   careerAfter(grade, kind);
   $('review').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
@@ -3056,7 +3662,7 @@ function setReviewView(ideal) {
 function start() {
   newMatch(); reviewing = null; hide3D();
   $('s0').textContent = '0'; $('s1').textContent = '0';
-  $('menu').hidden = true; $('review').hidden = true; $('help').hidden = false; $('toast').hidden = true; $('protest').hidden = true; $('ask').hidden = true; $('ticker').hidden = true;
+  $('menu').hidden = true; $('review').hidden = true; $('help').hidden = false; $('toast').hidden = true; $('protest').hidden = true; $('ask').hidden = true; $('ticker').hidden = true; $('refSay').hidden = true;
   mode = 'play';
   Sfx.init(); Sfx.whistle('long');
   feed('Apito inicial: ' + TEAMS[0].name + ' contra ' + TEAMS[1].name + '.', 'info');
@@ -3124,6 +3730,7 @@ const OKEYS = { '1': 'emjogo', '2': 'fora' };
 window.addEventListener('keydown', e => {
   const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
   const vk = { ' ': togglePlay, ',': () => stepFrame(-1), '.': () => stepFrame(1), ArrowLeft: () => stepFrame(-1), ArrowRight: () => stepFrame(1) };
+  if (mode === 'gesto') { if (k === ' ' || k === 'Enter' || k === 'Escape') { gestureEnd(); e.preventDefault(); } return; }
   if (mode === 'pergunta') { askKey(k); return; }
   if (mode === 'protesto') { const m = { '1': 'ignorar', '2': 'afastar', '3': 'amarelo', '4': 'capitao' }[k]; if (m) resolveProtest(m); return; }
   const VL = S && S.lance;
@@ -3154,7 +3761,7 @@ window.addEventListener('resize', resize2D);
 resize2D();
 requestAnimationFrame(frame);
 // gancho para testes automáticos
-window.__arbitro = { get S() { return S; }, get mode() { return mode; }, get C() { return C; }, set C(v) { C = v; }, openCareer, startCareerMatch, endMatch, saveCareer, protestAfter, startHand, cornerCheck, gkChance, askPick, start, decide, resolveProtest, varPointer, get R3() { return R3; }, step, startLance, show3D, setReviewView,
+window.__arbitro = { get S() { return S; }, get mode() { return mode; }, get C() { return C; }, set C(v) { C = v; }, openCareer, startCareerMatch, endMatch, saveCareer, protestAfter, startHand, cornerCheck, gkChance, askPick, startGoalFoul, startLine, fkCheck, gestureEnd, goal, renderCareer, start, decide, resolveProtest, varPointer, get R3() { return R3; }, step, startLance, show3D, setReviewView,
   get reviewing() { return reviewing; }, set reviewing(v) { reviewing = v; } };
 })();
 </script>

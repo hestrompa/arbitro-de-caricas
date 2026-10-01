@@ -17,6 +17,8 @@ function choicesFor(L) {
   document.querySelectorAll('#decide .choice[data-d]').forEach(b => { b.hidden = !b.dataset.k.split(' ').includes(k) || (b.dataset.d === 'vantagem' && !!(L && L.inBox)); });
   if (k === 'mao') $('maoSmall').textContent = '2 · ' + (L.inBox ? 'penálti' : 'livre');
   $('faltaSmall').textContent = '2 · ' + (k === 'foul' && L && L.inBox ? 'penálti' : 'livre');
+  const gl = k === 'offside' && L && L.goal !== undefined;
+  $('ojSmall').textContent = '1 · ' + (gl ? 'golo válido' : 'segue o ataque'); $('foraSmall').textContent = '2 · ' + (gl ? 'golo anulado' : 'livre indireto');
 }
 const pinfo = p => ({ id: p.id, team: p.team, num: p.num, role: p.role });
 function pickTruth(w) { let r = Math.random() * Object.values(w).reduce((a, b) => a + b, 0); for (const [k, v] of Object.entries(w)) { r -= v; if (r <= 0) return k; } return Object.keys(w)[0]; }
@@ -159,6 +161,8 @@ function advPlay(L) {
 }
 
 function lanceMsg(L) {
+  if (L.kind === 'golo') return 'Golo ' + deT(L.goal) + ' aos ' + L.minute + "'. Antes do remate, o " + L.att.num + ' fez falta sobre o ' + L.def.num + '?';
+  if (L.kind === 'linha') return (L.save ? 'Defesa em cima da linha aos ' + L.minute + "'. " : 'Golo ' + deT(L.goal) + '? ') + 'A bola passou toda a linha de golo?';
   if (L.kind === 'mao') return 'Aos ' + L.minute + "' a bola bateu no " + L.def.num + ' ' + deT(L.def.team) + (L.inBox ? ', dentro da área' : '') + '. Foi mão?';
   if (L.kind === 'canto') return (L.cross ? 'Cruzamento' : 'Canto') + ' aos ' + L.minute + "'. Houve falta na área?";
   const d = S.players[L.def.id], bits = [];
@@ -197,7 +201,7 @@ function decideScene(L, d, timedOut) {
   } else if (d === 'mao' || d === 'maoAmarelo') {
     const [tk] = nearest(active().filter(p => p.team === atkT && p.role !== 'gk'), L.P.x, L.P.y);
     b.x = L.P.x; b.y = L.P.y; tk.x = L.P.x - TEAMS[atkT].dir * 0.8; tk.y = L.P.y; b.owner = tk; b.last = atkT; tk.cd = 0.9; tk.setPiece = true;
-    msg = 'Mão na bola: livre para ' + artT(atkT); against = defT;
+    msg = 'Mão na bola: livre para ' + artT(atkT); against = defT; fkCheck(tk);
   } else {
     const keep = def.off ? active().find(p => p.team === defT) : def;
     b.x = keep.x; b.y = keep.y; b.owner = keep; b.last = defT; keep.cd = 0.5;
@@ -210,10 +214,12 @@ function decideScene(L, d, timedOut) {
   if (d !== 'siga') Sfx.whistle(d === 'maoAmarelo' || pen ? 'long' : 'short');
   if (against !== null) crowdReact(against, pts < 1);
   feedDecision(L, d, msg);
-  hide3D(); showDecide(false); toast(msg, 2.6);
-  mode = 'play'; S.pause = Math.max(S.pause, 1.2);
-  protestAfter(against, sev, pts < 1);
-  if (S.control <= 10) endMatch('abandonado');
+  finishDecision(L, d, msg, () => {
+    hide3D(); toast(msg, 2.6);
+    mode = 'play'; S.pause = Math.max(S.pause, 1.2);
+    protestAfter(against, sev, pts < 1);
+    if (S.control <= 10) endMatch('abandonado');
+  });
 }
 
 // ---------- 3D dos lances novos ----------
@@ -372,10 +378,10 @@ function sceneCam(L, t, look, width, ideal) {
   L.cam.x = lerp(L.cam.x, look.x, 0.12); L.cam.y = lerp(L.cam.y, look.y, 0.12); L.cam.fov = lerp(L.cam.fov, vfov, 0.08);
   R.cam.fov = L.cam.fov; R.cam.updateProjectionMatrix();
   R.cam.position.set(cx, ch, cy);
-  const sh = camShake(L, camDist); R.cam.lookAt(L.cam.x + sh.x, 1 + sh.y, L.cam.y + sh.z);
+  const sh = camShake(L, camDist); R.cam.lookAt(L.cam.x + sh.x, (L.ideal && ideal.lh !== undefined ? ideal.lh : 1) + sh.y, L.cam.y + sh.z);
   R.renderer.render(R.scene, R.cam);
 }
-function poseScene(L, t) { $('pip').hidden = true; if (L.kind === 'mao') poseHand(L, t); else poseCorner(L, t); }
+function poseScene(L, t) { $('pip').hidden = true; glassPosts(L); if (L.kind === 'mao') poseHand(L, t); else if (L.kind === 'golo') poseGoalFoul(L, t); else if (L.kind === 'linha') poseLine(L, t); else poseCorner(L, t); }
 
 // guarda-redes: sai a correr e atira-se aos pés (queda captada)
 function gkPose(L, d, t, dRun) {

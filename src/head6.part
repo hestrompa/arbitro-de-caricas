@@ -90,6 +90,18 @@ button:focus-visible { outline: 2px solid var(--whistle); outline-offset: 2px; }
 #decide[data-kind="foul-box"] .choices { grid-template-columns: repeat(6, minmax(0, 1fr)); }
 #decide[data-kind="offside"] .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 #decide[data-kind="mao"] .choices, #decide[data-kind="canto"] .choices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+#decide[data-kind="golo"] .choices, #decide[data-kind="linha"] .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.say { position: absolute; left: 50%; top: 44px; transform: translateX(-50%); width: max-content; max-width: min(560px, 86%); background: #f7f7f2; color: #15161a; padding: 8px 14px; border-radius: 14px; font-size: 15px; font-weight: 600; line-height: 1.3; text-align: center; box-shadow: 0 4px 18px rgba(0,0,0,.45); pointer-events: none; }
+.say::after { content: ""; position: absolute; left: 50%; bottom: -8px; margin-left: -8px; border: 8px solid transparent; border-bottom: 0; border-top-color: #f7f7f2; }
+.paper { background: #f1ece0; color: #1d1d1b; border-radius: 4px; padding: 12px 14px; display: grid; gap: 5px; font-family: Georgia, "Times New Roman", serif; }
+.paper .pname { display: flex; justify-content: space-between; gap: 8px; font-family: var(--display); font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: #6b5f45; border-bottom: 1px solid #cfc6b0; padding-bottom: 4px; }
+.paper .pname b { color: #b5452c; letter-spacing: .08em; }
+.paper h3 { margin: 0; font-size: 21px; line-height: 1.15; text-wrap: balance; }
+.paper p { margin: 0; font-size: 14px; color: #3a3a36; }
+.paper .quote { font-style: italic; }
+tr.me td { color: var(--whistle); font-weight: 600; }
+.papers { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; font-size: 14px; }
+.papers small { display: block; color: var(--muted); font-size: 12px; }
 .ask { border-color: var(--whistle); }
 .ticker { position: absolute; left: 10px; top: 10px; max-width: 70%; background: rgba(8,14,10,.72); border-left: 3px solid var(--whistle); padding: 4px 10px; font-size: 13px; color: var(--chalk); border-radius: 2px; pointer-events: none; opacity: .9; }
 .ticker.fresh { animation: tick 6s forwards; }
@@ -213,6 +225,7 @@ td.next { color: var(--whistle); }
     <div class="flash" id="flash" hidden>Lance!</div>
     <div class="toast" id="toast" hidden></div>
     <div class="ticker" id="ticker" hidden></div>
+    <div class="say" id="refSay" hidden></div>
     <div class="viewbtns" id="viewBtns" hidden>
       <button type="button" id="viewMine" aria-pressed="false">A tua vista</button>
       <button type="button" id="viewIdeal" aria-pressed="true">Vista ideal</button>
@@ -245,7 +258,7 @@ td.next { color: var(--whistle); }
           <kbd>Shift</kbd><span>correr, gasta energia</span>
           <kbd>1 a 6</kbd><span>siga, falta, amarelo, vermelho, simulação, vantagem</span>
           <kbd>1 a 3</kbd><span>mão na bola e cantos: siga, penálti ou livre, e a variante com cartão</span>
-          <kbd>1 / 2</kbd><span>no fora de jogo: em jogo ou fora de jogo</span>
+          <kbd>1 / 2</kbd><span>no fora de jogo e nos golos: em jogo ou fora, golo válido ou anulado, entrou ou não</span>
           <kbd>R</kbd><span>rever o lance em câmara lenta</span>
           <kbd>1 a 4</kbd><span>nos protestos: ignorar, afastar, amarelo, falar com o capitão</span>
           <kbd>Espaço , .</kbd><span>depois de veres o lance: pausa e fotograma a fotograma</span>
@@ -266,12 +279,16 @@ td.next { color: var(--whistle); }
       <button class="choice" type="button" data-k="foul" data-d="vermelho"><span class="swatch" style="background: var(--bad)"></span>Vermelho<small>4</small></button>
       <button class="choice" type="button" data-k="foul" data-d="simulacao">Simulação<small>5 · amarelo ao atacante</small></button>
       <button class="choice" type="button" data-k="foul" data-d="vantagem">Vantagem<small>6 · deixa seguir</small></button>
-      <button class="choice" type="button" data-k="offside" data-d="emjogo" hidden>Em jogo<small>1 · segue o ataque</small></button>
-      <button class="choice" type="button" data-k="offside" data-d="fora" hidden><span class="swatch" style="background: var(--whistle)"></span>Fora de jogo<small>2 · livre indireto</small></button>
+      <button class="choice" type="button" data-k="offside" data-d="emjogo" hidden>Em jogo<small id="ojSmall">1 · segue o ataque</small></button>
+      <button class="choice" type="button" data-k="offside" data-d="fora" hidden><span class="swatch" style="background: var(--whistle)"></span>Fora de jogo<small id="foraSmall">2 · livre indireto</small></button>
       <button class="choice" type="button" data-k="mao" data-d="mao" hidden>Mão<small id="maoSmall">2 · penálti</small></button>
       <button class="choice" type="button" data-k="mao" data-d="maoAmarelo" hidden><span class="swatch" style="background: var(--whistle)"></span>Mão + amarelo<small>3 · deliberada</small></button>
       <button class="choice" type="button" data-k="canto" data-d="penalti" hidden>Penálti<small>2 · falta do defesa</small></button>
       <button class="choice" type="button" data-k="canto" data-d="ataque" hidden>Falta atacante<small>3 · livre para a defesa</small></button>
+      <button class="choice" type="button" data-k="golo" data-d="valido" hidden>Golo válido<small>1 · ombro com ombro</small></button>
+      <button class="choice" type="button" data-k="golo" data-d="anular" hidden>Anular<small>2 · falta do atacante</small></button>
+      <button class="choice" type="button" data-k="linha" data-d="entrou" hidden>Golo<small>1 · entrou toda</small></button>
+      <button class="choice" type="button" data-k="linha" data-d="naoEntrou" hidden>Não entrou<small>2 · siga o jogo</small></button>
       <button class="choice ghost" type="button" id="replayBtn">Rever<small>R · câmara lenta</small></button>
     </div>
   </section>
@@ -312,6 +329,16 @@ td.next { color: var(--whistle); }
         <p class="small" id="carFinals" hidden></p>
       </div>
     </div>
+    <div class="car-grid">
+      <div id="carRank">
+        <h3>Classificação dos árbitros</h3>
+        <table><thead><tr><th>#</th><th>Árbitro</th><th>Jogos</th><th>Média</th></tr></thead><tbody id="carTable"></tbody></table>
+      </div>
+      <div id="carPapersWrap" hidden>
+        <h3>Nos jornais</h3>
+        <ul class="papers" id="carPapers"></ul>
+      </div>
+    </div>
     <div class="row-actions"><button class="ghostbtn" id="carMenu" type="button">Menu</button><button class="linkbtn" id="carReset" type="button">Apagar carreira</button></div>
   </section>
 
@@ -319,6 +346,7 @@ td.next { color: var(--whistle); }
     <h2 id="revTitle">Relatório do observador</h2>
     <div class="grade"><b id="grade">0.0</b><span id="gradeTxt"></span></div>
     <p class="news" id="careerNote" hidden></p>
+    <div class="paper" id="paper" hidden><div class="pname"><span id="paperName"></span><b id="paperStars"></b></div><h3 id="paperHead"></h3><p id="paperBody"></p><p class="quote" id="paperQuote"></p></div>
     <div class="summary"><h3>Momentos do jogo</h3><ol class="moments" id="sumList"></ol>
       <details class="feed"><summary>Relato completo · <span id="feedCount"></span></summary><ol class="moments" id="feedList"></ol></details></div>
     <div class="table-wrap">
