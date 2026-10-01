@@ -21,6 +21,9 @@ function feedDecision(L, d, msg) {
   let intro = '';
   if (L.goalCtx) intro = pickOf(['Revisão do golo: ', 'Antes de validar o golo: ', 'Golo em análise: ']);
   else if (L.kind === 'aereo') intro = pickOf(['Disputa no ar entre o ' + L.att.num + ' e o ' + L.def.num + ': ', 'Bola longa e choque de cabeças: ']);
+  else if (L.kind === 'pisao') intro = pickOf(['Entrada por trás do ' + L.def.num + ' ' + deT(L.def.team) + ': ', 'O ' + L.att.num + ' protege a bola e leva com o pé do ' + L.def.num + ': ']);
+  else if (L.gkOut) intro = pickOf(['O guarda-redes sai da área ao encontro do ' + L.att.num + ': ', 'Saída arriscada do guarda-redes fora da área: ']);
+  else if (L.light) intro = pickOf(['Contacto ligeiro na área e o ' + L.att.num + ' vai ao chão: ', 'Toque na área, o ' + L.att.num + ' cai: ']);
   else if (L.kind === 'agarrao') intro = pickOf(['O ' + L.def.num + ' ' + deT(L.def.team) + ' agarra a camisola do ' + L.att.num + ': ', 'Contra-ataque travado com a mão na camisola: ']);
   else if (L.kind === 'offside') intro = pickOf(['Passe em profundidade para ' + who(S.players[L.oi.receiver].num, L.oi.team) + ': ', 'Bola nas costas da defesa: ']);
   else if (L.kind === 'mao') intro = pickOf(['Remate do ' + L.att.num + ' e a bola bate no ' + L.def.num + ': ', 'A bola bate no ' + L.def.num + ' ' + deT(L.def.team) + ': ']);

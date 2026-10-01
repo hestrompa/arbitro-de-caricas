@@ -5,6 +5,9 @@ exec(open('phase4.py').read())
 exec(open('phase5.py').read())
 exec(open('phase6.py').read())
 exec(open('phase7.py').read())
+exec(open('phase8.py').read())
+exec(open('phase9.py').read())
+exec(open('phase10.py').read())
 M = '../assets/'
 h = json.load(open(M + 'human.json'))
 skins = {k: 'data:image/jpeg;base64,' + base64.b64encode(open(M + 'skin_' + k + '.jpg', 'rb').read()).decode() for k in ['light', 'mid', 'brown', 'dark']}

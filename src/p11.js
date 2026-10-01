@@ -52,7 +52,7 @@ function briefSquads(h, a, tier) {
   const fav = Math.abs(rh - ra) < 4 ? 'Jogo equilibrado' : 'Favorito: ' + (rh > ra ? h[0] : a[0]);
   out.push(fav + ' (força ' + rh + ' contra ' + ra + ').');
   [[h, rh], [a, ra]].forEach(([c, rt]) => {
-    const sq = squadFor(c[0], rt), st = sq.find(q => q.tr.includes('estrela')), sm = sq.find(q => q.tr.includes('simulador')), du = sq.find(q => q.tr.includes('duro'));
+    const out0 = q => !(C && C.pl && (C.pl[c[0] + '#' + q.num] || {}).ban), sq = squadFor(c[0], rt).filter(out0), st = sq.find(q => q.tr.includes('estrela')), sm = sq.find(q => q.tr.includes('simulador')), du = sq.find(q => q.tr.includes('duro'));
     const bits = [];
     if (st) bits.push('a estrela é ' + st.name + ' (' + st.num + ', ' + st.ovr + ')');
     if (sm) bits.push(sm.short + ' (' + sm.num + ') tem fama de se atirar');
@@ -104,7 +104,7 @@ function radio(who, txt) {
   if (!S || S.noRadio) return;
   $('radioWho').textContent = who; $('radioTxt').textContent = txt; $('radio').hidden = false;
   const el = $('radio'); el.classList.remove('fresh'); void el.offsetWidth; el.classList.add('fresh');
-  Sfx.radio();
+  Sfx.radio(); if (typeof Voice !== 'undefined') Voice.say(txt, who);
   clearTimeout(radioT); radioT = setTimeout(() => { $('radio').hidden = true; }, 4200);
 }
 function varCallText(L, d) {
@@ -119,8 +119,8 @@ function radioLance(L) {
   if (L.kind === 'offside') { radio('Assistente', L.flag ? 'Levantei: para mim o recetor está fora.' : 'Bandeira em baixo: vi-o em linha.'); return; }
   if (L.goalCtx) { radio('VAR', 'Estamos a ver o golo. Decide tu primeiro.'); return; }
   // lance tapado: o assistente diz o que viu; acerta quase sempre, mas nem sempre
-  if (L.clarity < 0.5 && Math.random() < 0.65) {
-    const right = Math.random() < 0.8, alt = Object.values(keyMap(L)).filter(x => x !== L.truth && x !== 'vantagem'), says = right || !alt.length ? L.truth : pickOf(alt);
+  if (L.clarity < 0.5 && Math.random() < (S.astBoost ? 0.85 : 0.65)) {
+    const right = Math.random() < (S.astBoost ? 0.92 : 0.8), alt = Object.values(keyMap(L)).filter(x => x !== L.truth && x !== 'vantagem'), says = right || !alt.length ? L.truth : pickOf(alt);
     L.astSaid = says; L.astRight = says === L.truth;
     const T = { siga: 'Daqui pareceu-me lance limpo.', falta: 'Daqui vi falta.', amarelo: 'Entrada imprudente, eu dava amarelo.', vermelho: 'Foi muito forte, pode ser vermelho.', simulacao: 'Para mim atirou-se.', mao: 'Vi mão, braço aberto.', maoAmarelo: 'Mão deliberada.', penalti: 'Vi o empurrão do defesa.', ataque: 'Foi o atacante que empurrou.', soco: 'Cotovelada na cara.' };
     if (T[says]) radio('Assistente', T[says]);

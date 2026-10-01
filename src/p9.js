@@ -6,6 +6,11 @@ function refSays(L, d) {
   let s;
   if (L.kind === 'offside') s = L.goal !== undefined ? (d === 'fora' ? 'Golo anulado: estavas em fora de jogo no passe.' : 'Estava em jogo. O golo conta!') : d === 'fora' ? 'Fora de jogo: estavas à frente do penúltimo defesa.' : 'Estava em jogo, siga!';
   else if (L.kind === 'aereo') s = { siga: 'Os dois foram à bola. Siga!', falta: 'Empurraste-o nas costas no salto. Falta.', amarelo: 'Usaste o braço como alavanca. Amarelo.', vermelho: 'Cotovelada na cara. Vermelho!' }[d] || 'Siga!';
+  else if (L.kind === 'pisao') s = { siga: 'Tocaste na bola. Siga!', falta: 'Pisaste-lhe o calcanhar. Falta.', amarelo: 'Pitões no tendão. Amarelo.', vermelho: 'Pisão com força, por trás. Vermelho!' }[d] || 'Siga!';
+  else if (L.gkOut && d === 'vermelho') s = 'Último homem, fora da área e sem tocar na bola. Vermelho!';
+  else if (L.gkOut && d === 'siga') s = 'O guarda-redes chegou primeiro à bola. Siga!';
+  else if (L.light && d === 'siga') s = 'Houve toque, mas não chega para penálti. Siga!';
+  else if (L.light && d === 'falta') s = 'Tocou-lhe no pé, é penálti!';
   else if (L.kind === 'agarrao') s = { siga: 'Foi só um toque. Siga!', falta: 'Agarraste a camisola. Falta.', amarelo: 'Agarraste e paraste o contra-ataque. Amarelo.', vermelho: 'Agarrão a impedir um golo. Vermelho!' }[d] || 'Siga!';
   else if (L.kind === 'golo') s = d === 'valido' ? 'Foi ombro com ombro. O golo conta!' : 'Empurraste o defesa antes do remate. Golo anulado.';
   else if (L.kind === 'linha') s = d === 'entrou' ? 'A bola passou toda a linha. É golo!' : 'Não passou toda a linha. Não há golo.';
@@ -49,7 +54,7 @@ function finishDecision(L, d, msg, after) {
   mode = 'gesto';
   $('scrub').hidden = true; $('viewBtns').hidden = true; $('pip').hidden = true;
   $('capL').textContent = 'Decisão do árbitro · toca para continuar'; $('capR').textContent = DEC_LABEL[d] || '';
-  $('refSay').textContent = say; $('refSay').hidden = false;
+  $('refSay').textContent = say; $('refSay').hidden = false; if (typeof Voice !== 'undefined') Voice.say(say.replace(/^[^:]*: /, ''), 'Árbitro');
   if (g.type === 'card') Sfx.whistle('short');
   if (/VAR confirmou/.test(msg)) radio('VAR', 'Check completo. Decisão confirmada.');
 }

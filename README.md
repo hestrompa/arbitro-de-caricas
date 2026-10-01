@@ -25,6 +25,13 @@ Com o GitHub Pages ligado (Settings → Pages → Deploy from a branch → `main
 - Os vermelhos ficam à vista: no marcador, ao lado do nome da equipa, e junto ao banco, por baixo do campo.
 - Rádio dos árbitros: o assistente diz o que viu nos foras de jogo e nos lances tapados (acerta quase sempre, mas nem sempre), o VAR explica porque te chama e confirma os golos, e o 4.º árbitro avisa quando o banco está a ferver.
 - Lances novos em 3D: disputa de cabeça nas bolas longas (empurrão, braço de alavanca ou cotovelada) e agarrão à camisola num contra-ataque.
+- Ao intervalo as equipas trocam de campo. Antes da 2.ª parte revês os lances da 1.ª (com a vista ideal e a avaliação) e escolhes uma conversa: com os capitães, com os assistentes ou descansar.
+- Há lances de interpretação: faltas no limite do amarelo (ou do vermelho), faltas que cortam um ataque prometedor e toques leves na área. Nesses, as duas decisões contam como certas, mas o observador vê o teu critério: se mudas de critério no mesmo jogo, a equipa prejudicada queixa-se e a nota desce; na carreira, ter o mesmo critério de jogo para jogo dá pontos na média da época.
+- Mais lances em 3D: pisão por trás a quem protege a bola, guarda-redes que sai da área contra um avançado isolado, e toque leve na área.
+- Os jogadores têm memória na carreira: 5 amarelos dão 1 jogo de castigo, a expulsão por 2 amarelos dá 1 jogo e o vermelho direto dá 2. Quem expulsaste lembra-se de ti e entra mais duro. O ecrã da carreira mostra a disciplina da época, e tocar numa carica abre a ficha do jogador.
+- O rádio e o relato falam (voz do browser, em português), com botão para desligar no menu.
+- "Primeiro jogo guiado" no menu ensina as teclas, os lances, o fora de jogo e o VAR.
+- Os equipamentos têm o padrão de cada clube (riscas, aros, faixa, metades, mangas), gola e punhos, risca nos calções, nome nas costas e emblema ao peito. O árbitro troca de equipamento quando uma equipa joga de preto.
 - Os treinadores também saem da área técnica a protestar: mandas sentar, mostras amarelo ou, se insistirem, vermelho.
 - Há relato do jogo, um estádio 3D com bancadas nas cores das equipas, e o relatório final começa pelos momentos do jogo.
 - Quando erras num vermelho, num penálti ou num fora de jogo, o VAR chama-te ao monitor, e cada ida ao monitor custa autoridade. No fora de jogo arrastas as linhas no relvado (setas afinam, Tab troca de linha).
@@ -51,7 +58,10 @@ Com o GitHub Pages ligado (Settings → Pages → Deploy from a branch → `main
   - `p10.js`: carreira 2.0 (épocas longas, jornais, treinadores, classificação dos árbitros).
   - `p11.js`: plantéis e força das equipas, vermelhos à vista, rádio dos árbitros e nota do observador.
   - `p12.js`: lances novos em 3D (disputa aérea e agarrão).
-  - `splice.py` e `phase3.py` a `phase7.py`: juntam as partes no `game.js` final.
+  - `p13.js`: lances de interpretação, critério do árbitro e intervalo.
+  - `p14.js`: pisão, guarda-redes fora da área, toque leve, voz e primeiro jogo guiado.
+  - `p15.js`: castigos e memória dos jogadores na carreira, ficha do jogador.
+  - `splice.py` e `phase3.py` a `phase10.py`: juntam as partes no `game.js` final.
 - `manifest.webmanifest`, `sw.js` e os ícones: modo app instalável e offline.
 - `assets/`: corpo humano já convertido (`human.bin`, `human.json`) e texturas de pele.
 - `assets/anims.json`: animações captadas (corrida, trote, parado, mergulho, queda, remate) já adaptadas ao corpo do jogo.

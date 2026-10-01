@@ -55,26 +55,32 @@ function makeRig(T) {
   const std = (c, rough) => new T.MeshStandardMaterial({ color: c, roughness: rough, metalness: 0, skinning: true });
   const boot = std('#141414', 0.35);
   const U = { uShirt: { value: new T.Color('#3569dc') }, uShorts: { value: new T.Color('#f1f1f1') }, uSock: { value: new T.Color('#1d3f8f') }, uHair: { value: new T.Color('#2a1a10') },
-    uCut: { value: new T.Vector4(hd.cut.hip, hd.cut.knee, hd.cut.foot, hd.cut.sh) }, uBald: { value: 0 } };
+    uCut: { value: new T.Vector4(hd.cut.hip, hd.cut.knee, hd.cut.foot, hd.cut.sh) }, uBald: { value: 0 },
+    uShirt2: { value: new T.Color('#f2f2f2') }, uTrim: { value: new T.Color('#1d3f8f') }, uPat: { value: 0 } };
   const skin = new T.MeshStandardMaterial({ map: tex.light, roughness: 0.66, metalness: 0, skinning: true });
   skin.onBeforeCompile = sh => {
     Object.assign(sh.uniforms, U);
-    sh.vertexShader = 'attribute vec4 kit;\nattribute vec2 kit2;\nvarying vec4 vKit;\nvarying vec2 vKit2;\nvarying float vRestY;\n' +
-      sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvKit = kit; vKit2 = kit2; vRestY = position.y;');
-    sh.fragmentShader = 'uniform vec3 uShirt, uShorts, uSock, uHair;\nuniform vec4 uCut;\nuniform float uBald;\nvarying vec4 vKit;\nvarying vec2 vKit2;\nvarying float vRestY;\n' +
+    sh.vertexShader = 'attribute vec4 kit;\nattribute vec2 kit2;\nvarying vec4 vKit;\nvarying vec2 vKit2;\nvarying float vRestY;\nvarying vec2 vRXZ;\n' +
+      sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvKit = kit; vKit2 = kit2; vRestY = position.y; vRXZ = position.xz;');
+    sh.fragmentShader = 'uniform vec3 uShirt, uShorts, uSock, uHair, uShirt2, uTrim;\nuniform vec4 uCut;\nuniform float uBald, uPat;\nvarying vec2 vRXZ;\nvarying vec4 vKit;\nvarying vec2 vKit2;\nvarying float vRestY;\n' +
       sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
       {
-        float y = vRestY; vec3 c = diffuseColor.rgb; float cloth = 0.0;
+        float y = vRestY; vec3 c = diffuseColor.rgb; float cloth = 0.0; float x = vRXZ.x;
+        vec3 shirtC = uShirt;
+        if (uPat > 0.5 && uPat < 1.5 && fract((x + 0.5) * 8.0) > 0.5) shirtC = uShirt2;
+        if (uPat > 1.5 && uPat < 2.5 && fract(y * 7.0) > 0.5) shirtC = uShirt2;
+        if (uPat > 2.5 && uPat < 3.5 && abs(x * 0.95 - (y - 1.27)) < 0.06) shirtC = uShirt2;
+        if (uPat > 3.5 && uPat < 4.5 && x > 0.0) shirtC = uShirt2;
         if (vKit2.x > 0.5) { c = vec3(0.07, 0.05, 0.04); }
         else if (vKit.w > 0.5 && uBald < 0.5) { c = uHair * (0.8 + 0.4 * diffuseColor.g); }
         else if (vKit.z > 0.5) { }
-        else if (vKit.x > 0.5) { if (y > uCut.w - 0.2) { c = uShirt; cloth = 1.0; } }
+        else if (vKit.x > 0.5) { if (y > uCut.w - 0.2) { c = uPat > 4.5 ? uShirt2 : (uPat > 3.5 && x < 0.0 ? uShirt : (uPat > 3.5 ? uShirt2 : uShirt)); if (y < uCut.w - 0.175) c = uTrim; cloth = 1.0; } }
         else if (vKit.y > 0.5) {
           if (y < uCut.z + 0.035) discard;
-          else if (y < uCut.y - 0.08) { c = uSock; cloth = 1.0; }
+          else if (y < uCut.y - 0.08) { c = y > uCut.y - 0.115 ? uTrim : uSock; cloth = 1.0; }
           else if (y < uCut.y + 0.16) { }
-          else { c = uShorts; cloth = 1.0; }
-        } else if (y > uCut.w + 0.085) { } else { c = y > uCut.x + 0.11 ? uShirt : uShorts; cloth = 1.0; }
+          else { c = abs(abs(x) - 0.135) < 0.012 && abs(x) > 0.1 ? uTrim : uShorts; cloth = 1.0; }
+        } else if (y > uCut.w + 0.085) { } else { c = y > uCut.x + 0.11 ? (y > uCut.w + 0.06 ? uTrim : shirtC) : uShorts; cloth = 1.0; }
         diffuseColor.rgb = c;
       }`);
   };
@@ -113,11 +119,15 @@ function makeRig(T) {
     const so = new T.Mesh(BOOT_GEO(T).sole, boot); so.position.set(0, -0.07, 0.05); f.add(so);
   }
   // número nas costas
-  const numCv = document.createElement('canvas'); numCv.width = numCv.height = 128;
+  const numCv = document.createElement('canvas'); numCv.width = 256; numCv.height = 224;
   const numTex = new T.CanvasTexture(numCv);
-  const numMesh = new T.Mesh(new T.PlaneGeometry(0.21, 0.21), new T.MeshStandardMaterial({ map: numTex, transparent: true, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4 }));
-  const sp = B('spine02'); numMesh.position.set(0, 0.02, -0.135); numMesh.rotation.y = Math.PI; sp.add(numMesh);
-  return { outer, body, mesh, bones, head: B('head'), neck: B('neck01'), spine: B('spine03'),
+  const numMesh = new T.Mesh(new T.PlaneGeometry(0.27, 0.236), new T.MeshStandardMaterial({ map: numTex, transparent: true, roughness: 0.7, polygonOffset: true, polygonOffsetFactor: -4 }));
+  const sp = B('spine02'); numMesh.position.set(0, 0.05, -0.135); numMesh.rotation.y = Math.PI; sp.add(numMesh);
+  const crCv = document.createElement('canvas'); crCv.width = crCv.height = 64;
+  const crTex = new T.CanvasTexture(crCv);
+  const crMesh = new T.Mesh(new T.PlaneGeometry(0.065, 0.065), new T.MeshStandardMaterial({ map: crTex, transparent: true, roughness: 0.6, polygonOffset: true, polygonOffsetFactor: -4 }));
+  crMesh.position.set(0.075, 0.13, 0.125); crMesh.rotation.y = 0.18; sp.add(crMesh);
+  return { crCv, crTex, crMesh, outer, body, mesh, bones, head: B('head'), neck: B('neck01'), spine: B('spine03'),
     hipL: B('upperleg01.R'), kneeL: B('lowerleg01.R'), ankleL: B('foot.R'), bootL,
     hipR: B('upperleg01.L'), kneeR: B('lowerleg01.L'), ankleR: B('foot.L'), bootR,
     armL: B('upperarm01.R'), elL: B('lowerarm01.R'), armR: B('upperarm01.L'), elR: B('lowerarm01.L'),
@@ -129,19 +139,42 @@ function styleRig(r, team, role, num, id) {
   U.uHair.value.set(lk.hair); U.uBald.value = lk.bald ? 1 : 0;
   r.boot.color.set(team < 0 ? '#141414' : lk.boot);
   r.outer.scale.setScalar(lk.h);
-  if (team < 0) { U.uShirt.value.set('#17181c'); U.uShorts.value.set('#17181c'); U.uSock.value.set('#17181c'); r.numMesh.visible = false; return; }
+  if (team < 0) { const dark = TEAMS.some(t => hexDist(t.color, '#17181c') < 120), rc = dark ? '#e9d23a' : '#17181c'; U.uShirt.value.set(rc); U.uShorts.value.set('#17181c'); U.uSock.value.set(rc); U.uTrim.value.set('#17181c'); U.uPat.value = 0; r.numMesh.visible = false; r.crMesh.visible = false; return; }
   const t = TEAMS[team], gk = role === 'gk';
   U.uShirt.value.set(gk ? t.gk : t.color); U.uShorts.value.set(t.shorts); U.uSock.value.set(gk ? t.gk : t.sock);
-  r.numMesh.visible = true;
-  const key = team + ':' + role + ':' + num;
+  const K = kitStyle(t); U.uPat.value = gk ? 0 : K.pat; U.uShirt2.value.set(K.c2); U.uTrim.value.set(gk ? '#1b1b1b' : K.trim);
+  r.numMesh.visible = true; r.crMesh.visible = true;
+  const pl = typeof S !== 'undefined' && S && S.players && S.players[id] && S.players[id].num === num ? S.players[id] : null, nm = pl && pl.short ? pl.short.toUpperCase() : '';
+  const key = team + ':' + role + ':' + num + ':' + nm + ':' + t.name;
   if (r.num !== key) {
     r.num = key;
-    const gx = r.numCv.getContext('2d'); gx.clearRect(0, 0, 128, 128);
-    gx.font = '700 104px "Barlow Condensed", "Arial Narrow", sans-serif'; gx.textAlign = 'center'; gx.textBaseline = 'middle';
-    gx.lineWidth = 6; gx.strokeStyle = 'rgba(10,12,20,.55)'; gx.strokeText(String(num), 64, 70);
-    gx.fillStyle = '#f7f7f2'; gx.fillText(String(num), 64, 70);
+    const gx = r.numCv.getContext('2d'); gx.clearRect(0, 0, 256, 224);
+    const ink = K.ink;
+    gx.textAlign = 'center'; gx.textBaseline = 'middle';
+    if (nm) { gx.font = '600 34px "Barlow Condensed", "Arial Narrow", sans-serif'; gx.fillStyle = ink; gx.fillText(nm, 128, 22, 230); }
+    gx.font = '700 150px "Barlow Condensed", "Arial Narrow", sans-serif';
+    gx.lineWidth = 7; gx.strokeStyle = 'rgba(10,12,20,.45)'; gx.strokeText(String(num), 128, 136);
+    gx.fillStyle = ink; gx.fillText(String(num), 128, 136);
     r.numTex.needsUpdate = true;
+    drawCrest(r.crCv.getContext('2d'), t); r.crTex.needsUpdate = true;
   }
+}
+// equipamento de cada clube: padrão da camisola, segunda cor, gola e punhos, e emblema
+function kitStyle(t) {
+  const h = hashS(t.name || 'x'), lum = c => { const n = parseInt(c.slice(1), 16); return ((n >> 16) * 0.3 + ((n >> 8) & 255) * 0.59 + (n & 255) * 0.11) / 255; };
+  const pats = [0, 0, 1, 2, 3, 4, 5, 0, 1, 5];
+  const pat = DEFAULT_TEAMS.some(d => d.name === t.name) ? 0 : pats[h % pats.length];
+  const c2 = lum(t.color) > 0.6 ? t.dark : (h >> 4) % 3 === 0 ? t.dark : '#f2f2f2';
+  const trim = pat === 0 ? (lum(t.color) > 0.6 ? t.dark : '#f2f2f2') : t.dark;
+  const ink = lum(t.color) > 0.62 || (pat && lum(c2) > 0.62 && pat !== 3 && pat !== 5) ? '#16181e' : '#f7f7f2';
+  return { pat, c2, trim, ink };
+}
+function drawCrest(gx, t) {
+  gx.clearRect(0, 0, 64, 64);
+  gx.beginPath(); gx.moveTo(8, 6); gx.lineTo(56, 6); gx.lineTo(56, 34); gx.quadraticCurveTo(56, 52, 32, 60); gx.quadraticCurveTo(8, 52, 8, 34); gx.closePath();
+  gx.fillStyle = t.dark || '#222'; gx.fill(); gx.lineWidth = 4; gx.strokeStyle = '#f2cf3a'; gx.stroke();
+  const ini = (t.name || '').split(/\s+/).filter(w => w.length > 2 || /^[A-Z]/.test(w)).map(w => w[0].toUpperCase()).join('').slice(0, 3) || 'FC';
+  gx.fillStyle = '#f7f7f2'; gx.font = '700 ' + (ini.length > 2 ? 17 : 22) + 'px "Barlow Condensed", sans-serif'; gx.textAlign = 'center'; gx.textBaseline = 'middle'; gx.fillText(ini, 32, 30);
 }
 function placeRig(r, x, y, fx, fy) { r.outer.position.set(x, 0, y); r.outer.rotation.y = Math.atan2(fx, fy); }
 let _v = null;

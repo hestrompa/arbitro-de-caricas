@@ -91,12 +91,25 @@ button:focus-visible { outline: 2px solid var(--whistle); outline-offset: 2px; }
 #decide[data-kind="offside"] .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 #decide[data-kind="mao"] .choices, #decide[data-kind="canto"] .choices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 #decide[data-kind="golo"] .choices, #decide[data-kind="linha"] .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-#decide[data-kind="aereo"] .choices, #decide[data-kind="agarrao"] .choices { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+#decide[data-kind="aereo"] .choices, #decide[data-kind="agarrao"] .choices, #decide[data-kind="pisao"] .choices { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .reds { display: inline-flex; gap: 3px; }
 .reds i { display: inline-grid; place-items: center; width: 15px; height: 20px; border-radius: 2px; background: #d8322f; color: #fff; font-style: normal; font-size: 12px; font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
 .radio { position: absolute; left: 10px; bottom: 56px; max-width: min(420px, 80%); background: rgba(8,14,10,.88); border: 1px solid #39d0ff; border-radius: 6px; padding: 6px 10px; font-size: 14px; color: var(--chalk); pointer-events: none; display: grid; gap: 1px; }
 .radio b { font-family: var(--display); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #39d0ff; }
 .radio b::before { content: "◉ "; }
+.pcard { position: absolute; right: 10px; top: 10px; width: min(250px, 70%); background: rgba(8,14,10,.92); border: 1px solid var(--line); border-radius: 6px; padding: 10px 12px; display: grid; gap: 8px; z-index: 5; font-size: 13px; }
+.pchead { display: flex; gap: 10px; align-items: center; }
+.pchead small { display: block; color: var(--muted); font-size: 12px; }
+.pcnum { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; font-family: var(--display); font-size: 17px; flex-shrink: 0; }
+.pcbars { display: grid; gap: 3px; }
+.pcbars div { display: grid; grid-template-columns: 74px 1fr 24px; align-items: center; gap: 6px; font-size: 12px; }
+.pcbars i { height: 5px; border-radius: 3px; background: linear-gradient(90deg, var(--whistle) var(--w), rgba(255,255,255,.12) var(--w)); }
+.pcbars b { text-align: right; font-weight: 600; }
+#pcTags { color: var(--muted); font-size: 12px; }
+.tut { position: absolute; left: 50%; top: 44px; transform: translateX(-50%); width: min(560px, 92%); background: rgba(8,14,10,.92); border: 1px solid var(--whistle); border-radius: 6px; padding: 10px 14px; display: grid; gap: 8px; z-index: 6; }
+.tut p { margin: 0; font-size: 15px; line-height: 1.35; }
+.tut .tutstep { font-family: var(--display); font-size: 12px; letter-spacing: .1em; color: var(--whistle); }
+.tut button { justify-self: start; padding: 6px 14px; font-size: 14px; }
 .radio.fresh { animation: rin .25s ease-out; }
 @keyframes rin { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .say { position: absolute; left: 50%; top: 44px; transform: translateX(-50%); width: max-content; max-width: min(560px, 86%); background: #f7f7f2; color: #15161a; padding: 8px 14px; border-radius: 14px; font-size: 15px; font-weight: 600; line-height: 1.3; text-align: center; box-shadow: 0 4px 18px rgba(0,0,0,.45); pointer-events: none; }
@@ -145,6 +158,12 @@ td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top
 td.ok { color: var(--good); font-weight: 600; }
 td.half { color: var(--whistle); font-weight: 600; }
 td.bad { color: var(--bad); font-weight: 600; }
+.halfh { margin: 4px 0 0; font-family: var(--display); font-size: 16px; letter-spacing: .06em; text-transform: uppercase; }
+.talk { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.talk button { display: grid; gap: 2px; text-align: left; padding: 8px 10px; border: 1px solid var(--line); border-radius: 5px; background: transparent; color: var(--chalk); }
+.talk button span { font-size: 13px; opacity: .75; }
+.talk button.on { border-color: var(--whistle); background: rgba(242,207,58,.12); }
+@media (max-width: 640px) { .talk { grid-template-columns: 1fr; } .tut { top: 4px; padding: 5px 8px; gap: 4px; width: 96%; } .tut p { font-size: 12px; line-height: 1.25; } .tut button { padding: 3px 10px; font-size: 12px; } .pcard { font-size: 12px; padding: 6px 8px; gap: 4px; } }
 .linkbtn { background: none; border: 1px solid var(--line); border-radius: 3px; padding: 2px 8px; font-size: 13px; white-space: nowrap; }
 .ghostbtn { background: transparent; border: 1px solid var(--whistle); color: var(--whistle); border-radius: 4px; padding: 10px 18px; font-family: var(--display); font-weight: 600; font-size: 18px; letter-spacing: .05em; text-transform: uppercase; }
 .row-actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
@@ -237,6 +256,8 @@ td.next { color: var(--whistle); }
     <div class="toast" id="toast" hidden></div>
     <div class="ticker" id="ticker" hidden></div>
     <div class="say" id="refSay" hidden></div>
+    <div class="pcard" id="pcard" hidden><div class="pchead"><b class="pcnum" id="pcNum"></b><div><b id="pcName"></b><small id="pcSub"></small></div></div><div class="pcbars" id="pcBars"></div><small id="pcTags"></small></div>
+    <div class="tut" id="tut" hidden><span class="tutstep" id="tutStep"></span><p id="tutTxt"></p><button class="primary" id="tutBtn" type="button" hidden>Seguinte</button></div>
     <div class="radio" id="radio" hidden><b id="radioWho"></b><span id="radioTxt"></span></div>
     <div class="viewbtns" id="viewBtns" hidden>
       <button type="button" id="viewMine" aria-pressed="false">A tua vista</button>
@@ -275,7 +296,7 @@ td.next { color: var(--whistle); }
           <kbd>1 a 4</kbd><span>nos protestos: ignorar, afastar, amarelo, falar com o capitão</span>
           <kbd>Espaço , .</kbd><span>depois de veres o lance: pausa e fotograma a fotograma</span>
         </div>
-        <div class="row-actions"><button class="primary" id="startBtn" type="button">Apitar o início</button><button class="ghostbtn" id="careerBtn" type="button">Carreira</button><button class="ghostbtn" id="trainBtn" type="button">Treinar o VAR</button><button class="ghostbtn" id="installBtn" type="button" hidden>Instalar a app</button></div>
+        <div class="row-actions"><button class="primary" id="startBtn" type="button">Apitar o início</button><button class="ghostbtn" id="careerBtn" type="button">Carreira</button><button class="ghostbtn" id="trainBtn" type="button">Treinar o VAR</button><button class="ghostbtn" id="tutBtnMenu" type="button">Primeiro jogo guiado</button><button class="ghostbtn" id="voiceBtn" type="button">Voz ligada</button><button class="ghostbtn" id="installBtn" type="button" hidden>Instalar a app</button></div>
         <p class="small">Na carreira começas nos distritais e o observador decide se sobes, ficas ou desces no fim de cada época, até à final do Mundial.</p>
       </div>
     </div>
@@ -285,10 +306,10 @@ td.next { color: var(--whistle); }
     <div class="decide-top"><span id="decideMsg">Qual é a tua decisão?</span><span id="decideTime"></span></div>
     <div class="timer"><i id="timerBar"></i></div>
     <div class="choices">
-      <button class="choice" type="button" data-k="foul mao canto aereo agarrao" data-d="siga">Siga<small>1 · lance limpo</small></button>
-      <button class="choice" type="button" data-k="foul aereo agarrao" data-d="falta">Falta<small id="faltaSmall">2 · livre</small></button>
-      <button class="choice" type="button" data-k="foul aereo agarrao" data-d="amarelo"><span class="swatch" style="background: var(--whistle)"></span>Amarelo<small>3</small></button>
-      <button class="choice" type="button" data-k="foul aereo agarrao" data-d="vermelho"><span class="swatch" style="background: var(--bad)"></span>Vermelho<small>4</small></button>
+      <button class="choice" type="button" data-k="foul mao canto aereo agarrao pisao" data-d="siga">Siga<small>1 · lance limpo</small></button>
+      <button class="choice" type="button" data-k="foul aereo agarrao pisao" data-d="falta">Falta<small id="faltaSmall">2 · livre</small></button>
+      <button class="choice" type="button" data-k="foul aereo agarrao pisao" data-d="amarelo"><span class="swatch" style="background: var(--whistle)"></span>Amarelo<small>3</small></button>
+      <button class="choice" type="button" data-k="foul aereo agarrao pisao" data-d="vermelho"><span class="swatch" style="background: var(--bad)"></span>Vermelho<small>4</small></button>
       <button class="choice" type="button" data-k="foul" data-d="simulacao">Simulação<small>5 · amarelo ao atacante</small></button>
       <button class="choice" type="button" data-k="foul" data-d="vantagem">Vantagem<small>6 · deixa seguir</small></button>
       <button class="choice" type="button" data-k="offside" data-d="emjogo" hidden>Em jogo<small id="ojSmall">1 · segue o ataque</small></button>
@@ -346,6 +367,10 @@ td.next { color: var(--whistle); }
         <h3>Classificação dos árbitros</h3>
         <table><thead><tr><th>#</th><th>Árbitro</th><th>Jogos</th><th>Média</th></tr></thead><tbody id="carTable"></tbody></table>
       </div>
+      <div id="carDiscWrap" hidden>
+        <h3>Disciplina da época</h3>
+        <ul class="papers" id="carDisc"></ul>
+      </div>
       <div id="carPapersWrap" hidden>
         <h3>Nos jornais</h3>
         <ul class="papers" id="carPapers"></ul>
@@ -354,6 +379,23 @@ td.next { color: var(--whistle); }
     <div class="row-actions"><button class="ghostbtn" id="carMenu" type="button">Menu</button><button class="linkbtn" id="carReset" type="button">Apagar carreira</button></div>
   </section>
 
+  <section class="review" id="half" hidden>
+    <h2 id="halfTitle">Intervalo</h2>
+    <p id="halfTxt"></p>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Min.</th><th>O que foi</th><th>Decidiste</th><th>Avaliação</th><th></th></tr></thead>
+        <tbody id="halfBody"></tbody>
+      </table>
+    </div>
+    <h3 class="halfh">Antes da 2.ª parte</h3>
+    <div class="talk" id="halfTalk">
+      <button type="button" data-t="capitaes"><b>Falar com os capitães</b><span>Mais confiança e jogadores mais calmos</span></button>
+      <button type="button" data-t="assist"><b>Rever com os assistentes</b><span>Indicações no rádio mais certeiras</span></button>
+      <button type="button" data-t="descanso"><b>Descansar</b><span>Energia cheia e menos nervos</span></button>
+    </div>
+    <div class="row-actions"><button class="primary" id="halfBtn" type="button">Começar a 2.ª parte</button></div>
+  </section>
   <section class="review" id="review" hidden>
     <h2 id="revTitle">Relatório do observador</h2>
     <div class="grade"><b id="grade">0.0</b><span id="gradeTxt"></span></div>

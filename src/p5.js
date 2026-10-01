@@ -161,6 +161,9 @@ function advPlay(L) {
 }
 
 function lanceMsg(L) {
+  if (L.kind === 'pisao') return 'Aos ' + L.minute + "', " + (S.players[L.def.id] && S.players[L.def.id].short ? pName(S.players[L.def.id]) : 'o ' + L.def.num) + ' entra por trás sobre ' + (S.players[L.att.id] && S.players[L.att.id].short ? pName(S.players[L.att.id]) : 'o ' + L.att.num) + ', de costas a proteger a bola. Pisão?';
+  if (L.gkOut) return 'O guarda-redes ' + deT(L.def.team) + ' sai da área aos ' + L.minute + "' e choca com " + (S.players[L.att.id] && S.players[L.att.id].short ? pName(S.players[L.att.id]) : 'o ' + L.att.num) + ', isolado. Foi à bola? Era o último homem?';
+  if (L.light) return 'Toque na área aos ' + L.minute + "': " + (S.players[L.att.id] && S.players[L.att.id].short ? pName(S.players[L.att.id]) : 'o ' + L.att.num) + ' cai depois do contacto com ' + (S.players[L.def.id] && S.players[L.def.id].short ? pName(S.players[L.def.id]) : 'o ' + L.def.num) + '. Chega para penálti?';
   if (L.kind === 'aereo') return 'Bola longa aos ' + L.minute + "'. Na disputa de cabeça, o " + L.def.num + ' ' + deT(L.def.team) + ' usou o braço?';
   if (L.kind === 'agarrao') return 'Contra-ataque ' + deT(L.att.team) + ' aos ' + L.minute + "'. O " + L.def.num + ' agarrou a camisola do ' + L.att.num + '?';
   if (L.kind === 'golo') return 'Golo ' + deT(L.goal) + ' aos ' + L.minute + "'. Antes do remate, o " + L.att.num + ' fez falta sobre o ' + L.def.num + '?';
