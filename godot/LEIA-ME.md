@@ -1,15 +1,30 @@
 # Árbitro de Caricas em Godot 4 (em curso)
 
-O jogo está a passar do browser (Three.js) para o Godot 4.3. Esta pasta tem o primeiro passo: um lance 3D (falta para amarelo) no estádio, com o mesmo corpo MakeHuman e as mesmas animações CMU da versão browser.
+O jogo está a passar do browser (Three.js) para o Godot 4.4, com o motor de física Jolt. Esta pasta tem os lances 3D com o mesmo corpo MakeHuman e animações reais da base de dados de captura de movimento da CMU.
 
-- `projeto/`: projeto Godot (abre o `project.godot` no editor Godot 4.3).
-- `make_glb.py`: converte o corpo MakeHuman e as animações (`src/../mh`, `anims.json`) no `projeto/assets/jogador.glb`.
+- `projeto/`: projeto Godot 4.4 (abre o `project.godot` no editor).
+  - `scripts/jogador.gd`: o jogador (corpo físico, queda ativa, IK de pés e mãos, levantar-se).
+  - `scripts/main.gd`: estádio, os lances, a bola e as câmaras.
+- `make_glb.py`: converte o corpo MakeHuman e as animações (`tools/mocap/build_anims_godot.py` gera o `anims_godot.json`) no `projeto/assets/jogador.glb`.
 - `exportar.sh`: exporta para a web, para a pasta `jogar-godot/`.
 
-Para jogar no browser: com o GitHub Pages ligado, abre `.../arbitro-de-caricas/jogar-godot/`.
+Para jogar no browser: `https://hestrompa.github.io/arbitro-de-caricas/jogar-godot/`. A versão para computador (Windows, Linux) exporta-se a partir do editor e usa o renderizador Forward+ (sombras suaves, oclusão de ambiente, relva com volume).
 
-Teclas: 1 a tua vista, 2 vista ideal, 3 atrás, 4 de perto; Espaço pausa, S abranda, R repete; clique muda a câmara.
+## Lances
 
-Física: cada jogador tem um corpo físico (cápsulas nos ossos). Na queda o corpo passa a ser físico (ragdoll) e tenta seguir a animação de queda (braços a amparar), com o chão e os outros jogadores como obstáculos. Os jogadores animados afastam-se uns dos outros e nunca ficam abaixo da relva.
+N muda de lance; R repete com outro toque (força e ângulo novos). A verdade do lance aparece em cima depois do contacto.
 
-Nota: a versão web do Godot usa o renderizador Compatibility (WebGL 2). As versões para computador (Windows, Mac, Linux) usam o Forward+, com mais qualidade de luz e sombras.
+1. Entrada: a força e o ângulo decidem se o atacante só se desequilibra, cai pelo impacto ou é varrido com força (fica queixoso mais tempo). Às vezes é simulação: o defesa só toca na bola e o atacante atira-se.
+2. Empurrão nas costas: as mãos do defesa vão mesmo às costas do atacante (IK); empurrão leve desequilibra, forte projeta-o.
+3. Puxão de camisola: o defesa corre ao lado e agarra o ombro; o atacante é travado e, ao ser largado, dá um esticão (ou cai para trás, se for forte).
+4. Ombro a ombro: correm lado a lado e chocam; quem perde o duelo desequilibra-se, ou cai de lado se a carga for forte e tardia.
+
+Teclas: 1 a tua vista, 2 vista ideal, 3 atrás, 4 de perto; Espaço pausa, S abranda. No telemóvel: tocar no ecrã muda a câmara, tocar na margem direita muda de lance.
+
+## Física
+
+- Cada jogador tem um corpo físico (cápsulas nos ossos). Na queda o corpo passa a ser físico e tenta seguir a animação de queda (braços a amparar); o chão e os outros jogadores travam-no.
+- No chão, se estiver magoado, agarra a perna tocada e balança; depois levanta-se com uma animação real (de barriga para baixo ou de costas, conforme ficou).
+- Os pés e as mãos usam IK: o pé do defesa acerta no tornozelo na entrada, o pé do atacante vai à bola na condução, as mãos vão às costas no empurrão e ao ombro no puxão.
+- A cadência da passada acompanha a velocidade, para os pés não deslizarem.
+- Os jogadores afastam-se em vez de se atravessarem e nunca ficam abaixo da relva.

@@ -11,6 +11,22 @@ uniform vec3 hair : source_color = vec3(0.16, 0.1, 0.06);
 uniform float pat = 0.0;
 uniform float bald = 0.0;
 uniform vec4 cut = vec4(0.967, 0.534, 0.077, 1.437); // anca, joelho, pé, ombro
+uniform float flutter = 0.0;   // 0 parado, 1 a correr: o tecido da camisola e dos calções ondula
+uniform float phase = 0.0;
+varying float cloth;
+// tecido: a camisola e os calções ondulam com a corrida (mais solto em baixo e nas mangas)
+void vertex() {
+	float y = UV2.y;
+	bool arm = COLOR.r > 0.5, leg = COLOR.g > 0.5, head = COLOR.b > 0.5;
+	float m = 0.0;
+	if (!head && !arm && !leg && y > cut.x - 0.05 && y < cut.w + 0.05) m = 0.4 + 0.6 * smoothstep(cut.x + 0.35, cut.x - 0.05, y);
+	if (arm && y > cut.w - 0.2) m = 0.7;
+	if (leg && y > cut.y + 0.16 && y < cut.x + 0.02) m = 0.8;
+	float t = TIME * (5.0 + 7.0 * flutter) + phase;
+	float w = sin(t + y * 23.0 + UV2.x * 11.0) * 0.6 + sin(t * 1.7 - y * 37.0 + UV2.x * 19.0) * 0.4;
+	VERTEX += NORMAL * w * m * (0.0025 + 0.0085 * flutter);
+	cloth = m;
+}
 void fragment() {
 	vec3 c = texture(skin_tex, UV).rgb;
 	float x = UV2.x, y = UV2.y, rough = 0.62, sheen = 0.0;
