@@ -91,6 +91,14 @@ button:focus-visible { outline: 2px solid var(--whistle); outline-offset: 2px; }
 #decide[data-kind="offside"] .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 #decide[data-kind="mao"] .choices, #decide[data-kind="canto"] .choices { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 #decide[data-kind="golo"] .choices, #decide[data-kind="linha"] .choices { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+#decide[data-kind="aereo"] .choices, #decide[data-kind="agarrao"] .choices { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.reds { display: inline-flex; gap: 3px; }
+.reds i { display: inline-grid; place-items: center; width: 15px; height: 20px; border-radius: 2px; background: #d8322f; color: #fff; font-style: normal; font-size: 12px; font-weight: 700; box-shadow: 0 1px 3px rgba(0,0,0,.4); }
+.radio { position: absolute; left: 10px; bottom: 56px; max-width: min(420px, 80%); background: rgba(8,14,10,.88); border: 1px solid #39d0ff; border-radius: 6px; padding: 6px 10px; font-size: 14px; color: var(--chalk); pointer-events: none; display: grid; gap: 1px; }
+.radio b { font-family: var(--display); font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: #39d0ff; }
+.radio b::before { content: "◉ "; }
+.radio.fresh { animation: rin .25s ease-out; }
+@keyframes rin { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 .say { position: absolute; left: 50%; top: 44px; transform: translateX(-50%); width: max-content; max-width: min(560px, 86%); background: #f7f7f2; color: #15161a; padding: 8px 14px; border-radius: 14px; font-size: 15px; font-weight: 600; line-height: 1.3; text-align: center; box-shadow: 0 4px 18px rgba(0,0,0,.45); pointer-events: none; }
 .say::after { content: ""; position: absolute; left: 50%; bottom: -8px; margin-left: -8px; border: 8px solid transparent; border-bottom: 0; border-top-color: #f7f7f2; }
 .paper { background: #f1ece0; color: #1d1d1b; border-radius: 4px; padding: 12px 14px; display: grid; gap: 5px; font-family: Georgia, "Times New Roman", serif; }
@@ -190,6 +198,9 @@ td.next { color: var(--whistle); }
   .ticker { font-size: 11px; max-width: 85%; top: 6px; left: 6px; }
   .team { font-size: 13px; line-height: 1.1; gap: 6px; }
   .team span:not(.dot) { overflow-wrap: anywhere; }
+  .team { position: relative; }
+  .reds { position: absolute; top: calc(100% + 2px); left: 0; gap: 1px; } .team.away .reds { left: auto; right: 0; } .reds i { width: 10px; height: 14px; font-size: 9px; }
+  .reds:empty { display: none; }
   .score { font-size: 26px; }
   .cap3d { font-size: 12px; }
   .ladder { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -206,9 +217,9 @@ td.next { color: var(--whistle); }
 
 <div class="wrap">
   <header class="hud">
-    <div class="team"><span class="dot" id="hd0" style="background: var(--blue)"></span><span id="hn0">Azuis</span></div>
+    <div class="team"><span class="dot" id="hd0" style="background: var(--blue)"></span><span id="hn0">Azuis</span><span class="reds" id="rc0"></span></div>
     <div class="score"><span id="s0">0</span><span class="clock" id="clock">0'</span><span id="s1">0</span></div>
-    <div class="team away"><span id="hn1">Laranjas</span><span class="dot" id="hd1" style="background: var(--orange)"></span></div>
+    <div class="team away"><span class="reds" id="rc1"></span><span id="hn1">Laranjas</span><span class="dot" id="hd1" style="background: var(--orange)"></span></div>
   </header>
   <div class="meters">
     <div class="meter"><div class="meter-label"><span><span class="lg">Controlo do jogo</span><span class="sh">Controlo</span></span><b id="ctrlTxt">70</b></div><div class="bar"><i id="ctrlBar"></i></div></div>
@@ -226,6 +237,7 @@ td.next { color: var(--whistle); }
     <div class="toast" id="toast" hidden></div>
     <div class="ticker" id="ticker" hidden></div>
     <div class="say" id="refSay" hidden></div>
+    <div class="radio" id="radio" hidden><b id="radioWho"></b><span id="radioTxt"></span></div>
     <div class="viewbtns" id="viewBtns" hidden>
       <button type="button" id="viewMine" aria-pressed="false">A tua vista</button>
       <button type="button" id="viewIdeal" aria-pressed="true">Vista ideal</button>
@@ -273,10 +285,10 @@ td.next { color: var(--whistle); }
     <div class="decide-top"><span id="decideMsg">Qual é a tua decisão?</span><span id="decideTime"></span></div>
     <div class="timer"><i id="timerBar"></i></div>
     <div class="choices">
-      <button class="choice" type="button" data-k="foul mao canto" data-d="siga">Siga<small>1 · lance limpo</small></button>
-      <button class="choice" type="button" data-k="foul" data-d="falta">Falta<small id="faltaSmall">2 · livre</small></button>
-      <button class="choice" type="button" data-k="foul" data-d="amarelo"><span class="swatch" style="background: var(--whistle)"></span>Amarelo<small>3</small></button>
-      <button class="choice" type="button" data-k="foul" data-d="vermelho"><span class="swatch" style="background: var(--bad)"></span>Vermelho<small>4</small></button>
+      <button class="choice" type="button" data-k="foul mao canto aereo agarrao" data-d="siga">Siga<small>1 · lance limpo</small></button>
+      <button class="choice" type="button" data-k="foul aereo agarrao" data-d="falta">Falta<small id="faltaSmall">2 · livre</small></button>
+      <button class="choice" type="button" data-k="foul aereo agarrao" data-d="amarelo"><span class="swatch" style="background: var(--whistle)"></span>Amarelo<small>3</small></button>
+      <button class="choice" type="button" data-k="foul aereo agarrao" data-d="vermelho"><span class="swatch" style="background: var(--bad)"></span>Vermelho<small>4</small></button>
       <button class="choice" type="button" data-k="foul" data-d="simulacao">Simulação<small>5 · amarelo ao atacante</small></button>
       <button class="choice" type="button" data-k="foul" data-d="vantagem">Vantagem<small>6 · deixa seguir</small></button>
       <button class="choice" type="button" data-k="offside" data-d="emjogo" hidden>Em jogo<small id="ojSmall">1 · segue o ataque</small></button>

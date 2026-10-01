@@ -115,6 +115,7 @@ function coachStep(dt) {
   Co.t += dt; if (Co.t < 1.5) return;
   S.coach = null; S.coachN = (S.coachN || 0) + 1;
   const team = Co.team, lv = S.coachW[team], name = coachName(team), cardD = lv >= 2 ? 'vermelho' : 'amarelo';
+  radio('4.º árbitro', 'O treinador ' + deT(team) + ' está fora da área técnica!');
   askOpen('O treinador ' + deT(team) + ', ' + name + ', sai da área técnica aos gritos' + (lv ? ' outra vez' + (lv >= 2 ? ', já com amarelo' : ', depois do aviso') : '') + '.', 'Banco',
     [{ d: 'ignorar', label: 'Ignorar', small: 'deixa-o falar' }, { d: 'avisar', label: 'Mandar sentar', small: 'aviso ao 4.º árbitro' }, { d: cardD, label: lv >= 2 ? 'Vermelho' : 'Amarelo', small: lv >= 2 ? 'expulso para a bancada' : 'cartão ao treinador', sw: lv >= 2 ? 'var(--bad)' : 'var(--whistle)' }],
     c => {

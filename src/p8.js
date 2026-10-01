@@ -6,7 +6,7 @@ Object.assign(KEYLBL, { golo: 'Contacto', linha: 'Linha' });
 const LINE_IN = 0.17;                         // centro da bola a 17 cm da linha (meia linha + raio): passou toda
 
 // o golo só conta depois de o árbitro ver o lance que interessa
-function goal(team) { if (goalCheck(team)) return; goalAward(team); }
+function goal(team) { if (goalCheck(team)) return; goalAward(team); if (!S.noVar && !S.training) setTimeout(() => { if (S && mode === 'play') radio('VAR', 'Golo verificado. Pode recomeçar.'); }, 1400); }
 function goalCheck(team) {
   const b = S.ball, lo = S.lastOff; S.lastOff = null;
   if (mode !== 'play' || S.training || b.penalty || S.lanceCd > 9) return false;

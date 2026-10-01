@@ -5,6 +5,8 @@ function refSays(L, d) {
   const p = L.def && S.players[L.def.id], second = p && p.off && (d === 'amarelo' || d === 'maoAmarelo');
   let s;
   if (L.kind === 'offside') s = L.goal !== undefined ? (d === 'fora' ? 'Golo anulado: estavas em fora de jogo no passe.' : 'Estava em jogo. O golo conta!') : d === 'fora' ? 'Fora de jogo: estavas à frente do penúltimo defesa.' : 'Estava em jogo, siga!';
+  else if (L.kind === 'aereo') s = { siga: 'Os dois foram à bola. Siga!', falta: 'Empurraste-o nas costas no salto. Falta.', amarelo: 'Usaste o braço como alavanca. Amarelo.', vermelho: 'Cotovelada na cara. Vermelho!' }[d] || 'Siga!';
+  else if (L.kind === 'agarrao') s = { siga: 'Foi só um toque. Siga!', falta: 'Agarraste a camisola. Falta.', amarelo: 'Agarraste e paraste o contra-ataque. Amarelo.', vermelho: 'Agarrão a impedir um golo. Vermelho!' }[d] || 'Siga!';
   else if (L.kind === 'golo') s = d === 'valido' ? 'Foi ombro com ombro. O golo conta!' : 'Empurraste o defesa antes do remate. Golo anulado.';
   else if (L.kind === 'linha') s = d === 'entrou' ? 'A bola passou toda a linha. É golo!' : 'Não passou toda a linha. Não há golo.';
   else if (L.kind === 'mao') s = d === 'siga' ? 'Braço junto ao corpo, posição natural. Siga!' : d === 'mao' ? 'Braço aberto, a fazer o corpo maior. É mão.' : 'Mão deliberada a cortar o remate: amarelo.';
@@ -49,6 +51,7 @@ function finishDecision(L, d, msg, after) {
   $('capL').textContent = 'Decisão do árbitro · toca para continuar'; $('capR').textContent = DEC_LABEL[d] || '';
   $('refSay').textContent = say; $('refSay').hidden = false;
   if (g.type === 'card') Sfx.whistle('short');
+  if (/VAR confirmou/.test(msg)) radio('VAR', 'Check completo. Decisão confirmada.');
 }
 function gestureEnd() {
   const G = S && S.gesture; if (!G) return;

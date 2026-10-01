@@ -62,7 +62,7 @@ function handCheck(p, sp) {
   const b = S.ball, k = b.kicker;
   if (mode !== 'play' || S.training || S.lanceCd > 0 || p.role === 'gk' || b.last === p.team || !k || k.off || k.team === p.team || sp < 8 || b.z > 2.2) return false;
   const box = inOwnBox(p.team, p.x, p.y);
-  if (Math.random() > (box ? 0.3 : 0.05)) return false;
+  if (Math.random() > (box ? 0.22 : 0.05)) return false;
   startHand(k, p);
   return true;
 }
@@ -161,6 +161,8 @@ function advPlay(L) {
 }
 
 function lanceMsg(L) {
+  if (L.kind === 'aereo') return 'Bola longa aos ' + L.minute + "'. Na disputa de cabeça, o " + L.def.num + ' ' + deT(L.def.team) + ' usou o braço?';
+  if (L.kind === 'agarrao') return 'Contra-ataque ' + deT(L.att.team) + ' aos ' + L.minute + "'. O " + L.def.num + ' agarrou a camisola do ' + L.att.num + '?';
   if (L.kind === 'golo') return 'Golo ' + deT(L.goal) + ' aos ' + L.minute + "'. Antes do remate, o " + L.att.num + ' fez falta sobre o ' + L.def.num + '?';
   if (L.kind === 'linha') return (L.save ? 'Defesa em cima da linha aos ' + L.minute + "'. " : 'Golo ' + deT(L.goal) + '? ') + 'A bola passou toda a linha de golo?';
   if (L.kind === 'mao') return 'Aos ' + L.minute + "' a bola bateu no " + L.def.num + ' ' + deT(L.def.team) + (L.inBox ? ', dentro da área' : '') + '. Foi mão?';
@@ -488,6 +490,6 @@ function clockTxt() { return S.t <= MATCH_SECONDS ? Math.floor(S.t / MATCH_SECON
 function addedTimeCheck() {
   if (S.t < MATCH_SECONDS || S.addMin) return;
   S.addMin = clamp(Math.round(S.added), 1, 6);
-  toast('O 4.º árbitro mostra +' + S.addMin + "' de descontos", 2.6);
+  toast('O 4.º árbitro mostra +' + S.addMin + "' de descontos", 2.6); radio('4.º árbitro', 'Tempo cumprido. Vou mostrar +' + S.addMin + '.');
   feed('Descontos: mais ' + S.addMin + (S.addMin > 1 ? ' minutos.' : ' minuto.'), 'info');
 }

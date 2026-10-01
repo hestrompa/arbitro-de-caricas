@@ -7,7 +7,7 @@ function feed(txt, kind) {
   el.textContent = clockTxt() + '  ' + txt; el.hidden = false;
   el.classList.remove('fresh'); void el.offsetWidth; el.classList.add('fresh');
 }
-const who = (num, team) => 'o ' + num + ' ' + deT(team);
+const who = (num, team) => { const p = S.players.find(q => q.team === team && q.num === num); return p && p.short ? p.short + ' (' + num + ') ' + deT(team) : 'o ' + num + ' ' + deT(team); };
 function feedGoal(team) {
   const k = S.ball.kicker, n = k && k.team === team ? k.num : null, pen = S.ball.penalty;
   const lines = pen ? ['Golo ' + deT(team) + '! Penálti bem batido' + (n ? ' pelo ' + n : '') + '.', 'Golo ' + deT(team) + ' de penálti, guarda-redes para um lado e bola para o outro.']
@@ -20,6 +20,8 @@ function feedDecision(L, d, msg) {
   const kind = d === 'amarelo' || d === 'vermelho' || d === 'simulacao' || d === 'maoAmarelo' ? 'card' : /Penálti/.test(msg) ? 'pen' : 'info';
   let intro = '';
   if (L.goalCtx) intro = pickOf(['Revisão do golo: ', 'Antes de validar o golo: ', 'Golo em análise: ']);
+  else if (L.kind === 'aereo') intro = pickOf(['Disputa no ar entre o ' + L.att.num + ' e o ' + L.def.num + ': ', 'Bola longa e choque de cabeças: ']);
+  else if (L.kind === 'agarrao') intro = pickOf(['O ' + L.def.num + ' ' + deT(L.def.team) + ' agarra a camisola do ' + L.att.num + ': ', 'Contra-ataque travado com a mão na camisola: ']);
   else if (L.kind === 'offside') intro = pickOf(['Passe em profundidade para ' + who(S.players[L.oi.receiver].num, L.oi.team) + ': ', 'Bola nas costas da defesa: ']);
   else if (L.kind === 'mao') intro = pickOf(['Remate do ' + L.att.num + ' e a bola bate no ' + L.def.num + ': ', 'A bola bate no ' + L.def.num + ' ' + deT(L.def.team) + ': ']);
   else if (L.kind === 'canto') intro = pickOf(['Muita luta na área no canto: ', 'Empurrões na área no canto ' + deT(L.att.team) + ': ']);

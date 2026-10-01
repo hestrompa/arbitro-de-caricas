@@ -85,6 +85,11 @@ const Sfx = (() => {
     if (!ac) return; const t = now();
     for (const k of [0, 0.22]) { const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = 988; o.connect(g); g.connect(master); env(g, t + k, 0.01, 0.12, 0.05, 0.1); o.start(t + k); o.stop(t + k + 0.25); }
   }
+  // estalido curto do auricular
+  function radio() {
+    if (!ac) return; const t = now(), s = noise(0.09), f = ac.createBiquadFilter(), g = ac.createGain(); f.type = 'bandpass'; f.frequency.value = 2400; f.Q.value = 2;
+    s.connect(f); f.connect(g); g.connect(master); env(g, t, 0.005, 0.03, 0.05, 0.06); s.start(t);
+  }
   function setCrowd(level) {
     if (!ac || !crowdGain) return;
     const b = curBoost();
@@ -92,5 +97,5 @@ const Sfx = (() => {
     crowdFilter.frequency.setTargetAtTime(480 + level * 380 + b * 650, now(), 0.3);
   }
   function toggle() { muted = !muted; if (master) master.gain.setTargetAtTime(muted ? 0 : 0.8, now(), 0.05); return muted; }
-  return { init, whistle, kick, cheer, boo, ooh, beep, setCrowd, react, toggle, get muted() { return muted; } };
+  return { init, whistle, kick, cheer, boo, ooh, beep, setCrowd, react, radio, toggle, get muted() { return muted; } };
 })();

@@ -21,6 +21,10 @@ Com o GitHub Pages ligado (Settings → Pages → Deploy from a branch → `main
 - Os golos são revistos antes de contar: falta do atacante antes do remate, fora de jogo no passe da jogada e bola em cima da linha (com a câmara da linha de golo). O VAR verifica todos os golos.
 - Nos livres diretos perto da área olhas para a barreira e decides se mandas bater, se medes os 9,15 m com o spray ou se mostras amarelo. Quem se volta a adiantar depois do spray leva amarelo.
 - Depois de cada decisão o árbitro em 3D comunica-a: mostra o cartão, aponta para a marca de penálti ou para o meio-campo, faz o sinal de vantagem e explica a decisão aos jogadores numa frase.
+- As equipas e os jogadores têm qualidade, como no Football Manager: cada clube tem uma força (mais alta nos escalões de cima e nos grandes de cada escalão) e cada carica é um jogador com nome, velocidade, passe, remate, desarme e disciplina. Cada equipa tem uma estrela (★ no campo), e pode ter um jogador duro, que faz mais faltas e mais graves, e um simulador, que se atira mais. O dossiê antes do jogo diz quem é favorito e quem é preciso vigiar.
+- Os vermelhos ficam à vista: no marcador, ao lado do nome da equipa, e junto ao banco, por baixo do campo.
+- Rádio dos árbitros: o assistente diz o que viu nos foras de jogo e nos lances tapados (acerta quase sempre, mas nem sempre), o VAR explica porque te chama e confirma os golos, e o 4.º árbitro avisa quando o banco está a ferver.
+- Lances novos em 3D: disputa de cabeça nas bolas longas (empurrão, braço de alavanca ou cotovelada) e agarrão à camisola num contra-ataque.
 - Os treinadores também saem da área técnica a protestar: mandas sentar, mostras amarelo ou, se insistirem, vermelho.
 - Há relato do jogo, um estádio 3D com bancadas nas cores das equipas, e o relatório final começa pelos momentos do jogo.
 - Quando erras num vermelho, num penálti ou num fora de jogo, o VAR chama-te ao monitor, e cada ida ao monitor custa autoridade. No fora de jogo arrastas as linhas no relvado (setas afinam, Tab troca de linha).
@@ -28,7 +32,7 @@ Com o GitHub Pages ligado (Settings → Pages → Deploy from a branch → `main
 - Os jogadores em 3D usam animações captadas de pessoas reais (corrida, carrinho, queda, mergulho, remate).
 - "Treinar o VAR" no menu dá seis lances seguidos para rever no monitor.
 - Na "Carreira" começas nos distritais e sobes por Liga 3, Liga 2, Primeira Liga e Taça Europeia até ao Mundial. O observador decide no fim de cada época se sobes, ficas ou desces. Cada jogo dá pontos para melhorar o árbitro (físico, leitura de jogo, autoridade, calma). Os jogos têm história: dérbis, equipas que se lembram dos teus erros, e escalões sem VAR. As épocas têm 6 ou 7 jogos, há uma classificação dos árbitros do escalão (o primeiro é árbitro do ano e ganha pontos extra) e depois de cada jogo sai o jornal com o título, as estrelas do árbitro e o que disse o treinador. A carreira fica guardada no browser.
-- No fim, o observador avalia cada decisão contra o que aconteceu de facto, e podes rever cada lance com a vista ideal.
+- No fim, o observador avalia cada decisão contra o que aconteceu de facto (os lances grandes, na área, golos e vermelhos, pesam o dobro), e podes rever cada lance com a vista ideal.
 
 ## Estrutura
 
@@ -45,7 +49,9 @@ Com o GitHub Pages ligado (Settings → Pages → Deploy from a branch → `main
   - `p8.js`: lances de golo (falta, fora de jogo, linha de golo) e livres diretos com barreira.
   - `p9.js`: gestos e explicações do árbitro em 3D.
   - `p10.js`: carreira 2.0 (épocas longas, jornais, treinadores, classificação dos árbitros).
-  - `splice.py` e `phase3.py` a `phase6.py`: juntam as partes no `game.js` final.
+  - `p11.js`: plantéis e força das equipas, vermelhos à vista, rádio dos árbitros e nota do observador.
+  - `p12.js`: lances novos em 3D (disputa aérea e agarrão).
+  - `splice.py` e `phase3.py` a `phase7.py`: juntam as partes no `game.js` final.
 - `manifest.webmanifest`, `sw.js` e os ícones: modo app instalável e offline.
 - `assets/`: corpo humano já convertido (`human.bin`, `human.json`) e texturas de pele.
 - `assets/anims.json`: animações captadas (corrida, trote, parado, mergulho, queda, remate) já adaptadas ao corpo do jogo.
