@@ -52,13 +52,17 @@ const Sfx = (() => {
     s.connect(f); f.connect(g2); g2.connect(master); env(g2, t, 0.002, 0.005, 0.03, 0.12 * vol); s.start(t);
   }
   // ondas de público: festa (ruído largo que sobe) e assobios/vaias (vozes graves com vibrato)
+  // o murmúrio do estádio sobe por uns segundos a cada acontecimento (golo, remate, cartão) e volta a baixar
+  let boost = 0, boostT = 0;
+  function react(v) { if (!ac) return; boost = Math.max(curBoost(), v); boostT = now(); }
+  const curBoost = () => ac ? boost * Math.exp(-(now() - boostT) / 2.2) : 0;
   function cheer(amount) {
-    if (!ac) return; const t = now(), s = noise(3.5), f = ac.createBiquadFilter(), g = ac.createGain();
+    if (!ac) return; react(amount); const t = now(), s = noise(3.5), f = ac.createBiquadFilter(), g = ac.createGain();
     f.type = 'bandpass'; f.frequency.setValueAtTime(700, t); f.frequency.linearRampToValueAtTime(1300, t + 0.5); f.Q.value = 0.7;
-    s.connect(f); f.connect(g); g.connect(master); env(g, t, 0.25, 1.2 * amount, 1.8, 0.55 * amount); s.start(t);
+    s.connect(f); f.connect(g); g.connect(master); env(g, t, 0.25, 1.2 * amount, 1.8, 0.4 * amount); s.start(t);
   }
   function boo(amount) {
-    if (!ac) return; const t = now(), g = ac.createGain(), lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520;
+    if (!ac) return; react(amount * 0.8); const t = now(), g = ac.createGain(), lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 520;
     lp.connect(g); g.connect(master); env(g, t, 0.35, 1.1 * amount, 1.2, 0.11 * amount);
     for (let i = 0; i < 9; i++) {
       const o = ac.createOscillator(), v = ac.createOscillator(), vg = ac.createGain();
@@ -73,7 +77,7 @@ const Sfx = (() => {
     }
   }
   function ooh() {
-    if (!ac) return; const t = now(), g = ac.createGain(), bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 480; bp.Q.value = 1.5;
+    if (!ac) return; react(0.55); const t = now(), g = ac.createGain(), bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 480; bp.Q.value = 1.5;
     bp.connect(g); g.connect(master); env(g, t, 0.2, 0.5, 0.9, 0.12);
     for (let i = 0; i < 7; i++) { const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(160 + Math.random() * 70, t); o.frequency.linearRampToValueAtTime(230 + Math.random() * 70, t + 0.7); o.connect(bp); o.start(t); o.stop(t + 1.7); }
   }
@@ -83,9 +87,10 @@ const Sfx = (() => {
   }
   function setCrowd(level) {
     if (!ac || !crowdGain) return;
-    crowdGain.gain.setTargetAtTime(0.1 + level * 0.32, now(), 0.4);
-    crowdFilter.frequency.setTargetAtTime(520 + level * 520, now(), 0.4);
+    const b = curBoost();
+    crowdGain.gain.setTargetAtTime(0.03 + level * 0.09 + b * 0.2, now(), b > 0.05 ? 0.15 : 0.5);
+    crowdFilter.frequency.setTargetAtTime(480 + level * 380 + b * 650, now(), 0.3);
   }
   function toggle() { muted = !muted; if (master) master.gain.setTargetAtTime(muted ? 0 : 0.8, now(), 0.05); return muted; }
-  return { init, whistle, kick, cheer, boo, ooh, beep, setCrowd, toggle, get muted() { return muted; } };
+  return { init, whistle, kick, cheer, boo, ooh, beep, setCrowd, react, toggle, get muted() { return muted; } };
 })();

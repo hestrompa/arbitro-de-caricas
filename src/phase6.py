@@ -10,6 +10,9 @@ def rep(a, b, cnt=1):
 # estado novo: livres, treinadores, gestos do árbitro, lances de golo, jornal
 rep("manage: [], added: 0,", "manage: [], fk: null, coach: null, coachW: [0, 0], coachOff: [false, false], coachN: 0, gesture: null, lastOff: null, anulados: 0, paper: null, added: 0,")
 rep("Object.assign(b, { owner: null, kicker: p, vx: n.x * sp, vy: n.y * sp, vz: pen", "Object.assign(b, { owner: null, kicker: p, shotFrom: { x: p.x, y: p.y }, vx: n.x * sp, vy: n.y * sp, vz: pen")
+# público: reage aos remates e aos ataques perto da baliza
+rep("Sfx.kick(clamp(1.2 - len(b.x - S.ref.x, b.y - S.ref.y) / 45, 0.2, 1));", "Sfx.kick(clamp(1.2 - len(b.x - S.ref.x, b.y - S.ref.y) / 45, 0.2, 1)); Sfx.react(0.35);")
+rep("    Sfx.setCrowd(clamp(S.crowd / 100 * 0.7 + att * 0.3, 0, 1));", "    if (att > 0.7 && mode === 'play') Sfx.react(0.3 * att);\n    Sfx.setCrowd(clamp(S.crowd / 100 * 0.7 + att * 0.3, 0, 1));")
 # golos: o lance é revisto antes de contar
 rep("function goal(team) {\n", "function goalAward(team) {\n")
 rep("  if (oi && best.id === oi.receiver && oi.margin > -1.0 && !best.off) {", "  if (oi && best.id === oi.receiver && oi.margin > -1.8 && oi.margin <= 1.2 && !best.off) S.lastOff = { oi, t: S.t, n: S.incidents.length, o: S.offsides };\n  if (oi && best.id === oi.receiver && oi.margin > -1.0 && !best.off) {")
