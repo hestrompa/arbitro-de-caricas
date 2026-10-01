@@ -69,6 +69,7 @@ var ik := {}                      # "foot_R" -> [alvo global, peso]
 var layer := ""                   # animação só do tronco por cima da corrida (puxar, ser puxado)
 var layer_w := 0.0
 var lean := Vector3.ZERO          # inclinação extra do tronco (ombro a ombro)
+var label: Label3D
 
 func _init(parent: Node3D, kit: Dictionary, n: int, id: int, tm: int) -> void:
 	num = n; team = tm
@@ -102,12 +103,20 @@ func _init(parent: Node3D, kit: Dictionary, n: int, id: int, tm: int) -> void:
 	lab.modulate = Color(0.97, 0.97, 0.95); lab.outline_modulate = Color(0.05, 0.05, 0.08, 0.6)
 	lab.position = Vector3(0, 0.05, -0.14); lab.rotation_degrees.y = 180; lab.double_sided = false
 	nb.add_child(lab)
+	label = lab
 	anim = node.find_children("*", "AnimationPlayer", true, false)[0]
 	anim.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	_build_body()
 	for q in PTS: pts.append([bi[q[0]], q[1], q[2]])
 	if clip_speed.is_empty():
 		for c in ["run", "jog"]: clip_speed[c] = _measure_speed(c)
+
+# muda de equipamento e número (o mesmo corpo serve para qualquer jogador do jogo)
+func set_kit(kit: Dictionary, n: int, tm: int) -> void:
+	num = n; team = tm; label.text = str(n)
+	mat.set_shader_parameter("shirt", kit.color); mat.set_shader_parameter("shirt2", kit.shirt2)
+	mat.set_shader_parameter("shorts", kit.shorts); mat.set_shader_parameter("sock", kit.sock); mat.set_shader_parameter("trim", kit.dark)
+	mat.set_shader_parameter("pat", kit.pat)
 
 # ---------- corpo físico ----------
 func _shape_for(seg: Array) -> Array:

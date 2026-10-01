@@ -1,16 +1,26 @@
-# Árbitro de Caricas em Godot 4 (em curso)
+# Árbitro de Caricas em Godot 4
 
 O jogo está a passar do browser (Three.js) para o Godot 4.4, com o motor de física Jolt. Esta pasta tem os lances 3D com o mesmo corpo MakeHuman e animações reais da base de dados de captura de movimento da CMU.
 
 - `projeto/`: projeto Godot 4.4 (abre o `project.godot` no editor).
   - `scripts/jogador.gd`: o jogador (corpo físico, queda ativa, IK de pés e mãos, levantar-se).
-  - `scripts/main.gd`: estádio, os lances, a bola e as câmaras.
+  - `scripts/main.gd`: menu, estádio, os lances 3D, a bola, as câmaras e a decisão do árbitro.
+  - `scripts/partida.gd`: o jogo de caricas (22 jogadores em 4-3-3, passes, remates, foras de jogo com os assistentes, golos, intervalo com troca de campo).
+  - `scripts/campo2d.gd`: desenha o campo visto de cima e lê os comandos do árbitro.
 - `make_glb.py`: converte o corpo MakeHuman e as animações (`tools/mocap/build_anims_godot.py` gera o `anims_godot.json`) no `projeto/assets/jogador.glb`.
 - `exportar.sh`: exporta para a web, para a pasta `jogar-godot/`.
 
 Para jogar no browser: `https://hestrompa.github.io/arbitro-de-caricas/jogar-godot/`. A versão para computador (Windows, Linux) exporta-se a partir do editor e usa o renderizador Forward+ (sombras suaves, oclusão de ambiente, relva com volume).
 
-## Lances
+## Partida
+
+No menu escolhe "Jogar partida". O jogo corre visto de cima (5 minutos reais = 90 minutos). Moves o árbitro com WASD ou setas (Shift para correr) ou clicando/tocando no campo.
+
+Quando há uma entrada duvidosa, o jogo passa para 3D e mostra o lance visto de onde estás (a distância e quem está a tapar contam). Depois decides: Siga (Z), Falta (X), Amarelo (C), Vermelho (V) ou Simulação (B), ou com os botões. Tens 7 segundos; podes rever o lance duas vezes (R), já com as outras câmaras (1-4).
+
+A decisão tem consequências no jogo: livre, penálti dentro da área, cartões (dois amarelos = expulso), e o controlo do jogo sobe ou desce. No fim aparece a nota do observador e a lista de lances.
+
+## Treino de lances
 
 N muda de lance; R repete com outro toque (força e ângulo novos). A verdade do lance aparece em cima depois do contacto.
 
