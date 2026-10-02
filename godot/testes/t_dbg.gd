@@ -4,7 +4,8 @@ func _initialize():
 	root.add_child(m)
 	await process_frame
 	var a = m.fan_mesh.surface_get_arrays(0)
-	var c = a[Mesh.ARRAY_COLOR]
-	print("ncol=", c.size() if c else -1, " fmt=", m.fan_mesh.surface_get_format(0) & Mesh.ARRAY_FORMAT_COLOR)
-	if c: print(c[0], c[40], c[80], c[c.size()-1])
+	var u2 = a[Mesh.ARRAY_TEX_UV2]
+	var n := 0
+	if u2: for v in u2: if v.x > 0.5: n += 1
+	print("verts=", a[Mesh.ARRAY_VERTEX].size(), " uv2=", u2.size() if u2 else -1, " maos=", n)
 	quit()

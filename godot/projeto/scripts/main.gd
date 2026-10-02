@@ -270,18 +270,19 @@ func _fan_mesh() -> ArrayMesh:
 		for k in ii: st.set_normal(nn[k]); st.add_vertex(vv[k] + c)
 	caixa.call(Vector3(0, 0.78, 0), Vector3(0.19, 0.27, 0.12), Color(0, 0, 0))           # tronco
 	caixa.call(Vector3(0, 1.17, 0.01), Vector3(0.095, 0.11, 0.1), Color(0, 1, 0))         # cabeça
-	caixa.call(Vector3(0, 1.29, -0.01), Vector3(0.1, 0.03, 0.1), Color(0, 0, 0))           # cabelo/boné (cor da camisola)
+	if hi_q: caixa.call(Vector3(0, 1.29, -0.01), Vector3(0.1, 0.03, 0.1), Color(0, 0, 0))   # boné (cor da camisola)
 	for sx in [-1.0, 1.0]:
 		caixa.call(Vector3(0.25 * sx, 0.8, 0.02), Vector3(0.05, 0.22, 0.05), Color(1, 0, 0))  # braço
 		caixa.call(Vector3(0.25 * sx, 0.55, 0.03), Vector3(0.045, 0.04, 0.045), Color(1, 0, 1)) # mão
+	st.index()    # vértices partilhados: menos trabalho por adepto
 	return st.commit()
 
 func _fans(root: Node3D, stand: MeshInstance3D, comp: float, lado: int) -> void:
 	var mm := MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D; mm.use_custom_data = true
 	mm.mesh = fan_mesh if fan_mesh else _fan_mesh()
 	fan_mesh = mm.mesh
-	var passo_x := 0.62 if hi_q else 0.85
-	var passo_z := 0.85 if hi_q else 1.1
+	var passo_x := 0.62 if hi_q else 0.95
+	var passo_z := 0.85 if hi_q else 1.2
 	var r := RandomNumberGenerator.new(); r.seed = 101 + lado
 	var xf: Transform3D = stand.transform
 	var pts: Array = []
@@ -292,6 +293,10 @@ func _fans(root: Node3D, stand: MeshInstance3D, comp: float, lado: int) -> void:
 			if r.randf() < 0.82: pts.append(Vector3(x + r.randf_range(-0.08, 0.08), 0.3, z))
 			z += passo_z
 		x += passo_x
+	# ordem baralhada: mostrar só os primeiros N (computador fraco) tira adeptos espalhados, não meia bancada
+	for i in range(pts.size() - 1, 0, -1):
+		var j := r.randi_range(0, i)
+		var tmp = pts[i]; pts[i] = pts[j]; pts[j] = tmp
 	mm.instance_count = pts.size()
 	# metade da bancada de cada clube, com alguns neutros; a cor real entra em _fans_colors
 	for i in pts.size():
@@ -584,8 +589,22 @@ func _process(delta: float) -> void:
 	if jogo and modo in ["jogo", "flash"]: som.set_crowd(jogo.crowd / 100.0)
 	_fans_step(delta)
 
+var fan_lento := 0.0     # segundos seguidos abaixo de 24 fps com o 3D à vista
+var fan_nivel := 0       # 0 todos, 1 metade, 2 sem adeptos
+
 func _fans_step(delta: float) -> void:
 	if fan_mat == null or not visible: return
+	# computador fraco: menos adeptos (metade, depois nenhum) para o lance não ficar aos soluços
+	if fan_nivel < 2 and Engine.get_frames_per_second() < 24 and modo in ["lance", "var", "rever", "gesto", "menu"]:
+		fan_lento += delta
+		if fan_lento > 4.0:
+			fan_lento = 0.0; fan_nivel += 1
+			for f in fan_mms:
+				var mm: MultiMesh = f[0]
+				mm.visible_instance_count = mm.instance_count / 2 if fan_nivel == 1 else 0
+			print("adeptos reduzidos: nível ", fan_nivel)
+	else:
+		fan_lento = maxf(0.0, fan_lento - delta)
 	fan_festa = move_toward(fan_festa, 0.0, delta * 0.18)
 	fan_protesto = move_toward(fan_protesto, 0.0, delta * 0.22)
 	fan_mat.set_shader_parameter("festa", smoothstep(0.0, 0.6, fan_festa))
@@ -1082,9 +1101,9 @@ func _ref_step(dt: float) -> void:
 	var k := clampf(t / dur, 0.0, 1.0)
 	var e := 1.0 - pow(1.0 - k, 2.2)
 	var novo := ref_ini.lerp(fim, e)
-	ref_vel = lerpf(ref_vel, novo.distance_to(REF) / dt, clampf(dt * 8.0, 0.0, 1.0))
+	ref_vel = lerpf(ref_vel, novo.distance_to(REF) / dt, clampf(dt * 3.0, 0.0, 1.0))
 	REF = novo
-	ref_ph += dt * (6.0 + ref_vel * 1.1) * (1.0 if ref_vel > 0.4 else 0.0)
+	ref_ph += dt * (5.0 + ref_vel * 0.6) * (1.0 if ref_vel > 0.4 else 0.0)
 
 func _fp_vinheta(on: bool) -> void:
 	if fp_vig == null:
@@ -1129,29 +1148,31 @@ func _camera() -> void:
 		if lance == 9: eye = Vector3(sc.ast.x, 1.7, sc.ast.y)
 		# nervos: a imagem treme
 		var st: float = float(L.get("stress", 0.0)) if modo != "treino" else 0.0
-		var amp: float = maxf(0.0, (st - 40.0) / 60.0) * 0.022 * eye.distance_to(look)
+		var amp: float = maxf(0.0, (st - 40.0) / 60.0) * 0.008 * eye.distance_to(look)
 		var tm := Time.get_ticks_msec() / 1000.0
-		var shake := Vector3(sin(t * 3.1) * 0.02, sin(t * 4.3) * 0.015, 0) + Vector3(amp * (sin(tm * 7.3) + 0.5 * sin(tm * 13.1)), amp * 0.6 * sin(tm * 9.7 + 1), amp * (sin(tm * 6.1 + 2) + 0.5 * sin(tm * 11.3)))
+		# nervos: uma deriva lenta da imagem (não um tremor)
+		var shake := Vector3(sin(t * 1.3) * 0.01, sin(t * 1.7) * 0.008, 0) + Vector3(amp * (sin(tm * 2.3) + 0.4 * sin(tm * 3.7)), amp * 0.5 * sin(tm * 2.9 + 1), amp * (sin(tm * 1.9 + 2) + 0.4 * sin(tm * 3.3)))
 		# corpo a correr: a cabeça sobe e desce a cada passo e balança de lado; parado, respira
 		var fw := Vector3(look.x - eye.x, 0, look.z - eye.z).normalized()
 		var lado := fw.cross(Vector3.UP)
 		var corre := clampf(ref_vel / 5.0, 0.0, 1.0)
 		var resp_f := 0.25 + ref_cansaco * 0.45 + corre * 0.2           # respirações por segundo
-		var resp := sin(tm * TAU * resp_f) * (0.008 + ref_cansaco * 0.03) * (1.0 - corre * 0.6)
+		var resp := sin(tm * TAU * resp_f) * (0.004 + ref_cansaco * 0.012) * (1.0 - corre * 0.6)
 		var rv := fmod(tm * resp_f, 1.0)
 		if rv < ref_resp and modo in ["lance", "treino"] and ref_cansaco + corre * 0.3 > 0.25:
 			som.respiro(clampf(ref_cansaco * 0.9 + corre * 0.3, 0.15, 0.9))
 		ref_resp = rv
-		var bob := Vector3.UP * (absf(sin(ref_ph)) * 0.07 - 0.035) * corre + lado * sin(ref_ph) * 0.035 * corre
+		# os olhos compensam a passada (como na vida real): balanço pequeno e suave
+		var bob := Vector3.UP * (absf(sin(ref_ph)) * 0.018 - 0.009) * corre + lado * sin(ref_ph) * 0.008 * corre
 		eye += bob + Vector3.UP * resp + shake
 		# a cabeça segue o lance com algum atraso (mais quando está cansado)
 		if lance == 9 or ref_olhar == Vector3.ZERO: ref_olhar = look
 		ref_olhar = ref_olhar.lerp(look, clampf(get_process_delta_time() * (7.0 - 3.5 * ref_cansaco), 0.0, 1.0))
-		var alvo := ref_olhar + shake * 0.5 + Vector3.UP * resp * 3.0 + bob * 0.4
-		cam.fov = (38 if eye.distance_to(look) < 25 else 30) + corre * 3.0 - ref_cansaco * 2.0
+		var alvo := ref_olhar + shake * 0.5 + Vector3.UP * resp + bob
+		cam.fov = (38 if eye.distance_to(look) < 25 else 30) + corre * 1.5 - ref_cansaco * 1.0
 		cam.look_at_from_position(eye, alvo)
 		# inclina com o balanço da passada
-		cam.rotate_object_local(Vector3(0, 0, 1), sin(ref_ph) * 0.012 * corre + sin(tm * 0.7) * 0.006 * ref_cansaco)
+		cam.rotate_object_local(Vector3(0, 0, 1), sin(ref_ph) * 0.002 * corre + sin(tm * 0.7) * 0.002 * ref_cansaco)
 	elif lance == 9 and modo in ["var", "rever"] and t >= TC - 0.01:
 		_var_camera()
 	elif cam_mode == 4:
