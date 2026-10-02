@@ -46,7 +46,9 @@ var team := 0
 var num := 0
 
 var state := ""
-var phase := "anim"               # anim | queda | chao | levantar | desliza
+var phase := "anim"               # anim | queda | chao | levantar | desliza | kin (captura com deslocamento) | chao_k
+var kin_next := ""                # o que vem depois da captura: "chao" (fica deitado) ou "anim" (fica de pé)
+var kin_end := 0.0
 var slide_p := Vector2.ZERO       # carrinho: posição, direção, velocidade e travagem
 var slide_d := Vector2.ZERO
 var slide_v := 0.0
@@ -76,6 +78,14 @@ var layer := ""                   # animação só do tronco por cima da corrida
 var layer_w := 0.0
 var lean := Vector3.ZERO          # inclinação extra do tronco (ombro a ombro)
 var label: Label3D
+# naturalidade: viragens suaves, inclinação nas curvas e ao acelerar, desequilíbrio com braços
+var snap := true                  # a primeira colocação depois de reset não é suavizada
+var last_yaw := 0.0
+var last_speed := 0.0
+var body_lean := Vector3.ZERO
+var stum_t := 0.0                 # desequilíbrio: tempo que falta
+var stum_T := 0.0
+var stum_d := Vector2.ZERO
 
 func _init(parent: Node3D, kit: Dictionary, n: int, id: int, tm: int) -> void:
 	num = n; team = tm
@@ -233,9 +243,12 @@ func move(p: Vector2, d: Vector2, v: float) -> void:
 	if rag: return
 	var q := p + off + stag
 	node.position = Vector3(q.x, lift + jump, q.y)
-	node.rotation.y = atan2(d.x, d.y)
+	var want := atan2(d.x, d.y)
+	if snap: node.rotation.y = want; snap = false; last_yaw = want
+	else: node.rotation.y = lerp_angle(node.rotation.y, want, 0.22)
 	if clip_speed.has(state) and v > 0.3: anim.speed_scale = clamp(v / clip_speed[state], 0.6, 1.45)
 	else: anim.speed_scale = 1.0
+	if stum_t > 0.0: anim.speed_scale *= 1.25   # passos curtos e rápidos para não cair
 
 func update(dt: float, t: float) -> void:
 	if phase == "levantar":
@@ -243,6 +256,9 @@ func update(dt: float, t: float) -> void:
 		return
 	if phase == "desliza":
 		_slide_step(dt)
+		return
+	if phase == "kin" or phase == "chao_k":
+		_kin_step(dt)
 		return
 	if rag and phase != "levantar":
 		ragT += dt
@@ -253,9 +269,11 @@ func update(dt: float, t: float) -> void:
 		return
 	anim.advance(dt)
 	_layers(t)
+	_body_lean(dt)
 	_springs(dt)
 	_stagger(dt)
 	_ik()
+	_balance(dt)
 
 # tronco de outra animação por cima das pernas a correr (puxar a camisola, ser agarrado)
 func _layers(t: float) -> void:
@@ -266,16 +284,41 @@ func _layers(t: float) -> void:
 		var i: int = bi[b]
 		skel.set_bone_pose_rotation(i, skel.get_bone_pose_rotation(i).slerp(anim_rot(an, b, tm), layer_w))
 
+# o corpo inclina-se para dentro das curvas e para a frente ao acelerar (para trás ao travar)
+func _body_lean(dt: float) -> void:
+	if dt <= 0.0: return
+	var yr := angle_difference(last_yaw, node.rotation.y) / dt
+	var acc := (speed - last_speed) / dt
+	last_yaw = node.rotation.y; last_speed = speed
+	var want := Vector3(clamp(acc * 0.035, -0.22, 0.2), 0, clamp(yr * speed * 0.035, -0.3, 0.3))
+	body_lean = body_lean.lerp(want, clamp(dt * 6.0, 0.0, 1.0))
+
+# desequilíbrio: abre os braços para se equilibrar enquanto dá uns passos curtos
+func _balance(dt: float) -> void:
+	if stum_t <= 0.0: return
+	stum_t -= dt
+	var k := stum_t / stum_T
+	var w: float = sin(clamp(1.0 - k, 0.0, 1.0) * PI) * 0.85
+	var sl := bone_world("upperarm01_L"); var sr := bone_world("upperarm01_R")
+	var side := (sl - sr).normalized()
+	var back := -Vector3(stum_d.x, 0, stum_d.y) * 0.12
+	var flap := sin(stum_t * 18.0) * 0.06
+	two_bone("upperarm01_L", "lowerarm01_L", "wrist_L", sl + side * 0.5 + Vector3(0, 0.12 + flap, 0) + back, w)
+	two_bone("upperarm01_R", "lowerarm01_R", "wrist_R", sr - side * 0.5 + Vector3(0, 0.12 - flap, 0) + back, w)
+
 func hit(ang: Vector3) -> void:
 	sv += ang
 
 func push(v: Vector2) -> void:
 	stagv += v
+	# um empurrão a sério desequilibra: braços abertos e passos curtos
+	if v.length() > 1.2 and not rag:
+		stum_T = clamp(0.5 + v.length() * 0.18, 0.6, 1.2); stum_t = stum_T; stum_d = v.normalized()
 
 func _springs(dt: float) -> void:
 	sv += (-60.0 * sp - 9.0 * sv) * dt
 	sp += sv * dt
-	var tot := sp + lean
+	var tot := sp + lean + body_lean
 	if tot.length() < 0.001: return
 	for b in [["spine03", 0.5], ["spine01", 0.35], ["neck01", 0.15]]:
 		var i: int = bi[b[0]]
@@ -339,7 +382,7 @@ func bone_world(name: String) -> Vector3:
 
 func body_pos() -> Vector3:
 	if rag: return bones[0].global_position
-	if phase == "desliza": return skel.global_transform * skel.get_bone_global_pose(0).origin * Vector3(1, 0, 1)
+	if phase == "desliza" or phase == "kin" or phase == "chao_k": return skel.global_transform * skel.get_bone_global_pose(0).origin * Vector3(1, 0, 1)
 	if phase == "levantar": return skel.global_transform * skel.get_bone_global_pose(0).origin * Vector3(1, 0, 1)
 	return node.position
 
@@ -449,8 +492,82 @@ func _slide_step(dt: float) -> void:
 		getupT = anim.current_animation_position
 		pos = slide_p
 
+# ---------- capturas com deslocamento (Mixamo): carrinho, tropeção, levantar ----------
+# Toca o clip a partir de "from" com o corpo virado para d; a anca nesse instante fica em "at".
+# O próprio clip leva o corpo (desliza, cai, rebola); os pés/corpo ficam sempre assentes na relva.
+static var _kin_info := {}
+func kin(clip: String, from: float, d: Vector2, at: Vector2, k := 1.0, next := "anim", blend := 0.12) -> void:
+	if rag: return
+	phase = "kin"; kin_next = next
+	ik.clear(); stum_t = 0.0
+	state = ""
+	play(clip, blend, from)
+	anim.speed_scale = k
+	var yaw := atan2(d.x, d.y)
+	node.rotation.y = yaw
+	var r0: Vector3 = Basis(Vector3.UP, yaw) * (fk(clip, from)[0] as Transform3D).origin
+	node.position = Vector3(at.x - r0.x, node.position.y, at.y - r0.z)
+	kin_end = anim.get_animation(clip).length - 0.04
+	groundT = 0.0
+
+# onde fica um osso (no espaço do modelo) num instante do clip: para acertar o contacto
+func clip_bone(clip: String, tm: float, bone: String) -> Vector3:
+	return (fk(clip, tm)[bi[bone]] as Transform3D).origin
+
+# instante do carrinho em que o pé da frente vai mais adiantado em relação à anca (o momento do toque)
+func slide_key(clip: String) -> Dictionary:
+	if _kin_info.has(clip): return _kin_info[clip]
+	var an := anim.get_animation(clip)
+	var best := -1.0; var key := 0.0; var foot := "foot_R"
+	var tm := 0.2
+	while tm < an.length * 0.7:
+		var f: Array = fk(clip, tm)
+		var r: Vector3 = f[0].origin
+		for fb in ["foot_L", "foot_R"]:
+			var ahead: float = (f[bi[fb]] as Transform3D).origin.z - r.z
+			var low: float = 1.0 - r.y
+			var sc := ahead + low * 0.5
+			if r.y < 0.75 and sc > best: best = sc; key = tm; foot = fb
+		tm += 1.0 / 30.0
+	_kin_info[clip] = {"key": key, "foot": foot}
+	return _kin_info[clip]
+
+func _kin_step(dt: float) -> void:
+	anim.advance(dt)
+	var low := 99.0
+	for i in skel.get_bone_count(): low = min(low, skel.get_bone_global_pose(i).origin.y)
+	node.position.y = 0.05 - low
+	if phase == "chao_k":
+		groundT += dt
+		return
+	if anim.current_animation_position >= kin_end:
+		var rw: Vector3 = skel.global_transform * skel.get_bone_global_pose(0).origin
+		if kin_next == "fica":
+			# fica no chão na pose final da captura (mergulho do guarda-redes)
+			phase = "chao_k"; anim.speed_scale = 0.0; groundT = 0.0
+		elif kin_next == "chao":
+			# fica deitado (encolhido, queixoso) no sítio onde a queda acabou
+			var at := Vector2(rw.x, rw.z)
+			phase = "chao_k"
+			state = ""; play("lying", 0.35); anim.speed_scale = 1.0
+			var r0: Vector3 = node.global_transform.basis * (fk("lying", 0.0)[0] as Transform3D).origin
+			node.position.x = at.x - r0.x; node.position.z = at.y - r0.z
+			groundT = 0.0
+		else:
+			# de pé, onde a captura o deixou
+			pos = Vector2(rw.x, rw.z)
+			phase = "anim"; speed = 0.0
+			dir = Vector2(sin(node.rotation.y), cos(node.rotation.y))
+			node.position = Vector3(pos.x, 0, pos.y)
+			off = Vector2.ZERO; stag = Vector2.ZERO; stagv = Vector2.ZERO
+			state = ""; play("idle", 0.3)
+
 # ---------- levantar-se ----------
 func get_up() -> void:
+	if phase == "chao_k":
+		var rw: Vector3 = skel.global_transform * skel.get_bone_global_pose(0).origin
+		kin("standup", 0.0, Vector2(sin(node.rotation.y), cos(node.rotation.y)), Vector2(rw.x, rw.z), 1.0, "anim", 0.4)
+		return
 	if phase != "chao": return
 	var chest: PhysicalBone3D = bones[1]
 	var front := chest.global_basis.z.y < 0.0       # peito virado para o chão
@@ -500,7 +617,7 @@ func reset() -> void:
 	rag = false; phase = "anim"; ragT = 0.0
 	sim.influence = 0.0
 	for ab in proxies: ab.collision_layer = L_PROXY
-	slide_v = 0.0
+	slide_v = 0.0; snap = true; body_lean = Vector3.ZERO; stum_t = 0.0; last_speed = 0.0
 	state = ""; off = Vector2.ZERO; lift = 0.0; jump = 0.0; sp = Vector3.ZERO; sv = Vector3.ZERO
 	stag = Vector2.ZERO; stagv = Vector2.ZERO; ik.clear(); layer = ""; layer_w = 0.0; lean = Vector3.ZERO; hurt = 0.0
 
@@ -518,7 +635,7 @@ func gpts() -> Array:
 	return out
 
 func ground() -> void:
-	if rag or phase == "levantar" or phase == "desliza": return
+	if rag or phase == "levantar" or phase == "desliza" or phase == "kin" or phase == "chao_k": return
 	var low := 99.0
 	for q in gpts(): low = min(low, q[0].y - (q[2] if q[2] > 0.0 else q[1]))
 	var base: float = low - lift - jump

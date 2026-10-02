@@ -8,6 +8,8 @@ var CASES = [
 	["falta", {"lance": 0, "force": 1.0, "side": 1.0, "sim": false, "clean": false, "phi": 50.0, "vD": 8.0}],
 	["forte", {"lance": 0, "force": 1.4, "side": -1.0, "sim": false, "clean": false, "phi": 35.0, "vD": 9.2}],
 	["empurrao", {"lance": 1, "force": 1.1, "side": 1.0, "sim": false, "clean": false, "phi": 50.0, "vD": 8.0}],
+	["linha", {"lance": 8, "force": 1.0, "side": 1.0, "sim": false, "clean": false, "phi": 50.0, "vD": 8.0}],
+	["golo", {"lance": 10, "force": 1.0, "side": 1.0, "sim": false, "clean": false, "phi": 50.0, "vD": 8.0}],
 	["ombro", {"lance": 3, "force": 1.0, "side": 1.0, "sim": false, "clean": false, "phi": 50.0, "vD": 8.0}],
 ]
 func _initialize():
@@ -21,6 +23,8 @@ func _initialize():
 	for c in CASES:
 		if only != "" and not (c[0] in only.split(",")): continue
 		m.cur = c[1].duplicate(); m._restart()
+		if OS.get_environment("NOITE") != "": m._set_night(true)
+		if OS.get_environment("TV") != "": m.tv_start()
 		m.cam_mode = int(OS.get_environment("CAM")) if OS.get_environment("CAM") != "" else 1
 		var k := 0
 		for dt in [-0.6, -0.25, 0.0, 0.15, 0.35, 0.7, 1.3]:

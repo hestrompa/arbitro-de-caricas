@@ -26,7 +26,7 @@ Tudo o que havia na versão do browser também está aqui:
 ## Verdade dos lances em 3D
 
 - Fora de jogo: mede-se no corpo que se vê, no instante do passe. Conta a parte mais adiantada do atacante (pés, pernas, tronco, cabeça; os braços não) contra a do penúltimo defesa e a bola. No VAR, C troca entre a câmara da linha (de lado, com zoom), de cima e rasante. Ao rever um lance já decidido, a imagem para 3 s no passe com as linhas certas.
-- Entradas: mede-se a distância entre as pernas dos dois. Na simulação o defesa trava a mais de meio metro e o atacante atira-se sem toque; se houver toque, passa a falta. Nas faltas a sério e nos cortes limpos o defesa entra de carrinho (desliza de lado, pés à frente); no corte limpo chega à bola antes do homem.
+- Entradas: mede-se a distância entre as pernas dos dois. Na simulação o defesa trava a mais de meio metro e o atacante atira-se sem toque; se houver toque, passa a falta. Nas faltas a sério e nos cortes limpos o defesa entra de carrinho com uma captura real; no corte limpo chega à bola antes do homem e o atacante trava e desvia-se. Nas faltas o atacante tropeça (captura real, braços no ar) e fica no chão queixoso.
 
 ## Treino de lances 3D
 
@@ -37,7 +37,7 @@ N muda de lance; R repete com outro toque (força e ângulo novos). A verdade do
 3. Puxão de camisola: o defesa corre ao lado e agarra o ombro; o atacante é travado e, ao ser largado, dá um esticão (ou cai para trás, se for forte).
 4. Ombro a ombro: correm lado a lado e chocam; quem perde o duelo desequilibra-se, ou cai de lado se a carga for forte e tardia.
 
-Teclas: 1 a tua vista, 2 vista ideal, 3 atrás, 4 de perto; Espaço pausa, S abranda. No telemóvel: tocar no ecrã muda a câmara, tocar na margem direita muda de lance.
+Teclas: 1 a tua vista, 2 vista ideal, 3 atrás, 4 de perto, 5 câmara de televisão; T repetição TV; Espaço pausa, S abranda. No telemóvel: tocar no ecrã muda a câmara, tocar na margem direita muda de lance.
 
 ## Física
 
@@ -46,3 +46,15 @@ Teclas: 1 a tua vista, 2 vista ideal, 3 atrás, 4 de perto; Espaço pausa, S abr
 - Os pés e as mãos usam IK: o pé do defesa acerta no tornozelo na entrada, o pé do atacante vai à bola na condução, as mãos vão às costas no empurrão e ao ombro no puxão.
 - A cadência da passada acompanha a velocidade, para os pés não deslizarem.
 - Os jogadores afastam-se em vez de se atravessarem e nunca ficam abaixo da relva.
+
+## Capturas do Soccer Game Pack (Mixamo)
+
+Usadas no jogador: corrida lenta e espera (substituem as CMU), carrinho, rasteira (e espelhada), deitado queixoso, levantar, mergulho do guarda-redes (e espelhado, o lado escolhe-se pela bola). Estas capturas mexem o corpo de verdade (deslocamento da raiz), por isso o carrinho e o mergulho percorrem o relvado como na realidade. Ainda por usar: cabeceamentos, remates em corrida, lançamento de linha lateral, defesas a agarrar a bola.
+
+Ferramentas em tools/mocap: fbxdump/ (projeto Godot que lê o FBX e grava dump.json), mx.py (converte para os nomes de ossos CMU, "nome@m" espelha) e build_anims_godot.py. Os FBX originais não estão no repositório.
+
+## Naturalidade e apresentação
+
+- Viragens suaves, o corpo inclina para dentro das curvas e ao acelerar; depois de um toque o jogador tropeça uns passos com os braços abertos antes de recuperar.
+- Repetição TV (tecla T, ou botão no VAR): faixas pretas, separador "REPETIÇÃO", três planos (câmara principal, atrás do lance, de perto) em câmara lenta. No VAR arranca sozinha.
+- Jogos à noite (cerca de 45%): céu escuro, torres de iluminação e brilho.

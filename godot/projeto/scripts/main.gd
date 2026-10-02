@@ -83,6 +83,20 @@ var var_mesh: Array = []
 var match_paused := false
 var end_data := {}
 var is_career := false
+# televisão: repetição com vários ângulos e câmara lenta; jogos à noite com luz artificial
+const TV_SHOTS := [[4, -1.4, 1.6, 1.0, "Câmara principal"], [2, -0.9, 1.1, 0.4, "Atrás do lance"], [3, -0.55, 0.8, 0.22, "De perto"]]
+var tv := {}
+var tv_look := Vector3.ZERO
+var tv_layer: CanvasLayer
+var tv_wipe: ColorRect
+var tv_tag: Label
+var tv_bars: Array = []
+var env: Environment
+var sun: DirectionalLight3D
+var sky_mat: ProceduralSkyMaterial
+var floods: Array = []
+var night := false
+var slp := {}              # plano do carrinho capturado
 var min_contact := 99.0    # menor distância entre as pernas do defesa e as do atacante à volta do contacto
 var contact_checked := false
 
@@ -121,6 +135,7 @@ func _ready() -> void:
 	cam = Camera3D.new(); cam.fov = 55; cam.near = 0.05; cam.far = 600
 	add_child(cam); cam.current = true
 	_labels()
+	_tv_ui()
 	som = Som.new(); add_child(som)
 	ui = UI.new(self); add_child(ui)
 	var layer := CanvasLayer.new(); layer.layer = 1; add_child(layer)
@@ -141,8 +156,8 @@ func _labels() -> void:
 
 
 func _world() -> void:
-	var env := Environment.new()
-	var sky := Sky.new(); var sk := ProceduralSkyMaterial.new()
+	env = Environment.new()
+	var sky := Sky.new(); var sk := ProceduralSkyMaterial.new(); sky_mat = sk
 	sk.sky_top_color = Color(0.32, 0.5, 0.78); sk.sky_horizon_color = Color(0.72, 0.8, 0.9); sk.ground_horizon_color = Color(0.5, 0.55, 0.5)
 	sky.sky_material = sk
 	env.background_mode = Environment.BG_SKY; env.sky = sky
@@ -151,7 +166,7 @@ func _world() -> void:
 	env.glow_enabled = true; env.glow_intensity = 0.4; env.glow_bloom = 0.05
 	env.fog_enabled = false; env.fog_light_color = Color(0.7, 0.76, 0.85); env.fog_density = 0.0012
 	var we := WorldEnvironment.new(); we.environment = env; add_child(we)
-	var sun := DirectionalLight3D.new()
+	sun = DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-48, -35, 0); sun.light_energy = 1.45; sun.shadow_enabled = true
 	sun.directional_shadow_max_distance = 60.0; sun.shadow_blur = 1.5
 	if hi_q:
@@ -204,6 +219,14 @@ func _stadium() -> void:
 	for corner in [Vector3(-14, 0, -12), Vector3(W + 14, 0, -12), Vector3(-14, 0, H + 12), Vector3(W + 14, 0, H + 12)]:
 		var pole := MeshInstance3D.new(); var pc := CylinderMesh.new(); pc.top_radius = 0.4; pc.bottom_radius = 0.6; pc.height = 34
 		pole.mesh = pc; pole.material_override = roofm; pole.position = corner + Vector3(0, 17, 0); add_child(pole)
+		# projetor no topo: painel que brilha e luz (só acesa nos jogos à noite)
+		var head := MeshInstance3D.new(); var hb := BoxMesh.new(); hb.size = Vector3(5.0, 3.0, 0.4); head.mesh = hb
+		var hm := StandardMaterial3D.new(); hm.albedo_color = Color(0.9, 0.92, 0.95); hm.emission_enabled = true; hm.emission = Color(1, 0.98, 0.9); hm.emission_energy_multiplier = 0.0
+		head.material_override = hm; head.position = corner + Vector3(0, 34.5, 0); add_child(head)
+		head.look_at(Vector3(W / 2, 0, H / 2), Vector3.UP)
+		var lamp := OmniLight3D.new(); lamp.position = corner + Vector3(0, 33, 0); lamp.omni_range = 150.0; lamp.omni_attenuation = 0.6
+		lamp.light_energy = 0.0; lamp.light_color = Color(1.0, 0.97, 0.9); lamp.shadow_enabled = false; add_child(lamp)
+		floods.append([hm, lamp])
 
 # relva com volume (só na versão de computador): tufos com vento à volta do lance
 func _grass() -> void:
@@ -373,7 +396,7 @@ func _params_for(truth: String, sd: float) -> Dictionary:
 
 func _restart() -> void:
 	t = 0.0
-	min_contact = 99.0; contact_checked = false
+	min_contact = 99.0; contact_checked = false; slp = {}
 	hit_done = false
 	free_ball = false
 	b3_free = false; b3_net = 0.0; bv3 = Vector3.ZERO
@@ -432,6 +455,7 @@ func _restart() -> void:
 
 # ---------- ciclo ----------
 func _process(delta: float) -> void:
+	if not tv.is_empty() and not (modo in ["var", "rever", "treino"]): _tv_end()
 	match modo:
 		"jogo", "flash", "intervalo", "fim":
 			_match_process(delta)
@@ -459,6 +483,7 @@ func _menu_cam(delta: float) -> void:
 	cam.look_at_from_position(Vector3(W / 2 + cos(a) * 62, 22, H / 2 + sin(a) * 50), Vector3(W / 2, 0, H / 2))
 
 func _scene_process(delta: float) -> void:
+	_tv_step()
 	get_tree().paused = paused
 	Engine.time_scale = speed
 	var dt := 0.0 if paused else delta
@@ -513,7 +538,7 @@ func _scene_process(delta: float) -> void:
 		refj.update(dt, t); refj.ground()
 	# levanta-se quando já não está queixoso
 	for p in [att, def]:
-		if p.phase == "chao" and p.groundT > 1.4 + p.hurt * 2.2: p.get_up()
+		if (p.phase == "chao" or p.phase == "chao_k") and p.groundT > 1.4 + p.hurt * 2.2: p.get_up()
 	if lance <= 4: _ball(dt)
 	else: _ball3_step(dt)
 	_var_lines()
@@ -776,7 +801,7 @@ func _line(dt: float) -> void:
 	# guarda-redes: arranca do meio da baliza e atira-se à bola
 	var gs := 1.0 if B.y < H / 2 else -1.0
 	var g0 := Vector2(gx - di * 1.2, B.y + gs * 2.2)
-	if not def.rag:
+	if not def.rag and not hit_done:
 		var gk := g0.lerp(Vector2(gx - di * 0.9, B.y + gs * 0.9), clamp(t / (TC - 0.3), 0.0, 1.0))
 		def.move(gk, Vector2(-di, 0), 1.5 if t < TC - 0.3 else 0.0); def.play("jog" if t < TC - 0.3 else "idle", 0.2)
 	if not hit_done and t >= TC - 0.3:
@@ -784,13 +809,27 @@ func _line(dt: float) -> void:
 		var dvec := Vector3(B.x, 0.5, B.y) - def.body_pos()
 		dvec.y = 0
 		def.hurt = 0.0
-		def.fall(dvec.normalized() * 3.2 + Vector3(0, 1.2, 0), ["wrist_L", "wrist_R", "lowerarm01_L", "lowerarm01_R"], dvec.normalized() * 3.5 + Vector3(0, 0.8, 0), "dive", 0.7)
+		_gk_dive(def, B, Vector2(-di, 0))
 		outcome = "a bola %s a linha (%d cm)" % ["passou toda" if L.get("m", 0.0) >= Partida.LINE_IN else "não passou toda", int(round((float(L.get("m", 0.0)) - Partida.LINE_IN) * 100))]
 	var B3 := Vector3(B.x, 0.11 + float(sc.bh), B.y)
 	if t < tk: b3 = Vector3(Pk.x, 0.11, Pk.y)
 	elif t < TC: b3 = _arc(Vector3(Pk.x, 0.11, Pk.y), B3, 0.6, (t - tk) / (TC - tk))
 	elif t < TC + 0.7: b3 = B3.lerp(Vector3(B.x, 0.11, B.y), clamp((t - TC) / 0.3, 0.0, 1.0))
 	else: b3 = Vector3(B.x, 0.11, B.y).lerp(Vector3(gx - di * 1.0, 0.25, B.y), clamp((t - TC - 0.7) / 0.4, 0.0, 1.0))
+
+# mergulho do guarda-redes em mocap: escolhe o lado do clip (normal ou espelhado)
+# que deixa o guarda-redes mais de frente para o remate e roda-o para a bola
+func _gk_dive(j: Jogador, target: Vector2, face: Vector2) -> void:
+	var b := j.body_pos()
+	var dv := target - Vector2(b.x, b.z)
+	if dv.length() < 0.05: dv = Vector2(0, 1)
+	var best := ""; var bd := Vector2.ZERO; var bs := -9.0
+	for c in ["gk_dive", "gk_dive_m"]:
+		var m: Vector3 = (j.fk(c, 1.3)[0] as Transform3D).origin - (j.fk(c, 0.4)[0] as Transform3D).origin
+		var yaw := atan2(dv.x, dv.y) - atan2(m.x, m.z)
+		var d := Vector2(sin(yaw), cos(yaw))
+		if d.dot(face) > bs: bs = d.dot(face); best = c; bd = d
+	j.kin(best, 0.25, bd, Vector2(b.x, b.z), 1.3, "fica", 0.1)
 
 # 9) fora de jogo: o momento do passe, visto pelo assistente
 func _offside(dt: float) -> void:
@@ -883,12 +922,12 @@ func _goalfoul(dt: float) -> void:
 			outcome = "ombro com ombro, os dois à bola"
 	# guarda-redes
 	var gk: Jogador = extras[0]
-	if gk.node.visible and not gk.rag:
+	if gk.node.visible and not gk.rag and gk.phase != "kin" and gk.phase != "chao_k":
 		var g0 := Vector2(float(sc.gx) - float(sc.dir_in) * 0.8, lerp(H / 2, Gp.y, 0.3))
 		gk.move(g0, Vector2(-float(sc.dir_in), 0), 0.0); gk.play("idle", 0.3)
 		if t > TS + 0.15:
 			var dv := Vector3(Gp.x, 0.6, Gp.y) - gk.body_pos(); dv.y = 0
-			gk.fall(dv.normalized() * 3.0 + Vector3(0, 1.4, 0), [], Vector3.ZERO, "dive", 0.7)
+			if gk.phase != "kin": _gk_dive(gk, Gp, Vector2(-float(sc.dir_in), 0))
 	if not b3_free:
 		if t < TS: b3 = Vector3(ap.x + A.x * 0.6, 0.11, ap.y + A.y * 0.6)
 		else:
@@ -922,6 +961,8 @@ func _camera() -> void:
 		cam.look_at_from_position(eye + shake, look + shake * 0.5)
 	elif lance == 9 and modo in ["var", "rever"] and t >= TC - 0.01:
 		_var_camera()
+	elif cam_mode == 4:
+		_tv_camera(look)
 	elif cam_mode == 1:
 		if lance == 9:
 			var sy: float = -7.0 if float(sc.ast.y) < H / 2 else H + 7.0
@@ -996,6 +1037,90 @@ func _var_lines() -> void:
 			var_mesh[i].position = Vector3(var_line[i], 0.02, H / 2)
 			var_mesh[i].scale = Vector3(2.2 if i == var_sel else 1.0, 1, 1)
 
+# ---------- noite: céu escuro, projetores acesos ----------
+func _set_night(on: bool) -> void:
+	night = on
+	if on:
+		sky_mat.sky_top_color = Color(0.02, 0.03, 0.07); sky_mat.sky_horizon_color = Color(0.09, 0.1, 0.16); sky_mat.ground_horizon_color = Color(0.06, 0.07, 0.08)
+		env.ambient_light_energy = 0.3
+		sun.rotation_degrees = Vector3(-68, 25, 0); sun.light_energy = 1.05; sun.light_color = Color(0.93, 0.96, 1.0)
+		env.glow_intensity = 0.7; env.glow_bloom = 0.12
+	else:
+		sky_mat.sky_top_color = Color(0.32, 0.5, 0.78); sky_mat.sky_horizon_color = Color(0.72, 0.8, 0.9); sky_mat.ground_horizon_color = Color(0.5, 0.55, 0.5)
+		env.ambient_light_energy = 0.55
+		sun.rotation_degrees = Vector3(-48, -35, 0); sun.light_energy = 1.45; sun.light_color = Color(1, 1, 1)
+		env.glow_intensity = 0.4; env.glow_bloom = 0.05
+	for f in floods:
+		(f[0] as StandardMaterial3D).emission_energy_multiplier = 6.0 if on else 0.0
+		(f[1] as OmniLight3D).light_energy = 0.9 if on else 0.0
+
+# ---------- televisão ----------
+func _tv_ui() -> void:
+	tv_layer = CanvasLayer.new(); tv_layer.layer = 6; add_child(tv_layer)
+	for i in 2:
+		var b := ColorRect.new(); b.color = Color(0, 0, 0, 0.92); b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		b.anchor_right = 1.0; b.offset_bottom = 46
+		if i == 1: b.anchor_top = 1.0; b.anchor_bottom = 1.0; b.offset_top = -46; b.offset_bottom = 0
+		b.visible = false; tv_layer.add_child(b); tv_bars.append(b)
+	tv_wipe = ColorRect.new(); tv_wipe.color = Color("12305e"); tv_wipe.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	tv_wipe.anchor_right = 1.0; tv_wipe.anchor_bottom = 1.0; tv_wipe.visible = false; tv_layer.add_child(tv_wipe)
+	var stripe := ColorRect.new(); stripe.color = Color("f2cf3a"); stripe.anchor_top = 0.5; stripe.anchor_bottom = 0.5; stripe.anchor_right = 1.0
+	stripe.offset_top = 34; stripe.offset_bottom = 40; tv_wipe.add_child(stripe)
+	var wl := Label.new(); wl.text = "REPETIÇÃO"; wl.add_theme_font_size_override("font_size", 54); wl.add_theme_color_override("font_color", Color(1, 1, 1))
+	wl.anchor_right = 1.0; wl.anchor_top = 0.5; wl.anchor_bottom = 0.5; wl.offset_top = -40; wl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tv_wipe.add_child(wl)
+	tv_tag = Label.new(); tv_tag.add_theme_font_size_override("font_size", 17); tv_tag.add_theme_color_override("font_color", Color("f2cf3a"))
+	tv_tag.anchor_left = 1.0; tv_tag.anchor_right = 1.0; tv_tag.offset_left = -420; tv_tag.offset_right = -18; tv_tag.offset_top = 12
+	tv_tag.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT; tv_tag.visible = false; tv_layer.add_child(tv_tag)
+
+func tv_start() -> void:
+	if not (modo in ["var", "rever", "treino"]) or lance == 9: return
+	tv = {"i": 0}
+	_tv_shot()
+
+func _tv_shot() -> void:
+	var sh: Array = TV_SHOTS[tv.i]
+	cam_mode = sh[0]
+	_restart()
+	tv.from = TC + float(sh[1]); tv.to = TC + float(sh[2]); tv.slow = float(sh[3]); tv.name = sh[4]; tv.live = false
+	tv_wipe.visible = true; tv_wipe.position.x = 0
+	for b in tv_bars: b.visible = true
+	tv_tag.visible = false
+
+func _tv_end() -> void:
+	tv = {}
+	speed = 0.75 if modo == "var" else 1.0
+	tv_wipe.visible = false; tv_tag.visible = false
+	for b in tv_bars: b.visible = false
+	cam_mode = 1
+
+# chamado no início de cada imagem do lance: acelera até ao início do plano (com a cortina), depois câmara lenta
+func _tv_step() -> void:
+	if tv.is_empty(): return
+	if t < tv.from:
+		speed = 8.0
+	else:
+		speed = tv.slow
+		if not tv.live:
+			tv.live = true
+			tv_tag.text = "REPETIÇÃO · %s · %sx" % [tv.name, ("%.2f" % tv.slow).replace(".", ",").trim_suffix("0")]
+			tv_tag.visible = true
+			var tw := create_tween(); tw.set_ignore_time_scale(true)
+			tw.tween_property(tv_wipe, "position:x", get_viewport().get_visible_rect().size.x, 0.3)
+		if t > tv.to:
+			tv.i += 1
+			if tv.i < TV_SHOTS.size(): _tv_shot()
+			else: _tv_end()
+
+# câmara de transmissão: no alto da bancada principal, segue o lance com zoom
+func _tv_camera(look: Vector3) -> void:
+	if tv_look == Vector3.ZERO or tv_look.distance_to(look) > 25.0: tv_look = look
+	tv_look = tv_look.lerp(look, 0.08)
+	var eye := Vector3(clamp(tv_look.x * 0.8 + W * 0.1, 8.0, W - 8.0), 17.0, -15.0)
+	var dist := eye.distance_to(tv_look)
+	cam.fov = rad_to_deg(2.0 * atan(8.5 / dist))
+	cam.look_at_from_position(eye, tv_look)
+
 # ---------- fluxo da partida ----------
 func _ev(n: String, d: Dictionary) -> void:
 	match n:
@@ -1039,6 +1164,7 @@ func _new_match(teams: Array, career := false) -> void:
 	jogo.ev = _ev
 	campo.jogo = jogo
 	is_career = career
+	_set_night(rng.randf() < 0.45)
 	L = {}; G = {}; match_paused = false
 	_to_2d()
 	modo = "jogo"
@@ -1125,10 +1251,12 @@ func _enter_var() -> void:
 	ui.var_frame.visible = true
 	sc.erase("lines")
 	_restart()
-	dec_shown = true; dec_left = float(L.decide_t)
+	dec_shown = true; dec_left = float(L.decide_t) + (6.0 if lance != 9 else 0.0)
 	ui.show_dec(jogo.choices_for(L), "")
+	tv_start()
 
 func _replay() -> void:
+	if not tv.is_empty(): _tv_end()
 	if not (modo in ["lance", "var", "rever"]): return
 	if modo == "lance" and t < TC + 1.0 and replays == 0: return
 	replays += 1
@@ -1141,7 +1269,8 @@ func _cam_next() -> void:
 	if lance == 9 and modo in ["var", "rever"] and t >= TC - 0.01:
 		cam_mode = cam_mode % 3 + 1
 		ui.toast(["", "Câmara da linha", "De cima", "Rasante"][cam_mode], 1.2); return
-	cam_mode = (cam_mode + 1) % 4
+	cam_mode = (cam_mode + 1) % 5
+	ui.toast(["A tua vista", "Vista ideal", "Atrás do lance", "De perto", "Câmara de televisão"][cam_mode], 1.2)
 
 # ---------- gestos do árbitro ----------
 func _start_gesture(d: Dictionary) -> void:
@@ -1279,6 +1408,7 @@ func _end_review() -> void:
 
 # ---------- menu e botões ----------
 func _show_menu() -> void:
+	_set_night(false)
 	modo = "menu"; paused = false; speed = 1.0
 	get_tree().paused = false; Engine.time_scale = 1.0
 	_to_3d()
@@ -1313,6 +1443,7 @@ func on_ui(a: String, v) -> void:
 		"som": som.toggle(); _show_menu()
 		"decide": _decide(v)
 		"replay": _replay()
+		"tv": tv_start()
 		"camera": _cam_next()
 		"ask": if jogo: jogo.ask_pick(v)
 		"protest": if jogo: jogo.resolve_protest(v)
@@ -1331,6 +1462,7 @@ func _show_menu_bg() -> void:
 	ball.visible = false
 
 func _start_training() -> void:
+	_set_night(false)
 	ui.hide_all()
 	modo = "treino"
 	_to_3d()
@@ -1372,6 +1504,7 @@ func _unhandled_input(e: InputEvent) -> void:
 					if i < ch.size(): _decide(ch[i])
 				elif kc == KEY_R: _replay()
 				elif kc == KEY_C: _cam_next()
+				elif kc == KEY_T: tv_start()
 				elif kc == KEY_SPACE: paused = not paused
 				elif kc == KEY_S: speed = 0.3 if speed > 0.5 else (0.75 if modo == "var" else 1.0)
 				elif modo == "var" and sc.has("lines"):
@@ -1380,7 +1513,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					elif kc == KEY_LEFT or kc == KEY_A: var_line[var_sel] -= stp
 					elif kc == KEY_RIGHT or kc == KEY_D: var_line[var_sel] += stp
 			"rever":
-				if kc == KEY_R: _replay()
+				if kc == KEY_T: tv_start()
+				elif kc == KEY_R: _replay()
 				elif kc == KEY_C: _cam_next()
 				elif kc == KEY_SPACE: paused = not paused
 				elif kc == KEY_S: speed = 0.3 if speed > 0.5 else 1.0
@@ -1398,6 +1532,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					KEY_2: cam_mode = 1
 					KEY_3: cam_mode = 2
 					KEY_4: cam_mode = 3
+					KEY_5: cam_mode = 4
+					KEY_T: tv_start()
 					KEY_SPACE: paused = not paused
 					KEY_S: speed = 0.25 if speed == 1.0 else 1.0
 					KEY_R: cur = {}; _restart()
@@ -1467,15 +1603,21 @@ func _tackle(dt: float) -> void:
 		if t > TC - 0.5 and t < TC - 0.45 and not free_ball: bvel = A * (vA + 2.4)
 	# carrinho: nas faltas a sério e nos cortes limpos o defesa atira-se de pés para a frente e desliza
 	var sl := lance == 0 and not sim_dive and (clean or force >= 0.82)
-	if sl: C += D * 0.4
 	var dp: Vector2
 	if t < TC: dp = C - D * vD * (TC - t)
 	else: dp = C + D * 1.6 * (1.0 - exp(-(t - TC) * 3.0))
-	if sl and def.phase == "anim" and not hit_done and t >= TC - 0.36: def.slide(D, vD)
-	if def.phase == "anim":
+	if sl:
+		# carrinho capturado (Mixamo): o pé da frente chega ao tornozelo (ou à bola) exatamente em TC
+		if slp.is_empty(): slp = _slide_plan(P + A * 1.4 if clean else P)
+		if t < slp.ts:
+			def.move(slp.at - D * vD * (slp.ts - t), D, vD); def.play("run", 0.1)
+		elif not slp.get("on", false):
+			slp.on = true
+			def.kin("tackle", slp.s0, D, slp.at, slp.k, "anim")
+		elif def.phase == "anim": _settle(def, dt, D)
+	elif def.phase == "anim":
 		def.move(dp, D, vD if t < TC else max(0.0, vD * exp(-(t - TC) * 3.0)))
-		if t > TC - 0.62 and not sl: def.play("kick", 0.1)
-		elif sl and t < TC: def.play("run", 0.1)
+		if t > TC - 0.62: def.play("kick", 0.1)
 		if t > TC + 0.9: def.play("jog", 0.3)
 	# o pé do defesa vai mesmo ao tornozelo (ou à bola, na simulação)
 	var leg := _leg_of(att, def.bone_world("foot_R"))
@@ -1483,7 +1625,7 @@ func _tackle(dt: float) -> void:
 	if sim_dive: tgt = Vector3(P.x - D.x * 1.5, 0.1, P.y - D.y * 1.5)
 	if stamp and not clean: tgt = att.bone_world("foot_" + leg) - Vector3(A.x, 0, A.y) * 0.1 + Vector3(0, 0.07, 0)
 	var w: float = clamp(1.0 - abs(t - TC) / 0.28, 0.0, 1.0)
-	def.ik = {"foot_R": [tgt, w]}
+	if not sl: def.ik = {"foot_R": [tgt, w]}
 	if not hit_done and t >= TC:
 		hit_done = true
 		att.hurt_leg = leg
@@ -1508,14 +1650,41 @@ func _tackle(dt: float) -> void:
 		elif force < 1.12:
 			outcome = "falta: toque claro, cai pelo impacto"
 			att.hurt = 0.4
-			att.fall(v3 * 0.9, ["lowerleg01_" + leg, "foot_" + leg], Vector3(D.x, 0.0, D.y) * 1.3 * force - Vector3(A.x, 0, A.y) * 1.5, "dive", 0.6)
+			_trip(att, A, 1.05)
 		else:
 			outcome = "falta forte (amarelo/vermelho): entrada a varrer com força"
 			att.hurt = 1.0
-			att.fall(v3 * 0.95, ["lowerleg01_" + leg, "foot_" + leg, "upperleg01_" + leg], Vector3(D.x, 0.1, D.y) * 1.7 * force - Vector3(A.x, 0, A.y) * 2.0, "dive", 0.6, Vector3(A.x, 0, A.y).cross(Vector3.UP) * -0.8 * side)
+			_trip(att, A, 1.3)
 		def.hit(Vector3(-1.6 * force, 1.0, 0.0))
 		if def.phase == "desliza": def.slide_hit()
-	if hit_done: _settle(att, dt, A)
+	if hit_done and clean and att.phase == "anim":
+		# corte limpo: o atacante perde a bola, trava e desvia-se do carrinho
+		var away := (A - D * 0.9).normalized()
+		var v: float = maxf(0.0, att.speed - 9.0 * dt)
+		att.move(att.pos + away * v * dt, away, v)
+		att.play("jog" if v > 1.0 else "idle", 0.25)
+	elif hit_done: _settle(att, dt, A)
+
+# tropeção capturado: o corpo cai para a frente como na captura, depois fica queixoso no chão
+func _trip(j: Jogador, d: Vector2, k: float) -> void:
+	var bp := j.body_pos()
+	j.kin("trip", 0.12, d, Vector2(bp.x, bp.z), k, "chao", 0.08)
+
+# quando começar o carrinho, de onde e a que velocidade, para o pé chegar ao alvo no instante TC
+func _slide_plan(target: Vector2) -> Dictionary:
+	var info: Dictionary = def.slide_key("tackle")
+	var key: float = info.key
+	var s0: float = maxf(0.0, key - 0.45)
+	var r0: Vector3 = def.clip_bone("tackle", s0, "root")
+	var rk: Vector3 = def.clip_bone("tackle", key, "root")
+	var fkp: Vector3 = def.clip_bone("tackle", key, info.foot)
+	var vclip: float = maxf(0.5, (rk.z - r0.z) / maxf(0.05, key - s0))
+	var k: float = clamp(vD * 0.75 / vclip, 1.0, 1.7)
+	var R := Basis(Vector3.UP, atan2(D.x, D.y))
+	var f3 := R * fkp
+	var o := target - Vector2(f3.x, f3.z)               # origem do modelo
+	var a3 := R * r0
+	return {"ts": TC - (key - s0) / k, "s0": s0, "k": k, "at": o + Vector2(a3.x, a3.z)}
 
 # A verdade tem de bater com o que se vê: mede-se a distância real entre as pernas dos dois.
 const LEGS := ["foot_L", "foot_R", "lowerleg01_L", "lowerleg01_R"]
@@ -1627,7 +1796,7 @@ func _separate(all: Array) -> void:
 	for i in all.size():
 		for j in range(i + 1, all.size()):
 			if all[i].rag and all[j].rag: continue
-			if all[i].phase == "desliza" or all[j].phase == "desliza": continue
+			if all[i].phase in ["desliza", "kin", "chao_k"] or all[j].phase in ["desliza", "kin", "chao_k"]: continue
 			var push := Vector2.ZERO
 			for a in g[i]:
 				for b in g[j]:

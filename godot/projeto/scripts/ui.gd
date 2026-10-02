@@ -233,6 +233,8 @@ func show_dec(choices: Array, extra: String) -> void:
 		dec_row.add_child(_btn("%d  %s" % [i, Partida.DEC_LABEL[d]], func(): main.on_ui("decide", d), DEC_COL.get(d, Color(0.25, 0.3, 0.35)), 130, 18))
 	dec_row.add_child(_btn("R  Rever", func(): main.on_ui("replay", null), Color(0.2, 0.24, 0.3), 0, 16))
 	dec_row.add_child(_btn("C  Câmara", func(): main.on_ui("camera", null), Color(0.2, 0.24, 0.3), 0, 16))
+	if main.modo != "lance" and main.lance != 9:
+		dec_row.add_child(_btn("T  Repetição TV", func(): main.on_ui("tv", null), Color("12305e"), 0, 16))
 	dec_lbl.text = extra
 	dec.visible = true
 func dec_text(t: String) -> void: dec_lbl.text = t

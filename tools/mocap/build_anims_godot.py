@@ -30,3 +30,28 @@ A['pull'] = clip('18_03', 1.3, 2.6)
 A['held'] = clip('19_03', 1.3, 2.3)
 json.dump(A, open('anims_godot.json', 'w'))
 print({k: v['n'] for k, v in A.items()}, 'bytes', len(open('anims_godot.json').read()))
+
+# ---- clips do Mixamo (Soccer Game Pack, descarregado pelo Hugo) ----
+import mx
+def mclip(name, t0, t1, settle=False, **kw):
+    Q, RP = mx.clip(name, t0, t1, settle=settle, **kw)
+    q16 = np.round(Q * 32767).astype('<i2').tobytes()
+    p16 = np.round(RP * 1000).astype('<i2').tobytes()
+    return {'n': len(Q), 'fps': 30, 'loop': bool(kw.get('loop')), 'q': base64.b64encode(q16).decode(), 'p': base64.b64encode(p16).decode()}
+L = mx.length
+A['tackle'] = mclip('soccer_tackle_2', 0.0, L('soccer_tackle_2') - 0.04)
+A['tackle_long'] = mclip('soccer_tackle', 0.0, L('soccer_tackle') - 0.04)
+A['trip'] = mclip('soccer_trip', 0.0, L('soccer_trip') - 0.04)
+A['lying'] = mclip('fallen_idle', 0.0, L('fallen_idle') - 0.04, loop=True, inplace=True)
+A['standup'] = mclip('standing_up', 0.0, L('standing_up') - 0.04)
+# corrida lenta e espera de jogador (posição atlética) do Mixamo substituem as do CMU
+A['jog'] = mclip('jog_forward', 0.0, L('jog_forward') - 1 / 30, inplace=True, loop=True)
+A['idle'] = mclip('offensive_idle', 0.0, 4.0, inplace=True, loop=True)
+A['header'] = mclip('soccer_header', 0.0, L('soccer_header') - 0.04)
+A['gk_dive'] = mclip('goalkeeper_diving_save', 0.0, L('goalkeeper_diving_save') - 0.04)
+A['gk_dive_m'] = mclip('goalkeeper_diving_save@m', 0.0, L('goalkeeper_diving_save') - 0.04)
+A['trip_m'] = mclip('soccer_trip@m', 0.0, L('soccer_trip') - 0.04)
+A['kick_run'] = mclip('strike_foward_jog', 0.0, L('strike_foward_jog') - 0.04)
+A['m_kick'] = mclip('kick_soccerball', 0.0, L('kick_soccerball') - 0.04)
+json.dump(A, open('anims_godot.json', 'w'))
+print('com mixamo', {k: v['n'] for k, v in A.items()})
