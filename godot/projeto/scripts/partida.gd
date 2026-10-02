@@ -209,8 +209,8 @@ func emit(nm: String, d := {}) -> void:
 	if ev.is_valid(): ev.call(nm, d)
 func toast(s: String, secs := 2.0) -> void: emit("toast", {"txt": s, "secs": secs})
 func sfx(k: String, a = null) -> void: emit("sfx", {"k": k, "a": a})
-func radio(w: String, txt: String) -> void:
-	if training.is_empty(): emit("radio", {"who": w, "txt": txt})
+func radio(w: String, txt: String, voz := "") -> void:
+	if training.is_empty(): emit("radio", {"who": w, "txt": txt, "voz": voz if voz != "" else txt})
 func later(secs: float, f: Callable) -> void: timers.append([secs, f])
 func pinfo(p: Pl) -> Dictionary: return {"id": p.id, "team": p.team, "num": p.num, "role": p.role}
 func snap_of(p: Pl) -> Dictionary: return {"id": p.id, "team": p.team, "role": p.role, "num": p.num, "p": p.p, "v": p.v}
@@ -1577,7 +1577,7 @@ func coach_step(dt: float) -> void:
 	var lv: int = coach_w[team]
 	var nm := coach_name(team)
 	var card_d := "vermelho" if lv >= 2 else "amarelo"
-	radio("4.º árbitro", "O treinador " + de_t(team) + " está fora da área técnica!")
+	radio("4.º árbitro", "O treinador " + de_t(team) + " está fora da área técnica!", "O treinador está fora da área técnica!")
 	ask_open("O treinador " + de_t(team) + ", " + nm + ", sai da área técnica aos gritos" + ((" outra vez" + (", já com amarelo" if lv >= 2 else ", depois do aviso")) if lv else "") + ".", "Banco",
 		[{"d": "ignorar", "label": "Ignorar", "small": "deixa-o falar"}, {"d": "avisar", "label": "Mandar sentar", "small": "aviso ao 4.º árbitro"},
 		{"d": card_d, "label": "Vermelho" if lv >= 2 else "Amarelo", "small": "expulso para a bancada" if lv >= 2 else "cartão ao treinador", "sw": card_d}],

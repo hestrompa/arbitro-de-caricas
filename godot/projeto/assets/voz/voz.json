@@ -1,0 +1,407 @@
+{
+"Levantei: para mim o recetor está fora.": {
+"f": "04943ca1cd.ogg",
+"who": "Assistente",
+"dur": 2.98
+},
+"Bandeira em baixo: vi-o em linha.": {
+"f": "8fb7957183.ogg",
+"who": "Assistente",
+"dur": 2.57
+},
+"Daqui pareceu-me lance limpo.": {
+"f": "f3fc7d0515.ogg",
+"who": "Assistente",
+"dur": 2.24
+},
+"Daqui vi falta.": {
+"f": "dfe7b73547.ogg",
+"who": "Assistente",
+"dur": 1.69
+},
+"Entrada imprudente, eu dava amarelo.": {
+"f": "894ab621f3.ogg",
+"who": "Assistente",
+"dur": 2.77
+},
+"Foi muito forte, pode ser vermelho.": {
+"f": "8ee54b427b.ogg",
+"who": "Assistente",
+"dur": 2.51
+},
+"Para mim atirou-se.": {
+"f": "4246b5c6ae.ogg",
+"who": "Assistente",
+"dur": 1.73
+},
+"Vi mão, braço aberto.": {
+"f": "01fe791e5c.ogg",
+"who": "Assistente",
+"dur": 2.28
+},
+"Mão deliberada.": {
+"f": "26dac207d1.ogg",
+"who": "Assistente",
+"dur": 1.57
+},
+"Vi o empurrão do defesa.": {
+"f": "ac1192442f.ogg",
+"who": "Assistente",
+"dur": 2.21
+},
+"Foi o atacante que empurrou.": {
+"f": "7e0042a46a.ogg",
+"who": "Assistente",
+"dur": 2.01
+},
+"Golo verificado. Pode recomeçar.": {
+"f": "61148f7181.ogg",
+"who": "VAR",
+"dur": 3.13
+},
+"Check completo. Decisão confirmada.": {
+"f": "45412809ea.ogg",
+"who": "VAR",
+"dur": 3.49
+},
+"Estamos a ver o golo. Decide tu primeiro.": {
+"f": "90c1e29fc2.ogg",
+"who": "VAR",
+"dur": 2.71
+},
+"Golo em verificação: possível fora de jogo no passe. Recomendo revisão.": {
+"f": "32772ed9ca.ogg",
+"who": "VAR",
+"dur": 5.21
+},
+"Possível erro no fora de jogo. Recomendo revisão no monitor.": {
+"f": "76d02e0ece.ogg",
+"who": "VAR",
+"dur": 4.61
+},
+"Tenho imagens da linha de golo. Recomendo revisão.": {
+"f": "7805f4065c.ogg",
+"who": "VAR",
+"dur": 3.71
+},
+"Golo em verificação: possível falta antes do remate.": {
+"f": "e4056d1b07.ogg",
+"who": "VAR",
+"dur": 3.92
+},
+"Possível vermelho. Recomendo revisão no monitor.": {
+"f": "0c2952430f.ogg",
+"who": "VAR",
+"dur": 3.64
+},
+"Possível penálti. Recomendo revisão no monitor.": {
+"f": "57d1c97dc2.ogg",
+"who": "VAR",
+"dur": 3.94
+},
+"Rádio ligado.": {
+"f": "81d76235ea.ogg",
+"who": "VAR",
+"dur": 1.63
+},
+"Tempo cumprido. Vou mostrar +1.": {
+"f": "7ce53736f6.ogg",
+"who": "4.º árbitro",
+"dur": 2.99
+},
+"Tempo cumprido. Vou mostrar +2.": {
+"f": "6b65fbb49c.ogg",
+"who": "4.º árbitro",
+"dur": 3.2
+},
+"Tempo cumprido. Vou mostrar +3.": {
+"f": "f29eb3a870.ogg",
+"who": "4.º árbitro",
+"dur": 3.33
+},
+"Tempo cumprido. Vou mostrar +4.": {
+"f": "0bd4a67764.ogg",
+"who": "4.º árbitro",
+"dur": 3.51
+},
+"Tempo cumprido. Vou mostrar +5.": {
+"f": "d885bb9537.ogg",
+"who": "4.º árbitro",
+"dur": 3.37
+},
+"Tempo cumprido. Vou mostrar +6.": {
+"f": "29c9c47671.ogg",
+"who": "4.º árbitro",
+"dur": 3.23
+},
+"Tempo cumprido. Vou mostrar +7.": {
+"f": "c87e2265d5.ogg",
+"who": "4.º árbitro",
+"dur": 3.05
+},
+"Tempo cumprido. Vou mostrar +8.": {
+"f": "46414f6871.ogg",
+"who": "4.º árbitro",
+"dur": 2.98
+},
+"Tempo cumprido. Vou mostrar +9.": {
+"f": "ad6f2f7066.ogg",
+"who": "4.º árbitro",
+"dur": 3.17
+},
+"O treinador está fora da área técnica!": {
+"f": "607615cf60.ogg",
+"who": "4.º árbitro",
+"dur": 2.95
+},
+"Golo anulado: estavas em fora de jogo no passe.": {
+"f": "f297b6088c.ogg",
+"who": "Árbitro",
+"dur": 3.05
+},
+"Estava em jogo. O golo conta!": {
+"f": "d4b192224d.ogg",
+"who": "Árbitro",
+"dur": 2.26
+},
+"Fora de jogo: estavas à frente do penúltimo defesa.": {
+"f": "c19a5ae85e.ogg",
+"who": "Árbitro",
+"dur": 3.24
+},
+"Estava em jogo, siga!": {
+"f": "9329f46594.ogg",
+"who": "Árbitro",
+"dur": 1.71
+},
+"Os dois foram à bola. Siga!": {
+"f": "9459282ba3.ogg",
+"who": "Árbitro",
+"dur": 2.23
+},
+"Empurraste-o nas costas no salto. Falta.": {
+"f": "eaa46f7db2.ogg",
+"who": "Árbitro",
+"dur": 3.05
+},
+"Usaste o braço como alavanca. Amarelo.": {
+"f": "3671d8581c.ogg",
+"who": "Árbitro",
+"dur": 2.76
+},
+"Cotovelada na cara. Vermelho!": {
+"f": "014995c945.ogg",
+"who": "Árbitro",
+"dur": 2.11
+},
+"Tocaste na bola. Siga!": {
+"f": "100ddb1e63.ogg",
+"who": "Árbitro",
+"dur": 2.17
+},
+"Pisaste-lhe o calcanhar. Falta.": {
+"f": "0bfa581a58.ogg",
+"who": "Árbitro",
+"dur": 2.39
+},
+"Pitões no tendão. Amarelo.": {
+"f": "8cc2c00154.ogg",
+"who": "Árbitro",
+"dur": 2.15
+},
+"Pisão com força, por trás. Vermelho!": {
+"f": "a88db2c1f3.ogg",
+"who": "Árbitro",
+"dur": 2.67
+},
+"Último homem, fora da área e sem tocar na bola. Vermelho!": {
+"f": "fc69555d18.ogg",
+"who": "Árbitro",
+"dur": 3.71
+},
+"O guarda-redes chegou primeiro à bola. Siga!": {
+"f": "ee6bb18f77.ogg",
+"who": "Árbitro",
+"dur": 2.94
+},
+"Houve toque, mas não chega para penálti. Siga!": {
+"f": "310f85c780.ogg",
+"who": "Árbitro",
+"dur": 3.17
+},
+"Tocou-lhe no pé, é penálti!": {
+"f": "2101f64b68.ogg",
+"who": "Árbitro",
+"dur": 1.83
+},
+"Foi só um toque. Siga!": {
+"f": "6f77bc6b1b.ogg",
+"who": "Árbitro",
+"dur": 1.89
+},
+"Agarraste a camisola. Falta.": {
+"f": "737c8cfea9.ogg",
+"who": "Árbitro",
+"dur": 2.43
+},
+"Agarraste e paraste o contra-ataque. Amarelo.": {
+"f": "a6ee35b3d8.ogg",
+"who": "Árbitro",
+"dur": 2.87
+},
+"Agarrão a impedir um golo. Vermelho!": {
+"f": "2c3b119c1f.ogg",
+"who": "Árbitro",
+"dur": 2.38
+},
+"Foi ombro com ombro. O golo conta!": {
+"f": "328f356402.ogg",
+"who": "Árbitro",
+"dur": 2.41
+},
+"Empurraste o defesa antes do remate. Golo anulado.": {
+"f": "13d48c8c4f.ogg",
+"who": "Árbitro",
+"dur": 3.37
+},
+"A bola passou toda a linha. É golo!": {
+"f": "050c9ba203.ogg",
+"who": "Árbitro",
+"dur": 2.39
+},
+"Não passou toda a linha. Não há golo.": {
+"f": "6c7f562bf9.ogg",
+"who": "Árbitro",
+"dur": 2.6
+},
+"Braço junto ao corpo, posição natural. Siga!": {
+"f": "f51cf3d1b6.ogg",
+"who": "Árbitro",
+"dur": 3.3
+},
+"Braço aberto, a fazer o corpo maior. É mão.": {
+"f": "32090fe216.ogg",
+"who": "Árbitro",
+"dur": 3.09
+},
+"Mão deliberada a cortar o remate: amarelo.": {
+"f": "dfd01f288b.ogg",
+"who": "Árbitro",
+"dur": 2.79
+},
+"Disputa normal na área. Siga, levanta-te!": {
+"f": "372128fdf9.ogg",
+"who": "Árbitro",
+"dur": 3.25
+},
+"Empurrou-o pelas costas. Penálti!": {
+"f": "f78cef2fd7.ogg",
+"who": "Árbitro",
+"dur": 2.75
+},
+"Afastaste o defesa com o braço. Falta atacante.": {
+"f": "ef6c8a13ed.ogg",
+"who": "Árbitro",
+"dur": 3.16
+},
+"Jogou a bola primeiro. Siga!": {
+"f": "abde92effc.ogg",
+"who": "Árbitro",
+"dur": 2.17
+},
+"Chegaste atrasado e derrubaste-o. Penálti!": {
+"f": "3933fe87ca.ogg",
+"who": "Árbitro",
+"dur": 2.98
+},
+"Chegaste atrasado. Falta.": {
+"f": "42ff94442f.ogg",
+"who": "Árbitro",
+"dur": 2.04
+},
+"Já são faltas a mais. Amarelo.": {
+"f": "914530f810.ogg",
+"who": "Árbitro",
+"dur": 2.58
+},
+"Cortaste o contra-ataque. Amarelo.": {
+"f": "30c8e955c8.ogg",
+"who": "Árbitro",
+"dur": 2.34
+},
+"Entrada imprudente. Amarelo.": {
+"f": "036fe1ab42.ogg",
+"who": "Árbitro",
+"dur": 2.18
+},
+"Entrada com força excessiva, pões o adversário em risco. Vermelho!": {
+"f": "6cf82ce486.ogg",
+"who": "Árbitro",
+"dur": 4.13
+},
+"Atiraste-te para o chão. Amarelo por simulação.": {
+"f": "4acbeee7ae.ogg",
+"who": "Árbitro",
+"dur": 3.17
+},
+"Vantagem! Joguem, joguem!": {
+"f": "b40ac30c64.ogg",
+"who": "Árbitro",
+"dur": 2.36
+},
+"Siga!": {
+"f": "436b8883bb.ogg",
+"who": "Árbitro",
+"dur": 0.93
+},
+"É o segundo: rua!": {
+"f": "2f0819d3d6.ogg",
+"who": "Árbitro",
+"dur": 1.69
+},
+"relato_golo_1": {
+"f": "38b9e6c32c.ogg",
+"who": "Relato",
+"dur": 2.82
+},
+"relato_golo_2": {
+"f": "d731ac7f13.ogg",
+"who": "Relato",
+"dur": 2.01
+},
+"relato_golo_3": {
+"f": "3a1bbf8a81.ogg",
+"who": "Relato",
+"dur": 1.24
+},
+"relato_amarelo_1": {
+"f": "8fa36dac55.ogg",
+"who": "Relato",
+"dur": 2.37
+},
+"relato_amarelo_2": {
+"f": "1a55d872af.ogg",
+"who": "Relato",
+"dur": 1.87
+},
+"relato_vermelho_1": {
+"f": "09d634223b.ogg",
+"who": "Relato",
+"dur": 2.14
+},
+"relato_vermelho_2": {
+"f": "dc9d2f8d07.ogg",
+"who": "Relato",
+"dur": 2.65
+},
+"relato_penalti_1": {
+"f": "e3c2222053.ogg",
+"who": "Relato",
+"dur": 2.48
+},
+"relato_penalti_2": {
+"f": "6016147c37.ogg",
+"who": "Relato",
+"dur": 2.35
+}
+}

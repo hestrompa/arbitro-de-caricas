@@ -58,3 +58,11 @@ Ferramentas em tools/mocap: fbxdump/ (projeto Godot que lê o FBX e grava dump.j
 - Viragens suaves, o corpo inclina para dentro das curvas e ao acelerar; depois de um toque o jogador tropeça uns passos com os braços abertos antes de recuperar.
 - Repetição TV (tecla T, ou botão no VAR): faixas pretas, separador "REPETIÇÃO", três planos (câmara principal, atrás do lance, de perto) em câmara lenta. No VAR arranca sozinha.
 - Jogos à noite (cerca de 45%): céu escuro, torres de iluminação e brilho.
+
+## Som e vozes
+
+- Na web o som usa o modo "Stream" do Godot (audio/general/default_playback_type.web=0). No modo por omissão ("Sample") os sons arrancavam mas saíam mudos; o teste testes/webaudio.mjs mede o sinal à saída do Web Audio.
+- As falas do rádio (assistente, VAR, 4.º árbitro), do árbitro e do relato são ficheiros em assets/voz/, com o nome igual aos 10 primeiros caracteres do md5 do texto. Foram geradas com vozes neurais de português de Portugal e já trazem o ambiente: rádio (banda estreita, estalido e chiado), passos e respiração do assistente a correr, público ao fundo. Se um texto não tiver fala gravada, o jogo usa a voz do sistema como antes.
+- Para mudar ou acrescentar falas: editar tools/vozes/gerar.py e correr `python3 tools/vozes/gerar.py <pasta com as vozes vits-piper-pt_PT-*> godot/projeto/assets/voz`; tools/vozes/ouvir.py transcreve as falas com o Whisper para confirmar que se percebem.
+- Licença das vozes: CC BY-NC-SA 4.0 (não comercial), ver assets/voz/LICENCA-VOZES.md.
+- Há um aviso sonoro (dois toques) quando aparece um lance para analisar.

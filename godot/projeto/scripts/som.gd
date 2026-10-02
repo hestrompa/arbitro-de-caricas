@@ -36,6 +36,12 @@ var _freq: float = 650.0
 var _boost: float = 0.0
 var _boost_t: float = 0.0
 var _vozes: PackedStringArray = PackedStringArray()
+# Falas gravadas (voz neural pt-PT com rádio e ambiente já misturados), em assets/voz/<md5 do texto>.ogg
+const VOZ_DIR: String = "res://assets/voz/"
+var _voz: AudioStreamPlayer
+var _fila: Array = []           # falas à espera: [stream, papel]
+var _voz_cache: Dictionary = {}
+var faltas: PackedStringArray = PackedStringArray()   # textos sem fala gravada (para os testes)
 
 
 # Cria os buses e o murmúrio; os outros sons geram-se um por frame para não engasgar.
@@ -47,6 +53,10 @@ func _ready() -> void:
 		p.bus = BUS_SOM
 		add_child(p)
 		_pool.append(p)
+	_voz = AudioStreamPlayer.new()
+	_voz.bus = BUS_SOM
+	add_child(_voz)
+	_voz.finished.connect(_proxima_fala)
 	_murmurio = AudioStreamPlayer.new()
 	_murmurio.stream = _gera_murmurio()
 	_murmurio.bus = BUS_PUBLICO
@@ -56,6 +66,7 @@ func _ready() -> void:
 	_sons["kick"] = _gera_chuto()
 	_sons["beep"] = _gera_bip()
 	_sons["radio"] = _gera_radio()
+	_sons["alerta"] = _gera_alerta()
 	synth_us += Time.get_ticks_usec() - t0
 	_carregar_voz()
 	_gerar_resto()
@@ -83,7 +94,7 @@ func _process(delta: float) -> void:
 	if _bus_publico < 0:
 		return
 	var b: float = _cur_boost()
-	var alvo_g: float = 0.03 + _nivel * 0.09 + b * 0.2
+	var alvo_g: float = 0.06 + _nivel * 0.12 + b * 0.25
 	var alvo_f: float = 480.0 + _nivel * 380.0 + b * 650.0
 	var tau: float = 0.15 if b > 0.05 else 0.5
 	_ganho += (alvo_g - _ganho) * (1.0 - exp(-delta / tau))
@@ -134,6 +145,11 @@ func ooh() -> void:
 	_tocar("ooh", 1.0)
 
 
+# Aviso de lance para analisar: dois toques claros, como um pager.
+func alerta() -> void:
+	_tocar("alerta", 1.0)
+
+
 # Bip duplo do VAR.
 func beep() -> void:
 	_tocar("beep", 1.0)
@@ -164,9 +180,28 @@ func toggle() -> bool:
 	return muted
 
 
-# Fala em português (pt-PT se houver); não faz nada sem TTS.
+# Há fala gravada para este texto (inteiro ou frase a frase)?
+func tem_fala(text: String) -> bool:
+	return not _falas(text).is_empty()
+
+
+# Fala em português: primeiro as falas gravadas; se faltar alguma, a voz do sistema (TTS).
 func say(text: String, who: String = "Relato") -> void:
-	if not voice_on or muted or not _tts_ok():
+	if not voice_on or muted:
+		return
+	var f: Array = _falas(text)
+	if not f.is_empty():
+		if who == "Relato" and (_voz.playing or not _fila.is_empty()):
+			return      # o relato nunca corta o rádio
+		if who != "Relato" and _voz.playing and _fila.is_empty() and _voz.get_meta("who", "") == "Relato":
+			_voz.stop()
+		for st in f:
+			_fila.append([st, who])
+		if not _voz.playing:
+			_proxima_fala()
+		return
+	if not faltas.has(text): faltas.append(text)
+	if text.begins_with("relato_") or not _tts_ok():
 		return
 	var q: Array = PAPEIS.get(who, PAPEIS["Relato"])
 	var voz: String = ""
@@ -177,6 +212,52 @@ func say(text: String, who: String = "Relato") -> void:
 	DisplayServer.tts_speak(text, voz, 95, float(q[0]), float(q[1]), 0, who != "Relato")
 
 
+# Fluxos das falas gravadas: o texto inteiro, ou cada frase em separado.
+func _falas(text: String) -> Array:
+	var t: String = text.strip_edges()
+	var a: AudioStream = _fala(t)
+	if a:
+		return [a]
+	# junta frases seguidas, a maior combinação que existir primeiro
+	var fr: Array = []
+	var rx: RegEx = RegEx.create_from_string("[^.!?]+[.!?]+")
+	for m in rx.search_all(t):
+		fr.append(m.get_string().strip_edges())
+	var out: Array = []
+	var i: int = 0
+	while i < fr.size():
+		var achou: bool = false
+		for j in range(fr.size(), i, -1):
+			var b: AudioStream = _fala(" ".join(fr.slice(i, j)))
+			if b:
+				out.append(b); i = j; achou = true
+				break
+		if not achou:
+			return []
+	return out
+
+
+func _fala(t: String) -> AudioStream:
+	if t == "":
+		return null
+	if _voz_cache.has(t):
+		return _voz_cache[t]
+	var path: String = VOZ_DIR + t.md5_text().substr(0, 10) + ".ogg"
+	var a: AudioStream = load(path) if ResourceLoader.exists(path) else null
+	_voz_cache[t] = a
+	return a
+
+
+func _proxima_fala() -> void:
+	if _fila.is_empty():
+		return
+	var it: Array = _fila.pop_front()
+	_voz.stream = it[0]
+	_voz.set_meta("who", it[1])
+	_voz.volume_db = linear_to_db(0.8 if it[1] == "Relato" else 1.0)
+	_voz.play()
+
+
 # Liga/desliga a voz; devolve o novo estado.
 func toggle_voice() -> bool:
 	voice_on = not voice_on
@@ -185,6 +266,9 @@ func toggle_voice() -> bool:
 
 # Cala a voz já.
 func stop_voice() -> void:
+	_fila.clear()
+	if _voz:
+		_voz.stop()
 	if _tts_ok():
 		DisplayServer.tts_stop()
 
@@ -518,6 +602,23 @@ func _gera_bip() -> AudioStreamWAV:
 		var t: float = float(i) / SR
 		var e: float = _env(t, 0.01, 0.12, 0.05, 0.1) + _env(t - 0.22, 0.01, 0.12, 0.05, 0.1)
 		buf[i] = sin(k * i) * e
+	return _wav(buf, SR)
+
+
+# Aviso de lance: dois toques (880 e 1320 Hz) com harmónico, a decair.
+func _gera_alerta() -> AudioStreamWAV:
+	var n: int = int(0.75 * SR)
+	var buf: PackedFloat32Array = PackedFloat32Array()
+	buf.resize(n)
+	for i in n:
+		var t: float = float(i) / SR
+		var v: float = 0.0
+		for k in 2:
+			var tk: float = t - k * 0.16
+			if tk >= 0.0:
+				var f: float = 880.0 if k == 0 else 1320.0
+				v += (sin(TAU * f * tk) + 0.35 * sin(TAU * f * 2.0 * tk)) * exp(-tk * 7.0) * minf(tk / 0.004, 1.0)
+		buf[i] = v * 0.32
 	return _wav(buf, SR)
 
 

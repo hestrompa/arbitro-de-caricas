@@ -15,7 +15,7 @@ func _process(dt: float) -> bool:
 		last = m.modo
 	if m.modo == "menu" or m.modo == "carreira":
 		if stage >= scen.size():
-			print("FIM DOS TESTES"); quit(); return true
+			print("FALTAS ", m.som.faltas); print("FIM DOS TESTES"); quit(); return true
 		var a: String = scen[stage]; stage += 1
 		print("== cenário ", a, " frame ", n)
 		if a == "career_play": m.on_ui("carreira", null)

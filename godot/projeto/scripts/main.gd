@@ -1122,18 +1122,30 @@ func _tv_camera(look: Vector3) -> void:
 	cam.look_at_from_position(eye, tv_look)
 
 # ---------- fluxo da partida ----------
+# Fala de relato gravada para um acontecimento do jogo (os nomes ficam só no texto).
+func _relato(d: Dictionary) -> String:
+	var t: String = str(d.txt).to_lower()
+	var k := "golo"
+	if d.kind == "pen" or t.contains("penálti"): k = "penalti"
+	if d.kind == "card": k = "vermelho" if (t.contains("vermelho") or t.contains("expuls")) else "amarelo"
+	if d.kind == "goal": k = "golo"
+	return "relato_%s_%d" % [k, rng.randi_range(1, 3 if k == "golo" else 2)]
+
 func _ev(n: String, d: Dictionary) -> void:
 	match n:
 		"toast": ui.toast(d.txt, d.secs)
 		"radio":
-			ui.radio(d.who, d.txt); som.radio(); som.say(d.txt, d.who)
+			var fala: String = d.get("voz", d.txt)
+			ui.radio(d.who, d.txt)
+			if not som.tem_fala(fala) or not som.voice_on: som.radio()   # as falas gravadas já trazem o estalido
+			som.say(fala, d.who)
 		"feed":
 			ui.feed(d)
-			if d.kind in ["goal", "card", "pen"]: som.say(d.txt, "Relato")
+			if d.kind in ["goal", "card", "pen"]: som.say(_relato(d), "Relato")
 		"sfx": _sfx(d.k, d.a)
 		"lance":
 			L = d.L
-			ui.flash(L.get("flash", "Lance!"))
+			ui.flash(L.get("flash", "Lance!")); som.alerta()
 			flash_t = 0.7; modo = "flash"
 		"var": _enter_var()
 		"decided": _start_gesture(d)
