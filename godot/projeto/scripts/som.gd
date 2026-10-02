@@ -31,6 +31,8 @@ var _ganho: float = 0.0
 var _freq: float = 0.0          # quanto da "festa" está a soar (0..1)
 var _palmas: float = 0.0
 var _palmas_on: bool = false
+var _canto: float = 0.0
+var _cantar: bool = false      # em vez de palmas, o público canta
 var _palmas_t: float = 5.0
 var _boost: float = 0.0
 var _boost_t: float = 0.0
@@ -55,7 +57,7 @@ func _ready() -> void:
 	_voz.finished.connect(_proxima_fala)
 	# público: três loops gravados (conversa, festa, palmas) misturados só com o volume de cada um,
 	# para tocarem no próprio browser sem quebras mesmo quando o jogo perde frames
-	for nome in ["calmo", "festa", "palmas"]:
+	for nome in ["calmo", "festa", "palmas", "canto"]:
 		var lp: AudioStreamPlayer = AudioStreamPlayer.new()
 		var st: AudioStream = load("res://assets/som/publico_%s.ogg" % nome)
 		lp.stream = st
@@ -68,6 +70,7 @@ func _ready() -> void:
 	_sons["beep"] = _gera_bip()
 	_sons["radio"] = _gera_radio()
 	_sons["alerta"] = _gera_alerta()
+	_sons["respiro"] = _gera_respiro()
 	synth_us += Time.get_ticks_usec() - t0
 	_carregar_voz()
 	_gerar_resto()
@@ -104,12 +107,16 @@ func _process(delta: float) -> void:
 	_palmas_t -= delta
 	if _palmas_t <= 0.0:
 		_palmas_t = randf_range(8.0, 20.0)
-		_palmas_on = _nivel > 0.4 and randf() < 0.3 + _nivel * 0.5
-	_palmas += ((0.5 if _palmas_on and b < 0.3 else 0.0) - _palmas) * (1.0 - exp(-delta / 1.5))
+		_palmas_on = _nivel > 0.3 and randf() < 0.35 + _nivel * 0.5
+		_cantar = randf() < 0.55
+	var apoio: float = 0.5 if _palmas_on and b < 0.3 else 0.0
+	_palmas += ((0.0 if _cantar else apoio) - _palmas) * (1.0 - exp(-delta / 1.5))
+	_canto += ((apoio * 1.2 if _cantar else 0.0) - _canto) * (1.0 - exp(-delta / 2.0))
 	var m: float = 0.0 if muted else 1.0
 	_vol(_loops["calmo"], _ganho * (1.0 - _freq * 0.5) * m)
 	_vol(_loops["festa"], _freq * 0.9 * m)
 	_vol(_loops["palmas"], _palmas * m)
+	_vol(_loops["canto"], _canto * m)
 
 
 func _vol(p: AudioStreamPlayer, g: float) -> void:
@@ -161,6 +168,11 @@ func ooh() -> void:
 # Aviso de lance para analisar: dois toques claros, como um pager.
 func alerta() -> void:
 	_tocar("alerta", 1.0)
+
+
+# Respiração do árbitro na vista dele (mais forte quando está cansado).
+func respiro(vol: float) -> void:
+	_tocar("respiro", vol)
 
 
 # Bip duplo do VAR.
@@ -608,6 +620,21 @@ func _gera_alerta() -> AudioStreamWAV:
 				var f: float = 880.0 if k == 0 else 1320.0
 				v += (sin(TAU * f * tk) + 0.35 * sin(TAU * f * 2.0 * tk)) * exp(-tk * 7.0) * minf(tk / 0.004, 1.0)
 		buf[i] = v * 0.32
+	return _wav(buf, SR)
+
+
+# Uma respiração (inspirar pelo nariz, expirar pela boca): ruído soprado em dois passa-banda.
+func _gera_respiro() -> AudioStreamWAV:
+	var n: int = int(1.1 * SR)
+	var ins: PackedFloat32Array = _biquad(_ruido(n), BP, 1800.0, 1.2, SR)
+	var exs: PackedFloat32Array = _biquad(_ruido(n), BP, 700.0, 0.9, SR)
+	var buf: PackedFloat32Array = PackedFloat32Array()
+	buf.resize(n)
+	for i in n:
+		var t: float = float(i) / SR
+		var a: float = sin(PI * clampf(t / 0.42, 0.0, 1.0)) * 0.5
+		var b: float = sin(PI * clampf((t - 0.5) / 0.55, 0.0, 1.0)) * 0.9
+		buf[i] = ins[i] * a * a + exs[i] * b * sqrt(b)
 	return _wav(buf, SR)
 
 

@@ -56,6 +56,8 @@ var state := ""
 var phase := "anim"               # anim | queda | chao | levantar | desliza | kin (captura com deslocamento) | chao_k
 var kin_next := ""                # o que vem depois da captura: "chao" (fica deitado) ou "anim" (fica de pé)
 var kin_end := 0.0
+var kin_air := false              # captura com salto: não colar ao chão a cada frame
+var kin_y := 0.0
 var slide_p := Vector2.ZERO       # carrinho: posição, direção, velocidade e travagem
 var slide_d := Vector2.ZERO
 var slide_v := 0.0
@@ -527,9 +529,10 @@ func _slide_step(dt: float) -> void:
 # Toca o clip a partir de "from" com o corpo virado para d; a anca nesse instante fica em "at".
 # O próprio clip leva o corpo (desliza, cai, rebola); os pés/corpo ficam sempre assentes na relva.
 static var _kin_info := {}
-func kin(clip: String, from: float, d: Vector2, at: Vector2, k := 1.0, next := "anim", blend := 0.12) -> void:
+func kin(clip: String, from: float, d: Vector2, at: Vector2, k := 1.0, next := "anim", blend := 0.12, air := false) -> void:
 	if rag: return
 	phase = "kin"; kin_next = next
+	kin_air = air; kin_y = 99.0
 	ik.clear(); stum_t = 0.0
 	state = ""
 	play(clip, blend, from)
@@ -567,7 +570,12 @@ func _kin_step(dt: float) -> void:
 	anim.advance(dt)
 	var low := 99.0
 	for i in skel.get_bone_count(): low = min(low, skel.get_bone_global_pose(i).origin.y)
-	node.position.y = 0.05 - low
+	if kin_air:
+		# no salto o corpo sobe com a captura: a altura do chão fixa-se no início
+		if kin_y > 90.0: kin_y = 0.05 - low
+		node.position.y = kin_y
+	else:
+		node.position.y = 0.05 - low
 	if phase == "chao_k":
 		groundT += dt
 		return

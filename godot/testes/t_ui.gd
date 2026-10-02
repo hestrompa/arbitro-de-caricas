@@ -5,6 +5,7 @@ var stage := 0
 var scen: Array = ["treino_var", "career_play", "partida"]
 var kinds := {}
 var last := ""
+var obs_feito := false
 func _initialize():
 	m = load("res://main.tscn").instantiate()
 	root.add_child(m)
@@ -30,7 +31,17 @@ func _process(dt: float) -> bool:
 	if m.modo == "jogo" and m.jogo.mode == "pergunta": m.on_ui("ask", 0)
 	if m.modo == "jogo" and m.jogo.mode == "protesto": m.on_ui("protest", "afastar")
 	if m.modo == "intervalo": m.on_ui("second_half", "capitaes")
+	if m.modo == "fim" and not obs_feito:
+		obs_feito = true
+		print("REDES ", m.social.get("trend"), " posts=", m.social.get("posts", []).size())
+		for p in m.social.get("posts", []): print("   ", p.who, ": ", p.txt)
+		print("ENTREVISTA ", m.entrevista.get("q"))
+		m.on_ui("entrevista", 0)
+		var maus: Array = m.jogo.report_rows().filter(func(r): return r.cls != "ok").map(func(r): return r.L)
+		print("OBS lances=", maus.size())
+		if maus.size(): m.on_ui("obs_video", maus.slice(0, 2)); return false
 	if m.modo == "fim":
+		obs_feito = false
 		print("fim: ", m.end_data.get("kind"), " nota ", m.end_data.get("grade"), " lances ", kinds, " frame ", n)
 		print("  ", m.end_data.get("txt"))
 		if m.is_career: print("  carreira: ", m.car.note)

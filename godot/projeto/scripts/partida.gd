@@ -1200,6 +1200,7 @@ func decide(d: String, timed_out := false) -> void:
 	elif not no_var and var_eligible(L, d) and not timed_out: m += " · VAR confirmou"
 	if foul or d == "simulacao": sfx("whistle", "long" if d == "vermelho" or d == "amarelo" or d == "simulacao" else "short")
 	var against = def_t if foul else (atk_t if d == "simulacao" else (atk_t if L.fall else null))
+	L.against = against
 	if against != null: crowd_react(against, pts < 1)
 	var sev := 0.6 if d == "vermelho" else (0.35 if d == "amarelo" or d == "simulacao" else ((0.5 if L.in_box else 0.12) if foul else 0.18))
 	feed_decision(L, d, m)
@@ -1263,6 +1264,7 @@ func _decide_offside(L: Dictionary, d: String, timed_out: bool) -> void:
 	elif not timed_out and not no_var: m += " · VAR confirmou"
 	if d == "fora": sfx("whistle", "short")
 	var against: int = L.oi.team if d == "fora" else 1 - L.oi.team
+	L.against = against
 	crowd_react(against, not ok)
 	feed_decision(L, d, m)
 	_finish(L, d, m, func(): protest_after(against, 0.28 if d == "fora" else 0.18, not ok))
@@ -1320,6 +1322,7 @@ func _decide_scene(L: Dictionary, d: String, timed_out: bool) -> void:
 	elif L.has("var_first"): m = ("Corrigido com o VAR · " if pts > 0 else "Mantiveste contra o VAR · ") + m
 	elif not no_var and var_eligible(L, d) and not timed_out: m += " · VAR confirmou"
 	if d != "siga": sfx("whistle", "long" if d == "maoAmarelo" or pen else "short")
+	L.against = against
 	if against != null: crowd_react(against, pts < 1)
 	feed_decision(L, d, m)
 	_finish(L, d, m, func(): protest_after(against, sev, pts < 1))
@@ -1363,6 +1366,7 @@ func _decide_goal(L: Dictionary, d: String, timed_out: bool) -> void:
 	if L.has("var_first"): m = ("Corrigido com o VAR · " if pts > 0 else "Mantiveste contra o VAR · ") + m
 	elif not no_var and not timed_out: m += " · VAR confirmou"
 	if not allowed: sfx("whistle", "short")
+	L.against = against
 	crowd_react(against, pts < 1)
 	feed_decision(L, d, m)
 	_finish(L, d, m, func(): protest_after(against, 0.4 if allowed else 0.5, pts < 1))

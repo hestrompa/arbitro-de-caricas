@@ -22,7 +22,9 @@ func _initialize():
 	var only = OS.get_environment("CASOS")
 	for c in CASES:
 		if only != "" and not (c[0] in only.split(",")): continue
-		m.cur = c[1].duplicate(); m._restart()
+		m.cur = c[1].duplicate()
+		if OS.get_environment("ENERGIA") != "": m._ref_corrida(m.REF_FIM, float(OS.get_environment("ENERGIA")))
+		m._restart()
 		if OS.get_environment("NOITE") != "": m._set_night(true)
 		if OS.get_environment("TV") != "": m.tv_start()
 		m.cam_mode = int(OS.get_environment("CAM")) if OS.get_environment("CAM") != "" else 1

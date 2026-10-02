@@ -37,6 +37,15 @@ var P := Vector2(60, 30)   # ponto do contacto
 var A := Vector2(-1, 0)    # direção do atacante
 var D := Vector2.ZERO      # direção do defesa
 var REF := Vector2(70, 46)
+# vista do árbitro: corre para o sítio do lance (REF_FIM), com passada, respiração e cansaço
+var REF_FIM := Vector2(70, 46)
+var ref_ini := Vector2(70, 46)
+var ref_cansaco := 0.0        # 0 fresco .. 1 esgotado (energia da partida)
+var ref_vel := 0.0
+var ref_ph := 0.0             # fase da passada
+var ref_olhar := Vector3.ZERO # para onde a cabeça está virada (segue o lance com atraso)
+var fp_vig: ColorRect         # vinheta do cansaço
+var ref_resp := 0.0           # fase da respiração (soa a cada volta)
 var TC := 2.2
 var DUR := 9.0
 var vA := 5.4
@@ -86,6 +95,15 @@ var is_career := false
 # televisão: repetição com vários ângulos e câmara lenta; jogos à noite com luz artificial
 const TV_SHOTS := [[4, -1.4, 1.6, 1.0, "Câmara principal"], [2, -0.9, 1.1, 0.4, "Atrás do lance"], [3, -0.55, 0.8, 0.22, "De perto"]]
 var tv := {}
+# vídeo do observador: os lances mal decididos, cada um visto de quatro maneiras
+const OBS_SHOTS := [[0, -2.2, 1.4, 1.0, "A tua vista"], [4, -1.2, 1.2, 0.5, "Câmara principal"], [3, -0.5, 0.8, 0.25, "De perto"], [5, -1.4, 1.4, 0.6, "Onde devias estar"]]
+const OBS_SHOTS_OFF := [[0, -2.2, 0.6, 1.0, "A vista do assistente"], [1, -1.0, 0.5, 0.4, "Câmara da linha"]]
+var obs: Array = []
+var obs_i := 0
+var obs_cap: Label
+var obs_marcas: Array = []      # anéis: onde estavas (vermelho) e onde devias estar (verde)
+var social := {}
+var entrevista := {}
 var tv_look := Vector3.ZERO
 var tv_layer: CanvasLayer
 var tv_wipe: ColorRect
@@ -97,6 +115,13 @@ var sky_mat: ProceduralSkyMaterial
 var floods: Array = []
 var night := false
 var slp := {}              # plano do carrinho capturado
+var fan_mesh: ArrayMesh
+var fan_mat: ShaderMaterial
+var fan_mms: Array = []
+var fan_festa := 0.0
+var fan_protesto := 0.0
+var flags: Array = []             # [ShaderMaterial, lado, x]
+var kp := {}               # capturas planeadas por jogador (cabeceamento, remates)
 var min_contact := 99.0    # menor distância entre as pernas do defesa e as do atacante à volta do contacto
 var contact_checked := false
 
@@ -106,6 +131,7 @@ func _ready() -> void:
 	rng.randomize()
 	_world()
 	_stadium()
+	_fans_colors(AZUL.color, LARANJA.color)
 	if hi_q: _grass()
 	att = Jogador.new(self, LARANJA, 9, 3, 1)
 	def = Jogador.new(self, AZUL, 4, 8, 0)
@@ -200,15 +226,19 @@ func _world() -> void:
 		net.mesh = nb; net.material_override = nm; net.position = Vector3(-1.0 if gx == 0.0 else 1.0, 1.22, 0); goal.add_child(net)
 
 func _stadium() -> void:
-	var crowd := ShaderMaterial.new(); crowd.shader = preload("res://shaders/crowd.gdshader")
+	# bancada: degraus de betão e cadeiras; os adeptos são 3D (_fans)
+	if fan_mat == null:
+		fan_mat = ShaderMaterial.new(); fan_mat.shader = preload("res://shaders/adeptos.gdshader")
+	var seatm := StandardMaterial3D.new(); seatm.albedo_color = Color(0.2, 0.22, 0.26); seatm.roughness = 0.95
 	var roofm := StandardMaterial3D.new(); roofm.albedo_color = Color(0.14, 0.15, 0.18)
 	var boardm := StandardMaterial3D.new(); boardm.albedo_color = Color(0.08, 0.1, 0.12)
 	var sides := [[Vector3(W / 2, 0, -9), 0.0, W + 30], [Vector3(W / 2, 0, H + 9), 180.0, W + 30], [Vector3(-11, 0, H / 2), 90.0, H + 30], [Vector3(W + 11, 0, H / 2), -90.0, H + 30]]
 	for s in sides:
 		var root := Node3D.new(); root.position = s[0]; root.rotation_degrees.y = s[1]; add_child(root)
 		var stand := MeshInstance3D.new(); var bx := BoxMesh.new(); bx.size = Vector3(s[2], 0.6, 24)
-		stand.mesh = bx; stand.material_override = crowd
+		stand.mesh = bx; stand.material_override = seatm
 		stand.rotation_degrees.x = 31; stand.position = Vector3(0, 6.5, -10.5); root.add_child(stand)
+		_fans(root, stand, float(s[2]), sides.find(s))
 		var roof := MeshInstance3D.new(); var rb := BoxMesh.new(); rb.size = Vector3(s[2], 0.5, 18)
 		roof.mesh = rb; roof.material_override = roofm; roof.position = Vector3(0, 19.5, -14); roof.rotation_degrees.x = -8; root.add_child(roof)
 		var board := MeshInstance3D.new(); var bb := BoxMesh.new(); bb.size = Vector3(s[2] - 30, 0.9, 0.12)
@@ -227,6 +257,87 @@ func _stadium() -> void:
 		var lamp := OmniLight3D.new(); lamp.position = corner + Vector3(0, 33, 0); lamp.omni_range = 150.0; lamp.omni_attenuation = 0.6
 		lamp.light_energy = 0.0; lamp.light_color = Color(1.0, 0.97, 0.9); lamp.shadow_enabled = false; add_child(lamp)
 		floods.append([hm, lamp])
+
+# Adeptos 3D: um boneco simples (tronco, cabeça, braços) repetido em MultiMesh pelos degraus da bancada,
+# com a cor da equipa que apoiam. A animação (levantar, saltar, protestar) é toda no adeptos.gdshader.
+func _fan_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new(); st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var caixa := func(c: Vector3, h: Vector3, col: Color) -> void:
+		st.set_uv(Vector2(col.r, col.g)); st.set_uv2(Vector2(col.b, 0.0))   # marcas da peça (o COLOR não chega ao shader no MultiMesh)
+		var bm := BoxMesh.new(); bm.size = h * 2.0
+		var arr := bm.get_mesh_arrays()
+		var vv: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]; var nn: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]; var ii: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+		for k in ii: st.set_normal(nn[k]); st.add_vertex(vv[k] + c)
+	caixa.call(Vector3(0, 0.78, 0), Vector3(0.19, 0.27, 0.12), Color(0, 0, 0))           # tronco
+	caixa.call(Vector3(0, 1.17, 0.01), Vector3(0.095, 0.11, 0.1), Color(0, 1, 0))         # cabeça
+	caixa.call(Vector3(0, 1.29, -0.01), Vector3(0.1, 0.03, 0.1), Color(0, 0, 0))           # cabelo/boné (cor da camisola)
+	for sx in [-1.0, 1.0]:
+		caixa.call(Vector3(0.25 * sx, 0.8, 0.02), Vector3(0.05, 0.22, 0.05), Color(1, 0, 0))  # braço
+		caixa.call(Vector3(0.25 * sx, 0.55, 0.03), Vector3(0.045, 0.04, 0.045), Color(1, 0, 1)) # mão
+	return st.commit()
+
+func _fans(root: Node3D, stand: MeshInstance3D, comp: float, lado: int) -> void:
+	var mm := MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D; mm.use_custom_data = true
+	mm.mesh = fan_mesh if fan_mesh else _fan_mesh()
+	fan_mesh = mm.mesh
+	var passo_x := 0.62 if hi_q else 0.85
+	var passo_z := 0.85 if hi_q else 1.1
+	var r := RandomNumberGenerator.new(); r.seed = 101 + lado
+	var xf: Transform3D = stand.transform
+	var pts: Array = []
+	var x := -comp / 2.0 + 15.0
+	while x < comp / 2.0 - 15.0:
+		var z := -11.5
+		while z < 11.5:
+			if r.randf() < 0.82: pts.append(Vector3(x + r.randf_range(-0.08, 0.08), 0.3, z))
+			z += passo_z
+		x += passo_x
+	mm.instance_count = pts.size()
+	# metade da bancada de cada clube, com alguns neutros; a cor real entra em _fans_colors
+	for i in pts.size():
+		var p: Vector3 = xf * pts[i]
+		mm.set_instance_transform(i, Transform3D(Basis(Vector3.UP, r.randf_range(-0.25, 0.25)).scaled(Vector3.ONE * r.randf_range(0.92, 1.08)), p - Vector3(0, 0.05, 0)))
+		mm.set_instance_custom_data(i, Color(0.5, 0.5, 0.5, r.randf()))
+	var mi := MultiMeshInstance3D.new(); mi.multimesh = mm; mi.material_override = fan_mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(mi)
+	fan_mms.append([mm, lado, pts])
+	# bandeiras: mastro e pano a ondular, nas filas da frente e do meio
+	var n_b := int(comp / 22.0)
+	for k in n_b:
+		var bx := lerpf(-comp / 2.0 + 20.0, comp / 2.0 - 20.0, (k + 0.5) / n_b) + r.randf_range(-3, 3)
+		var p: Vector3 = xf * Vector3(bx, 0.3, r.randf_range(-4.0, 9.0))
+		var mastro := MeshInstance3D.new(); var cm := CylinderMesh.new(); cm.top_radius = 0.025; cm.bottom_radius = 0.025; cm.height = 3.2
+		mastro.mesh = cm; mastro.position = p + Vector3(0, 1.6 + 0.8, 0); root.add_child(mastro)
+		var pano := MeshInstance3D.new(); var pm := PlaneMesh.new(); pm.size = Vector2(2.2, 1.4); pm.subdivide_width = 14; pm.subdivide_depth = 6
+		pm.orientation = PlaneMesh.FACE_Z
+		var fm := ShaderMaterial.new(); fm.shader = preload("res://shaders/bandeira.gdshader")
+		fm.set_shader_parameter("fase", r.randf() * TAU); fm.set_shader_parameter("vento", r.randf_range(0.8, 1.2))
+		fm.set_shader_parameter("faixas", float(r.randi_range(2, 4)))
+		pano.mesh = pm; pano.material_override = fm; pano.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		pano.position = p + Vector3(1.1, 3.35, 0); pano.rotation.y = r.randf_range(-0.5, 0.5)
+		root.add_child(pano)
+		flags.append([fm, lado, bx])
+
+# pinta os adeptos com as cores dos clubes do jogo (casa em maioria; topo visitante numa ponta)
+func _fans_colors(home: Color, away: Color) -> void:
+	for f in fan_mms:
+		var mm: MultiMesh = f[0]; var lado: int = f[1]; var pts: Array = f[2]
+		var r := RandomNumberGenerator.new(); r.seed = 55 + lado
+		for i in mm.instance_count:
+			var x: float = (pts[i] as Vector3).x
+			var visitantes := lado == 3 or (lado == 1 and x > 30.0)
+			var q := r.randf()
+			var c: Color = (away if q < 0.8 else home) if visitantes else (home if q < 0.78 else (away if q < 0.86 else Color.from_hsv(r.randf(), 0.15, r.randf_range(0.2, 0.9))))
+			c = c.darkened(r.randf_range(0.0, 0.25))
+			var old: Color = mm.get_instance_custom_data(i)
+			mm.set_instance_custom_data(i, Color(c.r, c.g, c.b, old.a))
+	for f in flags:
+		var lado: int = f[1]
+		var vis := lado == 3 or (lado == 1 and float(f[2]) > 30.0)
+		var c: Color = away if vis else home
+		f[0].set_shader_parameter("cor1", c)
+		f[0].set_shader_parameter("cor2", Color(0.96, 0.96, 0.94) if c.get_luminance() < 0.6 else Color(0.1, 0.12, 0.2))
 
 # relva com volume (só na versão de computador): tufos com vento à volta do lance
 func _grass() -> void:
@@ -281,6 +392,7 @@ func _setup_scene(l: Dictionary) -> void:
 	var k := jogo.kind_of(l)
 	sc = {"kind": k, "truth": l.truth, "approach": true}
 	P = l.P; A = l.get("A", Vector2(1, 0)); REF = l.ref
+	_ref_corrida(REF, float(jogo.stamina) if jogo else 100.0)
 	if A == Vector2.ZERO: A = Vector2(1, 0)
 	for j in [att, def, refj] + extras: j.reset(); j.node.visible = true
 	_dress(att, l.att)
@@ -397,7 +509,8 @@ func _params_for(truth: String, sd: float) -> Dictionary:
 
 func _restart() -> void:
 	t = 0.0
-	min_contact = 99.0; contact_checked = false; slp = {}
+	REF = ref_ini; ref_vel = 0.0; ref_olhar = Vector3.ZERO
+	min_contact = 99.0; contact_checked = false; slp = {}; kp = {}
 	hit_done = false
 	free_ball = false
 	b3_free = false; b3_net = 0.0; bv3 = Vector3.ZERO
@@ -456,6 +569,7 @@ func _restart() -> void:
 
 # ---------- ciclo ----------
 func _process(delta: float) -> void:
+	if fp_vig and fp_vig.visible and not (modo in ["lance", "treino"]): fp_vig.visible = false
 	if not tv.is_empty() and not (modo in ["var", "rever", "treino"]): _tv_end()
 	match modo:
 		"jogo", "flash", "intervalo", "fim":
@@ -468,6 +582,16 @@ func _process(delta: float) -> void:
 			get_tree().paused = false; Engine.time_scale = 1.0
 			_menu_cam(delta)
 	if jogo and modo in ["jogo", "flash"]: som.set_crowd(jogo.crowd / 100.0)
+	_fans_step(delta)
+
+func _fans_step(delta: float) -> void:
+	if fan_mat == null or not visible: return
+	fan_festa = move_toward(fan_festa, 0.0, delta * 0.18)
+	fan_protesto = move_toward(fan_protesto, 0.0, delta * 0.22)
+	fan_mat.set_shader_parameter("festa", smoothstep(0.0, 0.6, fan_festa))
+	fan_mat.set_shader_parameter("protesto", smoothstep(0.0, 0.5, fan_protesto))
+	fan_mat.set_shader_parameter("pressao", clampf(0.15 + som._nivel * 0.8, 0.0, 1.0))
+	fan_mat.set_shader_parameter("canto", clampf(som._canto * 1.6, 0.0, 1.0))
 
 func _match_process(delta: float) -> void:
 	get_tree().paused = false; Engine.time_scale = 1.0
@@ -532,10 +656,12 @@ func _scene_process(delta: float) -> void:
 	if lance <= 4 and t > TC - 0.4 and t < TC + 1.3: _track_contact()
 	if lance <= 4 and t >= TC + 1.3 and not contact_checked: _check_contact()
 	if lance == 9 and is_equal_approx(t, TC) and sc.get("measured_t", -1.0) != t: _measure_offside()
-	# o árbitro (só se vê fora da tua vista)
+	# o árbitro corre para o sítio do lance (só se vê fora da tua vista)
+	_ref_step(dt)
 	if refj.node.visible:
 		var rd := (P - REF).normalized()
-		refj.move(REF, rd if rd != Vector2.ZERO else Vector2(0, 1), 0.0); refj.play("idle", 0.3)
+		refj.move(REF, rd if rd != Vector2.ZERO else Vector2(0, 1), ref_vel)
+		refj.play("run" if ref_vel > 4.5 else ("jog" if ref_vel > 0.8 else "idle"), 0.3)
 		refj.update(dt, t); refj.ground()
 	# levanta-se quando já não está queixoso
 	for p in [att, def]:
@@ -642,15 +768,20 @@ func _aerial(dt: float) -> void:
 	var jt := t - (TC - 0.34)
 	var jmp: float = 0.0 if jt < 0 or jt > 0.72 else 0.5 * sin(PI * jt / 0.72)
 	var T: String = sc.truth
+	# o atacante faz o cabeceamento capturado (salto real, cabeça na bola no instante TC);
+	# o defesa chega por trás e salta com ele
+	var hb := P + A * 0.05
+	var cab := _kin_run(att, "cab", "header", 1.13, "head", hb, A, 0.55, TC, v, true)
+	if not cab and not att.rag: _settle(att, dt, A)
+	var ts: float = kp["cab"].ts
 	if t < TC + 0.35:
-		if not att.rag: att.move(P + A * v * (t - TC), A, v); att.play("jog", 0.2)
-		if not def.rag: def.move(P + A * v * (t - TC) - A * 0.5 + perp * 0.38, A, v); def.play("jog", 0.2)
+		if not def.rag: def.move(hb + A * v * minf(t - ts, 0.0) - A * 0.55 + perp * 0.38, A, v if t < ts else 0.6); def.play("jog", 0.2)
 	else:
-		_settle(att, dt, A); _settle(def, dt, A)
-	att.jump = jmp; def.jump = jmp * 0.92
+		_settle(def, dt, A)
+	def.jump = jmp * 0.92
 	var w: float = clamp(jt / 0.2, 0.0, 1.0) * clamp((0.9 - jt) / 0.25, 0.0, 1.0)
 	var up := Vector3(0, 0.38, 0)
-	if not att.rag: att.ik = {"wrist_L": [att.bone_world("head") + up - Vector3(perp.x, 0, perp.y) * 0.18, w * 0.6], "wrist_R": [att.bone_world("head") + up + Vector3(perp.x, 0, perp.y) * 0.18, w * 0.6]}
+	if not att.rag and not cab: att.ik = {"wrist_L": [att.bone_world("head") + up - Vector3(perp.x, 0, perp.y) * 0.18, w * 0.6], "wrist_R": [att.bone_world("head") + up + Vector3(perp.x, 0, perp.y) * 0.18, w * 0.6]}
 	var ab := att.body_pos()
 	var hn := "wrist_L" if def.bone_world("wrist_L").distance_to(ab) < def.bone_world("wrist_R").distance_to(ab) else "wrist_R"
 	var tgt: Vector3
@@ -685,18 +816,15 @@ func _aerial(dt: float) -> void:
 		var K: Vector2 = sc.K
 		var from := Vector3(K.x, 0.11, K.y)
 		var k := (t - (TC - 1.5)) / 1.5
-		b3 = _arc(from, Vector3(P.x + A.x * 0.15, 2.3, P.y + A.y * 0.15), 6.5, k) if k > 0 else from
+		var hy: float = att.clip_bone("header", 1.13, "head").y + 0.12
+		b3 = _arc(from, Vector3(P.x + A.x * 0.05, hy, P.y + A.y * 0.05), 6.5, k) if k > 0 else from
 
 # 6) mão na bola: remate de frente para um defesa; o braço junto ao corpo, aberto ou levantado
 func _hand(dt: float) -> void:
 	var tk := TC - 0.45
 	var K: Vector2 = sc.K
 	var Sd: Vector2 = sc.Sd
-	if t < tk - 0.35:
-		att.move(K - Sd * 0.5 - Sd * 5.0 * (tk - t), Sd, 5.0); att.play("run", 0.2)
-	elif t < tk + 0.55:
-		att.move(K - Sd * 0.5 + Sd * 2.0 * maxf(0, t - tk), Sd, 2.0); att.play("kick", 0.08)
-	else: _settle(att, dt, Sd)
+	if not _kin_run(att, "remate", "kick_run", 0.52, "foot_R", K, Sd, 0.0, tk, 4.0): _settle(att, dt, Sd)
 	var f := -Sd
 	var latv := Vector3(-f.y, 0, f.x) * float(sc.s)
 	if not def.rag: def.move(P + Vector2(latv.x, latv.z) * 0.15 * sin(t * 2.0), f, 0.0); def.play("idle", 0.3)
@@ -774,9 +902,7 @@ func _corner(dt: float) -> void:
 	if tkr.node.visible and lance == 7:
 		var cpos: Vector2 = sc.corner
 		var to := (Q - cpos).normalized()
-		if t < tk - 0.35: tkr.move(cpos - to * 1.2 * (tk - 0.35 - t) / (tk - 0.35) - to * 0.5, to, 1.5); tkr.play("jog", 0.3)
-		elif t < tk + 0.6: tkr.move(cpos - to * 0.5, to, 0.0); tkr.play("kick", 0.08)
-		else: tkr.play("idle", 0.4)
+		if not _kin_run(tkr, "canto", "m_kick", 0.4, "foot_R", cpos, to, 0.0, tk, 1.5) and t > tk: tkr.play("idle", 0.4)
 	if not b3_free:
 		var cp: Vector2 = sc.corner
 		var c3 := Vector3(cp.x, 0.11, cp.y)
@@ -794,11 +920,8 @@ func _line(dt: float) -> void:
 	var di: float = sc.dir_in
 	var tk := TC - 0.55
 	var sd := (B - Pk).normalized()
-	if t < tk - 0.35:
-		att.move(Pk - sd * 0.5 - sd * 5.0 * (tk - t), sd, 5.0); att.play("run", 0.2)
-	elif t < tk + 0.6:
-		att.move(Pk - sd * 0.5, sd, 0.0); att.play("kick", 0.08)
-	else: _settle(att, dt, sd)
+	# remate em corrida capturado: o pé direito chega à bola em tk
+	if not _kin_run(att, "remate", "kick_run", 0.52, "foot_R", Pk, sd, 0.0, tk, 4.0): _settle(att, dt, sd)
 	# guarda-redes: arranca do meio da baliza e atira-se à bola
 	var gs := 1.0 if B.y < H / 2 else -1.0
 	var g0 := Vector2(gx - di * 1.2, B.y + gs * 2.2)
@@ -938,6 +1061,54 @@ func _goalfoul(dt: float) -> void:
 			b3_net = float(sc.gx) + float(sc.dir_in) * 1.6
 
 # ---------- câmara ----------
+# ---------- vista do árbitro ----------
+# O árbitro começa alguns metros atrás e chega ao sítio do lance pouco antes do contacto;
+# cansado, chega mais devagar e fica mais longe (vê pior).
+func _ref_corrida(fim: Vector2, energia: float) -> void:
+	REF_FIM = fim
+	ref_cansaco = clampf(1.0 - energia / 100.0, 0.0, 1.0)
+	var longe := (fim - P).normalized()
+	if longe == Vector2.ZERO: longe = Vector2(0, 1)
+	var lado := Vector2(-longe.y, longe.x) * rng.randf_range(-2.0, 2.0)
+	ref_ini = fim + longe * rng.randf_range(5.0, 8.0) + lado
+	ref_ini = Vector2(clampf(ref_ini.x, -1.5, W + 1.5), clampf(ref_ini.y, -1.5, H + 1.5))
+	REF = ref_ini; ref_vel = 0.0; ref_olhar = Vector3.ZERO
+
+func _ref_step(dt: float) -> void:
+	if dt <= 0.0: return
+	# chega ao destino em TC - 0.3 s (fresco) ou fica a 25% do caminho quando esgotado
+	var fim := ref_ini.lerp(REF_FIM, 1.0 - ref_cansaco * ref_cansaco * 0.25)
+	var dur := maxf(TC - 0.3, 0.6)
+	var k := clampf(t / dur, 0.0, 1.0)
+	var e := 1.0 - pow(1.0 - k, 2.2)
+	var novo := ref_ini.lerp(fim, e)
+	ref_vel = lerpf(ref_vel, novo.distance_to(REF) / dt, clampf(dt * 8.0, 0.0, 1.0))
+	REF = novo
+	ref_ph += dt * (6.0 + ref_vel * 1.1) * (1.0 if ref_vel > 0.4 else 0.0)
+
+func _fp_vinheta(on: bool) -> void:
+	if fp_vig == null:
+		var lay := CanvasLayer.new(); lay.layer = 0; add_child(lay)
+		fp_vig = ColorRect.new(); fp_vig.set_anchors_preset(Control.PRESET_FULL_RECT); fp_vig.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sh := Shader.new()
+		sh.code = """shader_type canvas_item;
+uniform float forca = 0.0;
+uniform float pulso = 0.0;
+void fragment() {
+	vec2 d = UV - 0.5; d.x *= 1.6;
+	float r = length(d);
+	float v = smoothstep(0.35 - forca * 0.12, 0.95, r) * (0.35 + forca * 0.55) * (0.85 + 0.15 * pulso);
+	COLOR = vec4(0.0, 0.0, 0.0, v);
+}"""
+		var m := ShaderMaterial.new(); m.shader = sh; fp_vig.material = m
+		lay.add_child(fp_vig)
+	fp_vig.visible = on
+	if not on: return
+	var tm := Time.get_ticks_msec() / 1000.0
+	var f := clampf(ref_cansaco * 1.2 - 0.15, 0.0, 1.0)
+	(fp_vig.material as ShaderMaterial).set_shader_parameter("forca", f)
+	(fp_vig.material as ShaderMaterial).set_shader_parameter("pulso", sin(tm * TAU * (1.0 + ref_cansaco)))
+
 func _focus() -> Vector3:
 	match lance:
 		5: return Vector3(P.x, 1.5, P.y)
@@ -950,6 +1121,9 @@ func _focus() -> Vector3:
 func _camera() -> void:
 	var look := _focus()
 	refj.node.visible = modo != "treino" and cam_mode != 0 and lance != 9
+	_fp_vinheta(cam_mode == 0 and modo in ["lance", "treino"] and lance != 9)
+	if cam_mode != 5:
+		for r in obs_marcas: r.visible = false
 	if cam_mode == 0:
 		var eye := Vector3(REF.x, 1.75, REF.y)
 		if lance == 9: eye = Vector3(sc.ast.x, 1.7, sc.ast.y)
@@ -958,12 +1132,32 @@ func _camera() -> void:
 		var amp: float = maxf(0.0, (st - 40.0) / 60.0) * 0.022 * eye.distance_to(look)
 		var tm := Time.get_ticks_msec() / 1000.0
 		var shake := Vector3(sin(t * 3.1) * 0.02, sin(t * 4.3) * 0.015, 0) + Vector3(amp * (sin(tm * 7.3) + 0.5 * sin(tm * 13.1)), amp * 0.6 * sin(tm * 9.7 + 1), amp * (sin(tm * 6.1 + 2) + 0.5 * sin(tm * 11.3)))
-		cam.fov = 38 if eye.distance_to(look) < 25 else 30
-		cam.look_at_from_position(eye + shake, look + shake * 0.5)
+		# corpo a correr: a cabeça sobe e desce a cada passo e balança de lado; parado, respira
+		var fw := Vector3(look.x - eye.x, 0, look.z - eye.z).normalized()
+		var lado := fw.cross(Vector3.UP)
+		var corre := clampf(ref_vel / 5.0, 0.0, 1.0)
+		var resp_f := 0.25 + ref_cansaco * 0.45 + corre * 0.2           # respirações por segundo
+		var resp := sin(tm * TAU * resp_f) * (0.008 + ref_cansaco * 0.03) * (1.0 - corre * 0.6)
+		var rv := fmod(tm * resp_f, 1.0)
+		if rv < ref_resp and modo in ["lance", "treino"] and ref_cansaco + corre * 0.3 > 0.25:
+			som.respiro(clampf(ref_cansaco * 0.9 + corre * 0.3, 0.15, 0.9))
+		ref_resp = rv
+		var bob := Vector3.UP * (absf(sin(ref_ph)) * 0.07 - 0.035) * corre + lado * sin(ref_ph) * 0.035 * corre
+		eye += bob + Vector3.UP * resp + shake
+		# a cabeça segue o lance com algum atraso (mais quando está cansado)
+		if lance == 9 or ref_olhar == Vector3.ZERO: ref_olhar = look
+		ref_olhar = ref_olhar.lerp(look, clampf(get_process_delta_time() * (7.0 - 3.5 * ref_cansaco), 0.0, 1.0))
+		var alvo := ref_olhar + shake * 0.5 + Vector3.UP * resp * 3.0 + bob * 0.4
+		cam.fov = (38 if eye.distance_to(look) < 25 else 30) + corre * 3.0 - ref_cansaco * 2.0
+		cam.look_at_from_position(eye, alvo)
+		# inclina com o balanço da passada
+		cam.rotate_object_local(Vector3(0, 0, 1), sin(ref_ph) * 0.012 * corre + sin(tm * 0.7) * 0.006 * ref_cansaco)
 	elif lance == 9 and modo in ["var", "rever"] and t >= TC - 0.01:
 		_var_camera()
 	elif cam_mode == 4:
 		_tv_camera(look)
+	elif cam_mode == 5:
+		_obs_camera(look)
 	elif cam_mode == 1:
 		if lance == 9:
 			var sy: float = -7.0 if float(sc.ast.y) < H / 2 else H + 7.0
@@ -1080,7 +1274,7 @@ func tv_start() -> void:
 	_tv_shot()
 
 func _tv_shot() -> void:
-	var sh: Array = TV_SHOTS[tv.i]
+	var sh: Array = tv.get("shots", TV_SHOTS)[tv.i]
 	cam_mode = sh[0]
 	_restart()
 	tv.from = TC + float(sh[1]); tv.to = TC + float(sh[2]); tv.slow = float(sh[3]); tv.name = sh[4]; tv.live = false
@@ -1110,7 +1304,8 @@ func _tv_step() -> void:
 			tw.tween_property(tv_wipe, "position:x", get_viewport().get_visible_rect().size.x, 0.3)
 		if t > tv.to:
 			tv.i += 1
-			if tv.i < TV_SHOTS.size(): _tv_shot()
+			if tv.i < tv.get("shots", TV_SHOTS).size(): _tv_shot()
+			elif tv.has("obs"): obs_i += 1; _obs_next()
 			else: _tv_end()
 
 # câmara de transmissão: no alto da bancada principal, segue o lance com zoom
@@ -1165,8 +1360,12 @@ func _sfx(k: String, a) -> void:
 	match k:
 		"whistle": som.whistle(a if a != null else "short")
 		"kick": som.kick(a if a != null else 0.5)
-		"cheer": som.cheer(a if a != null else 0.6)
-		"boo": som.boo(a if a != null else 0.5)
+		"cheer":
+			som.cheer(a if a != null else 0.6)
+			fan_festa = maxf(fan_festa, a if a != null else 0.6)
+		"boo":
+			som.boo(a if a != null else 0.5)
+			fan_protesto = maxf(fan_protesto, a if a != null else 0.5)
 		"ooh": som.ooh()
 		"beep": som.beep()
 		"react": som.react(a if a != null else 0.5)
@@ -1175,6 +1374,7 @@ func _new_match(teams: Array, career := false) -> void:
 	ui.hide_all()
 	jogo = Partida.new(teams)
 	jogo.ev = _ev
+	_fans_colors(Color(teams[0].color), Color(teams[1].color))
 	campo.jogo = jogo
 	is_career = career
 	_set_night(rng.randf() < 0.45)
@@ -1387,6 +1587,17 @@ func _end_gesture() -> void:
 	if jogo.mode == "fim" or modo == "fim": return
 	if modo == "gesto": _back_to_match()
 
+func _entrevista(i: int) -> void:
+	if entrevista.is_empty() or i >= entrevista.opts.size(): return
+	var o: Dictionary = entrevista.opts[i]
+	var txt := ""
+	if is_career:
+		car.C.imagem = clampi(int(car.C.get("imagem", 50)) + int(o.img), 0, 100)
+		car.save_c()
+		txt = " Imagem pública: %d/100 (%+d)." % [int(car.C.imagem), int(o.img)]
+	ui.entrevista_feita(o, txt)
+	entrevista = {}
+
 func _back_to_match() -> void:
 	_to_2d()
 	modo = "jogo"
@@ -1398,8 +1609,14 @@ func _end(d: Dictionary) -> void:
 	ui.hide_all()
 	end_data = d
 	if d.kind != "treino": jogo.paper = Carreira.paper_of(jogo, d.grade, d.kind)
+	social = Redes.gerar(jogo, d.grade, d.kind) if d.kind != "treino" else {}
+	entrevista = Redes.entrevista(jogo, social.big, d.grade) if not social.is_empty() else {}
 	var note := ""
 	if is_career: note = car.after(jogo, d.grade, d.kind)
+	if is_career and not social.is_empty():
+		car.C.trend = social.trend
+		car.C.imagem = clampi(int(car.C.get("imagem", 50)) + (3 if d.grade >= 8.0 else (-4 if d.grade < 5.0 else 0)), 0, 100)
+		car.save_c()
 	var best := _best()
 	if d.kind != "treino" and d.grade > best:
 		var cf := ConfigFile.new(); cf.set_value("j", "best", d.grade); cf.save("user://melhor.cfg")
@@ -1424,11 +1641,79 @@ func _review(l: Dictionary) -> void:
 
 func _end_review() -> void:
 	if modo != "rever": return
+	_obs_limpa()
 	ui.dec.visible = false
 	_to_2d()
 	if rever_de == "half": modo = "intervalo"; ui.half.visible = true
 	else: modo = "fim"; ui.report.visible = true
 	L = {}
+
+# ---------- vídeo do observador ----------
+func _obs_start(lista: Array) -> void:
+	if lista.is_empty(): return
+	rever_de = "report"
+	ui.half.visible = false; ui.report.visible = false
+	obs = lista; obs_i = 0
+	if obs_cap == null:
+		obs_cap = Label.new(); obs_cap.add_theme_font_size_override("font_size", 18)
+		obs_cap.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		obs_cap.anchor_left = 0.0; obs_cap.anchor_right = 1.0; obs_cap.anchor_top = 1.0; obs_cap.anchor_bottom = 1.0
+		obs_cap.offset_left = 30; obs_cap.offset_right = -30; obs_cap.offset_top = -190; obs_cap.offset_bottom = -110
+		var sb := StyleBoxFlat.new(); sb.bg_color = Color(0.05, 0.07, 0.12, 0.88); sb.set_content_margin_all(12); sb.corner_radius_top_left = 6; sb.corner_radius_top_right = 6; sb.corner_radius_bottom_left = 6; sb.corner_radius_bottom_right = 6
+		obs_cap.add_theme_stylebox_override("normal", sb)
+		tv_layer.add_child(obs_cap)
+		for c in [Color(0.95, 0.25, 0.2), Color(0.3, 0.95, 0.4)]:
+			var r := MeshInstance3D.new(); var tm := TorusMesh.new(); tm.inner_radius = 1.0; tm.outer_radius = 1.35; r.mesh = tm
+			var mt := StandardMaterial3D.new(); mt.albedo_color = c; mt.emission_enabled = true; mt.emission = c; mt.emission_energy_multiplier = 0.8; mt.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			r.material_override = mt; r.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; add_child(r)
+			var lb := Label3D.new(); lb.font_size = 72; lb.pixel_size = 0.012; lb.modulate = c; lb.billboard = BaseMaterial3D.BILLBOARD_ENABLED; lb.outline_size = 12
+			lb.text = "Estavas aqui" if c.r > 0.5 else "Posição ideal"; lb.position = Vector3(0, 2.6, 0); r.add_child(lb)
+			r.visible = false; obs_marcas.append(r)
+	ui.show_dec([], "")
+	ui.dec_row.add_child(ui._btn("Voltar ao relatório", func(): _end_review(), Color(0.3, 0.2, 0.2), 0, 16))
+	_obs_next()
+
+func _obs_next() -> void:
+	if obs_i >= obs.size():
+		_end_review(); return
+	var l: Dictionary = obs[obs_i]
+	L = l; modo = "rever"
+	_setup_scene(l)
+	paused = false; speed = 1.0; replays = 1
+	_to_3d()
+	ui.dec.visible = true
+	tv = {"i": 0, "obs": true, "shots": OBS_SHOTS_OFF if lance == 9 else OBS_SHOTS}
+	_tv_shot()
+	var linha := ""
+	for r in jogo.report_rows():
+		if r.L == l:
+			var c: Array = r.cells
+			linha = "Observador · lance %d de %d · %s · %s\nDecidiste: %s · %s · %s" % [obs_i + 1, obs.size(), c[0], c[1], c[2], c[3], c[4]]
+	obs_cap.text = linha; obs_cap.visible = true
+	var ideal := _obs_ideal()
+	obs_marcas[0].position = Vector3(REF_FIM.x, 0.05, REF_FIM.y)
+	obs_marcas[1].position = Vector3(ideal.x, 0.05, ideal.y)
+
+func _obs_limpa() -> void:
+	obs = []
+	if obs_cap: obs_cap.visible = false
+	for r in obs_marcas: r.visible = false
+	if not tv.is_empty(): _tv_end()
+
+# onde o observador queria o árbitro: em diagonal, de lado para o contacto e um pouco atrás da jogada
+func _obs_ideal() -> Vector2:
+	var sd := Vector2(-A.y, A.x)
+	if (REF_FIM - P).dot(sd) < 0.0: sd = -sd
+	var q := P + sd * 11.0 - A * 6.0
+	return Vector2(clampf(q.x, 1.0, W - 1.0), clampf(q.y, 1.0, H - 1.0))
+
+func _obs_camera(look: Vector3) -> void:
+	var ideal := _obs_ideal()
+	var c := (Vector2(look.x, look.z) + REF_FIM + ideal) / 3.0
+	var span := maxf(REF_FIM.distance_to(Vector2(look.x, look.z)), ideal.distance_to(Vector2(look.x, look.z)))
+	for r in obs_marcas: r.visible = true
+	cam.fov = 50
+	cam.look_at_from_position(Vector3(c.x, 10.0 + span * 0.9, c.y + 6.0 + span * 0.7), Vector3(c.x, 0.0, c.y))
 
 # ---------- menu e botões ----------
 func _show_menu() -> void:
@@ -1475,6 +1760,8 @@ func on_ui(a: String, v) -> void:
 			ui.half.visible = false
 			modo = "jogo"; jogo.second_half(v)
 		"ver_lance": _review(v)
+		"obs_video": _obs_start(v)
+		"entrevista": _entrevista(int(v))
 		"again": _new_match(Carreira.default_teams())
 		"menu": _show_menu()
 		"tut_click": if jogo: jogo.tut_click()
@@ -1497,7 +1784,9 @@ func _start_training() -> void:
 
 func _training_setup() -> void:
 	P = Vector2(60, 30); A = Vector2(-1, 0); REF = Vector2(70, 46)
+	_ref_corrida(REF, 100.0)
 	att.set_kit(LARANJA, 9, 1); def.set_kit(AZUL, 4, 0)
+	_fans_colors(AZUL.color, LARANJA.color)
 	att.label.modulate = Color(0.97, 0.97, 0.95); def.label.modulate = Color(0.97, 0.97, 0.95)
 	for j in [att, def]: j.mat.set_shader_parameter("numcol", Color(0.97, 0.97, 0.95))
 	att.node.visible = true; def.node.visible = true
@@ -1697,6 +1986,26 @@ func _trip(j: Jogador, d: Vector2, k: float) -> void:
 	j.kin("trip", 0.12, d, Vector2(bp.x, bp.z), k, "chao", 0.08)
 
 # quando começar o carrinho, de onde e a que velocidade, para o pé chegar ao alvo no instante TC
+# Captura com um momento-chave (cabeça na bola, pé na bola): onde pôr o jogador e quando arrancar,
+# para o osso `bone` estar em `target` no instante `when` do lance.
+func _kin_plan(j: Jogador, clip: String, key: float, bone: String, target: Vector2, d: Vector2, s0: float, when: float, k := 1.0) -> Dictionary:
+	var R := Basis(Vector3.UP, atan2(d.x, d.y))
+	var b3 := R * j.clip_bone(clip, key, bone)
+	var a3 := R * j.clip_bone(clip, s0, "root")
+	return {"ts": when - (key - s0) / k, "at": target - Vector2(b3.x, b3.z) + Vector2(a3.x, a3.z), "s0": s0, "k": k, "on": false}
+
+# corre até ao sítio de arranque e faz a captura (devolve true enquanto a captura manda no jogador)
+func _kin_run(j: Jogador, nome: String, clip: String, key: float, bone: String, target: Vector2, d: Vector2, s0: float, when: float, v: float, air := false, k := 1.0) -> bool:
+	if not kp.has(nome): kp[nome] = _kin_plan(j, clip, key, bone, target, d, s0, when, k)
+	var pl: Dictionary = kp[nome]
+	if j.rag: return true
+	if t < pl.ts:
+		j.move(pl.at - d * v * (pl.ts - t), d, v); j.play("run" if v > 4.0 else "jog", 0.2)
+		return true
+	if not pl.on:
+		pl.on = true; j.kin(clip, pl.s0, d, pl.at, pl.k, "anim", 0.15, air)
+	return j.phase == "kin"
+
 func _slide_plan(target: Vector2) -> Dictionary:
 	var info: Dictionary = def.slide_key("tackle")
 	var key: float = info.key

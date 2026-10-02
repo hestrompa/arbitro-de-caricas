@@ -53,6 +53,7 @@ var card_t := 0.0
 var var_frame: Panel
 var talk := "descanso"
 var talk_btns := {}
+var entrevista_box: VBoxContainer = null
 var reset_armed := false
 
 func _init(m: Node) -> void:
@@ -304,9 +305,33 @@ func show_report(S: Partida, d: Dictionary, career_note: String, is_career: bool
 		pv.add_child(_wrap(S.paper.body, 15, Color(0.2, 0.2, 0.2), 880))
 		if S.paper.quote != "": pv.add_child(_wrap(S.paper.quote, 15, Color(0.25, 0.2, 0.15), 880))
 		report_v.add_child(pp)
+	var rows := S.report_rows()
+	var maus: Array = rows.filter(func(r): return r.cls != "ok").map(func(r): return r.L)
+	if maus.size():
+		var ob := _btn("Ver o vídeo do observador (%d %s)" % [maus.size(), "lance" if maus.size() == 1 else "lances"], func(): main.on_ui("obs_video", maus), Color("8a3a2f"), 0, 18)
+		report_v.add_child(ob)
+	var soc: Dictionary = main.social
+	if not soc.is_empty():
+		_sep(report_v)
+		report_v.add_child(_lbl("Nas redes sociais · em alta: " + str(soc.trend), 18, GOLD))
+		for p in soc.posts:
+			var pc := _panel(Color(0.1, 0.12, 0.17, 0.95)); var pv2 := VBoxContainer.new(); pc.add_child(pv2)
+			var top := HBoxContainer.new(); top.add_theme_constant_override("separation", 8); pv2.add_child(top)
+			top.add_child(_lbl(p.who, 15, INK)); top.add_child(_lbl(p.at, 13, DIM))
+			pv2.add_child(_wrap(p.txt, 15, {-1: Color("ffb0a0"), 1: Color("a8e6b0")}.get(int(p.tom), INK), 880))
+			pv2.add_child(_lbl("Gosto  " + str(p.lk), 12, DIM))
+			report_v.add_child(pc)
+	if not main.entrevista.is_empty():
+		var iv := _panel(Color(0.16, 0.13, 0.08, 0.95)); var ivv := VBoxContainer.new(); iv.add_child(ivv); report_v.add_child(iv)
+		ivv.add_child(_lbl("Zona de entrevistas", 16, GOLD))
+		ivv.add_child(_wrap("Jornalista: «" + str(main.entrevista.q) + "»", 16, INK, 880))
+		entrevista_box = ivv
+		for i in main.entrevista.opts.size():
+			var o: Dictionary = main.entrevista.opts[i]
+			var k: int = i
+			ivv.add_child(_btn(o.t, func(): main.on_ui("entrevista", k), Color(0.22, 0.2, 0.16), 0, 15))
 	_sep(report_v)
 	report_v.add_child(_lbl("Lances", 18, GOLD))
-	var rows := S.report_rows()
 	if rows.is_empty(): report_v.add_child(_lbl("Nenhum lance para avaliar.", 16, DIM))
 	else:
 		report_v.add_child(_table([{"cells": ["Min.", "O que foi", "Decidiste", "Como viste", "Observador"]}], 5, [80, 250, 140, 200, 220]))
@@ -404,6 +429,16 @@ func show_career(car: Carreira) -> void:
 		row.add_child(_lbl("%d/10" % v, 16, GOLD))
 		var k: String = a.k
 		var b := _btn("+1", func(): main.on_ui("attr", k), Color(), 0, 16); b.disabled = C.pts <= 0 or v >= 10; row.add_child(b)
+	var img: int = int(C.get("imagem", 50))
+	var ir := HBoxContainer.new(); ir.add_theme_constant_override("separation", 10); career_v.add_child(ir)
+	ir.add_child(_lbl("Imagem pública", 18, GOLD))
+	var ib := HBoxContainer.new(); ib.add_theme_constant_override("separation", 3); ib.size_flags_vertical = Control.SIZE_SHRINK_CENTER; ir.add_child(ib)
+	for i in 10:
+		var seg := ColorRect.new(); seg.custom_minimum_size = Vector2(14, 14)
+		seg.color = (OK if img >= 60 else (GOLD if img >= 40 else BAD)) if i < int(round(img / 10.0)) else Color(1, 1, 1, 0.12)
+		ib.add_child(seg)
+	ir.add_child(_lbl("%d/100 · %s" % [img, "o público confia em ti" if img >= 60 else ("estádios mais hostis e capitães desconfiados" if img < 40 else "neutra")], 14, DIM))
+	if str(C.get("trend", "")) != "": career_v.add_child(_lbl("Último jogo nas redes: " + str(C.trend), 14, DIM))
 	if C.papers.size():
 		career_v.add_child(_lbl("Jornais", 18, GOLD))
 		for p in C.papers.slice(0, 5):
@@ -418,6 +453,15 @@ func show_career(car: Carreira) -> void:
 	rb.set_meta("rb", true)
 	career_v.add_child(rb)
 	career.visible = true
+# depois de responder ao jornalista: tira os botões e mostra a reação
+func entrevista_feita(o: Dictionary, img_txt: String) -> void:
+	if entrevista_box == null: return
+	for c in entrevista_box.get_children():
+		if c is Button: c.queue_free()
+	entrevista_box.add_child(_wrap("Respondeste: «" + str(o.t) + "»", 15, INK, 880))
+	entrevista_box.add_child(_wrap(str(o.r) + img_txt, 15, GOLD, 880))
+	entrevista_box = null
+
 func _reset_career() -> void:
 	if not reset_armed:
 		reset_armed = true; toast("Carrega outra vez para apagar a carreira e começar nos distritais", 3); return

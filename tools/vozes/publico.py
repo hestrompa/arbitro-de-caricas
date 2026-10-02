@@ -66,6 +66,43 @@ def norm(y, pk=0.7): return y / (np.max(np.abs(y)) + 1e-9) * pk
 calmo = norm(conversa(480, 1.0) / 6 + multidao(150, 900, 0.5), 0.6)
 festa = norm(conversa(940, 1.0) / 6 + multidao(250, 2200, 1.4, 0.15) + multidao(80, 400, 0.8), 0.75)
 apoio = norm(palmas(132, 1.0) + multidao(200, 1200, 0.4), 0.7)
-for nome, y in [("publico_calmo", calmo), ("publico_festa", festa), ("publico_palmas", apoio)]:
+
+# Cânticos: muitas vozes em uníssono, a tempo, com palmas pelo meio (compasso de 2 s, 15 compassos = 30 s).
+# Cada compasso: frase gritada no 1.º tempo, três palmas no 3.º e 4.º.
+CANTOS = ["Vamos ganhar!", "Allez, allez!", "Ó-ó-ó-ó!", "Vamos, vamos!", "Queremos golo!"]
+def canto():
+    y = np.zeros(L + 3 * SR)
+    bar = 2.0
+    for k in range(int(L / SR / bar)):
+        f = CANTOS[(k // 3) % len(CANTOS)]          # a mesma frase três vezes seguidas, como no estádio
+        base = int(k * bar * SR)
+        for v in range(36):
+            voz = TTS["dii" if v % 3 == 0 else "miro"]
+            x = np.array(voz.generate(f, sid=0, speed=1.15).samples, dtype=np.float64) if v < 2 else falas_c[(f, v % 6)]
+            i = base + int(rng.normal(0, 0.035) * SR)
+            if i < 0: continue
+            d = rng.uniform(0.3, 1.0)
+            x = lp(x, 1500 + 2500 * d) * d
+            y[i:i + len(x)] += x[: len(y) - i]
+        for b in (1.0, 1.33, 1.5):                     # palmas
+            for _ in range(50):
+                i = base + int((b + rng.normal(0, 0.02)) * SR)
+                n = int(0.03 * SR); tt = np.arange(n) / SR
+                c = bp(noise(n), 900, 4000, 2) * np.exp(-tt * 140) * rng.uniform(0.3, 1.0) * 0.6
+                y[i:i + n] += c[: len(y) - i]
+    y = fftconvolve(y, ir)[: len(y)]
+    return em_loop(y)
+falas_c = {}
+for f in CANTOS:
+    for v in range(6):
+        voz = TTS["dii" if v % 3 == 0 else "miro"]
+        x = np.array(voz.generate(f, sid=0, speed=rng.uniform(1.05, 1.2)).samples, dtype=np.float64)
+        x = resample_poly(x, 100, int(round(100 * rng.uniform(0.85, 1.12))))
+        x = np.tanh(2.0 * x / (np.max(np.abs(x)) + 1e-9))   # gritado
+        falas_c[(f, v)] = x
+cantado = norm(canto() + multidao(200, 1500, 0.5), 0.75)
+saidas = [("publico_calmo", calmo), ("publico_festa", festa), ("publico_palmas", apoio), ("publico_canto", cantado)]
+if len(sys.argv) > 3: saidas = [s for s in saidas if s[0] in sys.argv[3:]]
+for nome, y in saidas:
     sf.write(f"{OUT}/{nome}.ogg", y.astype(np.float32), SR, format="OGG", subtype="VORBIS")
     print(nome, round(len(y) / SR, 1), "s")

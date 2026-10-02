@@ -278,7 +278,10 @@ func setup_match(S: Partida) -> void:
 	S.crowd_base = clamp(25 + 7 * ti + B.crowd, 10, 90); S.crowd = S.crowd_base
 	for i in 2: S.aggr[i] = clamp(0.06 + 0.035 * ti + B.aggr[i], 0.05, 0.8)
 	S.stress_base = clamp(12 + 5 * ti + (12 if B.f.story == "derby" else 0) - (C.attrs.calma - 3) * 1.5, 5, 60); S.stress = S.stress_base
-	for i in 2: S.cap_trust[i] = clamp(0.55 - 0.12 * int(C.grudge.get([B.h, B.a][i][0], 0)), 0.1, 0.9)
+	# imagem pública: estádios mais hostis e capitães desconfiados quando está em baixo
+	var img: float = float(C.get("imagem", 50))
+	S.crowd_base = clamp(S.crowd_base + (50.0 - img) * 0.2, 10, 95); S.crowd = S.crowd_base
+	for i in 2: S.cap_trust[i] = clamp(0.55 - 0.12 * int(C.grudge.get([B.h, B.a][i][0], 0)) + (img - 50.0) / 250.0, 0.1, 0.9)
 	S.toast(B.comp, 2.5)
 
 # castigados ficam de fora (entra um suplente) e quem foi expulso por ti lembra-se
