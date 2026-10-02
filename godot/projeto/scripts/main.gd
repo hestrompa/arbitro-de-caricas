@@ -116,10 +116,10 @@ func _ready() -> void:
 		extras.append(e)
 	refj = Jogador.new(self, REF_KIT, 0, 77, 2)
 	refj.label.visible = false
-	var ca := BoneAttachment3D.new(); ca.bone_name = "wrist_R"; refj.skel.add_child(ca)
-	card = MeshInstance3D.new(); var cb := BoxMesh.new(); cb.size = Vector3(0.075, 0.105, 0.006); card.mesh = cb
-	var cm := StandardMaterial3D.new(); cm.albedo_color = Color("f2cf3a"); cm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; card.material_override = cm
-	card.position = Vector3(0, 0.12, 0.02); card.visible = false; ca.add_child(card)
+	# cartão: colocado a cada frame entre os dedos (ver _card_in_hand), não preso ao pulso
+	card = MeshInstance3D.new(); var cb := BoxMesh.new(); cb.size = Vector3(0.075, 0.105, 0.004); card.mesh = cb
+	var cm := StandardMaterial3D.new(); cm.albedo_color = Color("f2cf3a"); cm.roughness = 0.35; cm.emission_enabled = true; cm.emission = Color("f2cf3a"); cm.emission_energy_multiplier = 0.25; card.material_override = cm
+	card.visible = false; add_child(card)
 	ball = MeshInstance3D.new()
 	var sm := SphereMesh.new(); sm.radius = 0.11; sm.height = 0.22
 	ball.mesh = sm
@@ -267,6 +267,7 @@ func _dress(j: Jogador, info: Dictionary) -> void:
 	var tm := int(info.team)
 	j.set_kit(_kit(tm, str(info.get("role", ""))), int(info.num), tm)
 	j.label.modulate = jogo.teams[tm].get("text", Color(0.97, 0.97, 0.95)) if jogo else Color(0.97, 0.97, 0.95)
+	j.mat.set_shader_parameter("numcol", j.label.modulate)
 	j.node.visible = true
 # o árbitro muda de equipamento quando uma equipa joga de escuro
 func _ref_kit() -> Dictionary:
@@ -1352,6 +1353,7 @@ func _gesture_process(delta: float) -> void:
 			refj.ik = {"wrist_R": [shR + fwd * 0.45 + rgt * 0.2 + upv * (-0.3 + 0.25 * sin(G.t * 5.0)), w]}
 	for j in [att, refj]:
 		if j.node.visible: j.update(delta, G.t); j.ground()
+	if card.visible: _card_in_hand(fwd)
 	# câmara de frente para o árbitro, com o jogador ao lado
 	var u: Vector2 = G.u
 	var sd := Vector2(-u.y, u.x)
@@ -1365,6 +1367,16 @@ func _gesture_process(delta: float) -> void:
 	cam.fov = 42
 	cam.look_at_from_position(Vector3(clamp(c.x, -3, W + 3), 1.6, clamp(c.y, -3, H + 3)), look)
 	if G.t >= G.dur: _end_gesture()
+
+# cartão entre o polegar e os dedos: na direção da mão (antebraço -> pulso), virado para a frente
+func _card_in_hand(fwd: Vector3) -> void:
+	var wr := refj.bone_world("wrist_R")
+	var dh := (wr - refj.bone_world("lowerarm01_R")).normalized()
+	var z := (fwd - dh * fwd.dot(dh)).normalized()
+	if z.length() < 0.1: z = Vector3(0, 0, 1)
+	var x := dh.cross(z).normalized()
+	card.global_transform = Transform3D(Basis(x, dh, z), wr + dh * 0.125 + z * 0.025)
+	(card.material_override as StandardMaterial3D).emission = (card.material_override as StandardMaterial3D).albedo_color
 
 func _end_gesture() -> void:
 	if G.is_empty(): return
@@ -1487,12 +1499,14 @@ func _training_setup() -> void:
 	P = Vector2(60, 30); A = Vector2(-1, 0); REF = Vector2(70, 46)
 	att.set_kit(LARANJA, 9, 1); def.set_kit(AZUL, 4, 0)
 	att.label.modulate = Color(0.97, 0.97, 0.95); def.label.modulate = Color(0.97, 0.97, 0.95)
+	for j in [att, def]: j.mat.set_shader_parameter("numcol", Color(0.97, 0.97, 0.95))
 	att.node.visible = true; def.node.visible = true
 	var spots := [Vector2(68, 22), Vector2(52, 40), Vector2(75, 33), Vector2(48, 24)]
 	for i in extras.size():
 		var home := i % 2 == 0
 		extras[i].set_kit(AZUL if home else LARANJA, [2, 7, 5, 10, 3, 8][i], 0 if home else 1)
 		extras[i].label.modulate = Color(0.97, 0.97, 0.95)
+		extras[i].mat.set_shader_parameter("numcol", Color(0.97, 0.97, 0.95))
 		extras[i].node.visible = i < spots.size()
 		extras[i].set_meta("spot", spots[i] if i < spots.size() else Vector2(-40, -40))
 

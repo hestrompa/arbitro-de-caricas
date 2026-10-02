@@ -5,6 +5,13 @@ extends RefCounted
 
 const PLAYER := preload("res://assets/jogador.glb")
 const KIT := preload("res://shaders/kit.gdshader")
+const DIGITOS := preload("res://assets/digitos.png")
+const CABELO := preload("res://shaders/cabelo.gdshader")
+const OLHOS := preload("res://assets/rosto/rosto_eyes.png")
+# superfícies do jogador.glb a seguir ao corpo (make_glb.py, PROX)
+const PROX := ["hair_short02", "hair_short04", "hair_short01", "hair_afro01", "eyebrows", "eyes", "lashes"]
+const HAIRS := ["hair_short02", "hair_short04", "hair_short01", "hair_afro01"]
+const PROX_LUM := {"hair_short02": 0.24, "hair_short04": 0.14, "hair_short01": 0.11, "hair_afro01": 0.04, "eyebrows": 0.03, "lashes": 0.02}
 const SKINS := ["light", "mid", "brown", "dark"]
 const L_GROUND := 1
 const L_PROXY := 2
@@ -94,14 +101,34 @@ func _init(parent: Node3D, kit: Dictionary, n: int, id: int, tm: int) -> void:
 	parent.add_child(node)
 	var r := RandomNumberGenerator.new(); r.seed = id * 7919 + 13
 	mat = ShaderMaterial.new(); mat.shader = KIT
-	mat.set_shader_parameter("skin_tex", load("res://assets/skin_%s.jpg" % SKINS[r.randi() % SKINS.size()]))
+	var skin_i: int = r.randi() % SKINS.size()
+	mat.set_shader_parameter("skin_tex", load("res://assets/skin_%s.jpg" % SKINS[skin_i]))
 	mat.set_shader_parameter("shirt", kit.color); mat.set_shader_parameter("shirt2", kit.shirt2)
 	mat.set_shader_parameter("shorts", kit.shorts); mat.set_shader_parameter("sock", kit.sock); mat.set_shader_parameter("trim", kit.dark)
 	mat.set_shader_parameter("pat", kit.pat)
-	mat.set_shader_parameter("hair", [Color("161310"), Color("2a1a10"), Color("4a2f1a"), Color("6b4a2b"), Color("b08850")][r.randi() % 5])
+	var hc: Color = [Color("161310"), Color("2a1a10"), Color("4a2f1a"), Color("6b4a2b"), Color("b08850")][r.randi() % 5]
+	if SKINS[skin_i] in ["dark", "brown"]: hc = Color("120e0c")
+	mat.set_shader_parameter("hair", hc)
 	mat.set_shader_parameter("phase", r.randf() * 10.0)
+	# cabelo de verdade: um dos estilos (ou careca), sobrancelhas, pestanas e olhos
+	var estilo: int = r.randi() % 5                      # 0..3 estilos, 4 careca
+	if SKINS[skin_i] in ["dark", "brown"] and r.randf() < 0.5: estilo = 3
+	mat.set_shader_parameter("bald", 1.0 if estilo == 4 else 0.0)
+	var olho := StandardMaterial3D.new(); olho.albedo_texture = OLHOS; olho.roughness = 0.15; olho.metallic_specular = 0.8
 	for m in node.find_children("*", "MeshInstance3D", true, false):
-		(m as MeshInstance3D).material_override = mat
+		var mi := m as MeshInstance3D
+		mi.set_surface_override_material(0, mat)
+		for si in range(1, mi.mesh.get_surface_count()):
+			var nome: String = PROX[si - 1] if si - 1 < PROX.size() else ""
+			if nome == "eyes":
+				mi.set_surface_override_material(si, olho); continue
+			var hm := ShaderMaterial.new(); hm.shader = CABELO
+			hm.set_shader_parameter("tex", load("res://assets/rosto/rosto_%s.png" % nome))
+			hm.set_shader_parameter("hair", hc)
+			hm.set_shader_parameter("ref_lum", PROX_LUM.get(nome, 0.15))
+			hm.set_shader_parameter("cutoff", 0.3 if nome in ["eyebrows", "lashes"] else 0.5)
+			hm.set_shader_parameter("hidden", nome.begins_with("hair_") and nome != HAIRS[estilo] if estilo < 4 else nome.begins_with("hair_"))
+			mi.set_surface_override_material(si, hm)
 		(m as MeshInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 		# o corpo caído pode afastar-se da origem do nó: não deixar o motor escondê-lo
 		(m as MeshInstance3D).custom_aabb = AABB(Vector3(-30, -3, -30), Vector3(60, 8, 60))
@@ -120,6 +147,9 @@ func _init(parent: Node3D, kit: Dictionary, n: int, id: int, tm: int) -> void:
 	lab.position = Vector3(0, 0.05, -0.14); lab.rotation_degrees.y = 180; lab.double_sided = false
 	nb.add_child(lab)
 	label = lab
+	label.visible = false        # o número vai pintado na camisola (kit.gdshader), não a flutuar
+	mat.set_shader_parameter("digits", DIGITOS)
+	mat.set_shader_parameter("num", float(n) if n > 0 else -1.0)
 	anim = node.find_children("*", "AnimationPlayer", true, false)[0]
 	anim.callback_mode_process = AnimationMixer.ANIMATION_CALLBACK_MODE_PROCESS_MANUAL
 	_build_body()
@@ -130,6 +160,7 @@ func _init(parent: Node3D, kit: Dictionary, n: int, id: int, tm: int) -> void:
 # muda de equipamento e número (o mesmo corpo serve para qualquer jogador do jogo)
 func set_kit(kit: Dictionary, n: int, tm: int) -> void:
 	num = n; team = tm; label.text = str(n)
+	mat.set_shader_parameter("num", float(n) if n > 0 else -1.0)
 	mat.set_shader_parameter("shirt", kit.color); mat.set_shader_parameter("shirt2", kit.shirt2)
 	mat.set_shader_parameter("shorts", kit.shorts); mat.set_shader_parameter("sock", kit.sock); mat.set_shader_parameter("trim", kit.dark)
 	mat.set_shader_parameter("pat", kit.pat)

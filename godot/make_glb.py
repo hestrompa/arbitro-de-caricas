@@ -71,9 +71,27 @@ for name, a in A.items():
     samplers.append({'input': aTm, 'output': add(np.ascontiguousarray(p + joints[0]), F, 'VEC3'), 'interpolation': 'LINEAR'})
     chans.append({'sampler': len(samplers) - 1, 'target': {'node': 2, 'path': 'translation'}})
     anims.append({'name': name + ('_loop' if a['loop'] else ''), 'samplers': samplers, 'channels': chans})
+# acessórios da cara (proxies.npz do build_human.py): uma superfície cada, pela ordem de PROX
+import os
+prims = [{'attributes': {'POSITION': aP, 'NORMAL': aN, 'TEXCOORD_0': aT, 'TEXCOORD_1': aT2, 'COLOR_0': aC, 'JOINTS_0': aJ, 'WEIGHTS_0': aW}, 'indices': aI, 'material': 0}]
+mats = [{'name': 'kit', 'pbrMetallicRoughness': {'baseColorFactor': [1, 1, 1, 1], 'metallicFactor': 0, 'roughnessFactor': 0.7}}]
+PROX = ['hair_short02', 'hair_short04', 'hair_short01', 'hair_afro01', 'eyebrows', 'eyes', 'lashes']
+if os.path.exists(MH + '/proxies.npz'):
+    pz = np.load(MH + '/proxies.npz')
+    for nm in PROX:
+        pp = pz[nm + '_pos']; tt = pz[nm + '_tri']
+        nn = np.zeros_like(pp)
+        fn2 = np.cross(pp[tt[:, 1]] - pp[tt[:, 0]], pp[tt[:, 2]] - pp[tt[:, 0]])
+        for k in range(3): np.add.at(nn, tt[:, k], fn2)
+        nn /= np.maximum(np.linalg.norm(nn, axis=1, keepdims=True), 1e-9)
+        uvp = pz[nm + '_uv'].copy(); uvp[:, 1] = 1.0 - uvp[:, 1]       # obj (baixo-esquerda) -> gltf (cima-esquerda)
+        prims.append({'attributes': {'POSITION': add(np.ascontiguousarray(pp), F, 'VEC3', 34962, True), 'NORMAL': add(np.ascontiguousarray(nn.astype(np.float32)), F, 'VEC3', 34962),
+                      'TEXCOORD_0': add(np.ascontiguousarray(uvp), F, 'VEC2', 34962), 'JOINTS_0': add(np.ascontiguousarray(pz[nm + '_ji']), U16, 'VEC4', 34962),
+                      'WEIGHTS_0': add(np.ascontiguousarray(pz[nm + '_jw']), F, 'VEC4', 34962)}, 'indices': add(np.ascontiguousarray(tt.reshape(-1)), U32, 'SCALAR', 34963), 'material': len(mats)})
+        mats.append({'name': nm, 'pbrMetallicRoughness': {'baseColorFactor': [1, 1, 1, 1], 'metallicFactor': 0, 'roughnessFactor': 0.8}})
 gl = {'asset': {'version': '2.0', 'generator': 'arbitro make_glb'}, 'scene': 0, 'scenes': [{'nodes': [0]}], 'nodes': nodes,
-      'meshes': [{'name': 'corpo', 'primitives': [{'attributes': {'POSITION': aP, 'NORMAL': aN, 'TEXCOORD_0': aT, 'TEXCOORD_1': aT2, 'COLOR_0': aC, 'JOINTS_0': aJ, 'WEIGHTS_0': aW}, 'indices': aI, 'material': 0}]}],
-      'materials': [{'name': 'kit', 'pbrMetallicRoughness': {'baseColorFactor': [1, 1, 1, 1], 'metallicFactor': 0, 'roughnessFactor': 0.7}}],
+      'meshes': [{'name': 'corpo', 'primitives': prims}],
+      'materials': mats,
       'skins': [{'joints': [2 + i for i in range(NB)], 'inverseBindMatrices': aIBM, 'skeleton': 2}], 'animations': anims,
       'buffers': [{'byteLength': len(buf)}], 'bufferViews': views, 'accessors': accs}
 js = json.dumps(gl, separators=(',', ':')).encode()

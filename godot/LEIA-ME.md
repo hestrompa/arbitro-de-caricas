@@ -67,3 +67,10 @@ Ferramentas em tools/mocap: fbxdump/ (projeto Godot que lê o FBX e grava dump.j
 - Para mudar ou acrescentar falas: editar tools/vozes/gerar.py e correr `python3 tools/vozes/gerar.py <pasta com as vozes vits-piper-pt_PT-*> godot/projeto/assets/voz`; tools/vozes/ouvir.py transcreve as falas com o Whisper para confirmar que se percebem.
 - Licença das vozes: CC BY-NC-SA 4.0 (não comercial), ver assets/voz/LICENCA-VOZES.md.
 - Há um aviso sonoro (dois toques) quando aparece um lance para analisar.
+
+## Pormenores 3D
+
+- Números: pintados na camisola pelo kit.gdshader (atlas assets/digitos.png), projetados nas costas com a posição de repouso, por isso dobram com o corpo. A cor vem do clube.
+- Pele: a textura usa a coordenada v invertida (as UV do MakeHuman começam em baixo); antes estava virada e a cara aparecia borrada.
+- Cara: cabelos (4 estilos ou careca), sobrancelhas, pestanas e olhos são proxies do MakeHuman ajustados ao corpo por tools/build_human.py (proxies.npz) e postos no jogador.glb como superfícies extra pelo make_glb.py. Materiais em jogador.gd (shaders/cabelo.gdshader recolore pela cor de cabelo do jogador).
+- Cartão: colocado a cada frame entre os dedos do árbitro, na direção antebraço-pulso (main.gd, _card_in_hand).

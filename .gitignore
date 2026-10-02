@@ -1,3 +1,5 @@
 src/game.js
 __pycache__/
 *.png
+!godot/projeto/assets/**/*.png
+!godot/projeto/assets/*.png

@@ -223,3 +223,46 @@ for name, src in [('light', 'young_caucasian_male/textures/young_lightskinned_ma
         print(name, 'ok')
     except Exception as e:
         print(name, 'fail', e)
+
+# ---- acessórios da cara (proxies do MakeHuman): cabelos, sobrancelhas e olhos.
+# Cada vértice do proxy = combinação de 3 vértices do corpo base + desvio; depois a mesma pose e escala do corpo.
+PX = [('hair_short02', 'hair/short02'), ('hair_short04', 'hair/short04'), ('hair_short01', 'hair/short01'), ('hair_afro01', 'hair/afro01'),
+      ('eyebrows', 'eyebrows/eyebrow001'), ('eyes', 'eyes/Low-Poly'), ('lashes', 'eyelashes/Eyelashes01')]
+def skin_pos(X, Wx):
+    out = np.zeros_like(X)
+    for b in range(len(KEEP)):
+        A, t = Mw[b]; wb = Wx[:, b:b + 1]
+        if wb.max() == 0: continue
+        out += wb * (X @ A.T + t)
+    s = Wx.sum(1, keepdims=True); s[s == 0] = 1
+    return out / s
+prox = {}
+for nome, path in PX:
+    pd = json.load(open(D + 'proxies/' + path + '/' + path.split('/')[1] + '.json'))
+    ref = np.array(pd['ref_vIdxs']); w = np.array(pd['weights'], dtype=float); off = np.array(pd['offsets'], dtype=float)
+    X = (V[ref] * w[:, :, None]).sum(1) + off
+    Wx = (W[ref] * w[:, :, None]).sum(1)
+    X = (skin_pos(X, Wx) - np.array([0, ymin, 0])) * S
+    puv = np.array(pd['uvs'][0], dtype=float).reshape(-1, 2)
+    f = pd['faces']; i = 0; vv = {}; PP = []; UU = []; WW = []; TT = []
+    while i < len(f):
+        t = f[i]; i += 1
+        n = 4 if t & 1 else 3
+        vs = f[i:i + n]; i += n
+        if t & 2: i += 1
+        us = f[i:i + n] if t & 8 else vs
+        if t & 8: i += n
+        ix = []
+        for v, u in zip(vs, us):
+            if (v, u) not in vv:
+                vv[(v, u)] = len(PP); PP.append(X[v]); UU.append(puv[u]); WW.append(Wx[v])
+            ix.append(vv[(v, u)])
+        TT.append((ix[0], ix[1], ix[2]))
+        if n == 4: TT.append((ix[0], ix[2], ix[3]))
+    WW = np.array(WW); ski = np.argsort(-WW, 1)[:, :4]; skw = np.take_along_axis(WW, ski, 1); skw /= skw.sum(1, keepdims=True) + 1e-9
+    prox[nome + '_pos'] = np.array(PP, np.float32); prox[nome + '_uv'] = np.array(UU, np.float32)
+    prox[nome + '_ji'] = ski.astype(np.uint16); prox[nome + '_jw'] = skw.astype(np.float32); prox[nome + '_tri'] = np.array(TT, np.uint32)
+    tex = pd['materials'][2 if nome == 'eyes' else 0]['mapDiffuse']
+    Image.open(D + 'proxies/' + path + '/' + tex).save('rosto_' + nome + '.png')
+    print('proxy', nome, len(PP), 'verts', len(TT), 'tris', 'y', round(float(np.array(PP)[:, 1].min()), 3), round(float(np.array(PP)[:, 1].max()), 3))
+np.savez('proxies.npz', **prox)
