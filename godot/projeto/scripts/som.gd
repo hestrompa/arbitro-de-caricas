@@ -1,6 +1,6 @@
 class_name Som
 extends Node
-# Som: tudo sintetizado em _ready (PCM em AudioStreamWAV), sem ficheiros.
+# Som: apitos e efeitos sintetizados em _ready (PCM em AudioStreamWAV); público e falas gravados em assets/.
 # Port do módulo Sfx + Voice da versão browser (Web Audio + speechSynthesis).
 
 const SR: int = 22050          # apito, chuto, bip, rádio
@@ -10,8 +10,6 @@ const MASTER: float = 0.8
 const LP: int = 0
 const HP: int = 1
 const BP: int = 2
-const BUS_SOM: String = "Som"
-const BUS_PUBLICO: String = "Publico"
 const CFG: String = "user://voz.cfg"
 # vozes por papel: tom, velocidade, índice da voz (como o P do JS)
 const PAPEIS: Dictionary = {
@@ -27,12 +25,13 @@ var pronto: bool = false        # todos os sons gerados
 var _sons: Dictionary = {}
 var _pool: Array[AudioStreamPlayer] = []
 var _prox: int = 0
-var _murmurio: AudioStreamPlayer
-var _bus_publico: int = -1
-var _filtro: AudioEffectBandPassFilter
+var _loops: Dictionary = {}
 var _nivel: float = 0.0
 var _ganho: float = 0.0
-var _freq: float = 650.0
+var _freq: float = 0.0          # quanto da "festa" está a soar (0..1)
+var _palmas: float = 0.0
+var _palmas_on: bool = false
+var _palmas_t: float = 5.0
 var _boost: float = 0.0
 var _boost_t: float = 0.0
 var _vozes: PackedStringArray = PackedStringArray()
@@ -47,21 +46,23 @@ var faltas: PackedStringArray = PackedStringArray()   # textos sem fala gravada 
 # Cria os buses e o murmúrio; os outros sons geram-se um por frame para não engasgar.
 func _ready() -> void:
 	var t0: int = Time.get_ticks_usec()
-	_criar_buses()
 	for i in POOL:
 		var p: AudioStreamPlayer = AudioStreamPlayer.new()
-		p.bus = BUS_SOM
 		add_child(p)
 		_pool.append(p)
 	_voz = AudioStreamPlayer.new()
-	_voz.bus = BUS_SOM
 	add_child(_voz)
 	_voz.finished.connect(_proxima_fala)
-	_murmurio = AudioStreamPlayer.new()
-	_murmurio.stream = _gera_murmurio()
-	_murmurio.bus = BUS_PUBLICO
-	add_child(_murmurio)
-	_murmurio.play()
+	# público: três loops gravados (conversa, festa, palmas) misturados só com o volume de cada um,
+	# para tocarem no próprio browser sem quebras mesmo quando o jogo perde frames
+	for nome in ["calmo", "festa", "palmas"]:
+		var lp: AudioStreamPlayer = AudioStreamPlayer.new()
+		var st: AudioStream = load("res://assets/som/publico_%s.ogg" % nome)
+		lp.stream = st
+		lp.volume_db = -80.0
+		add_child(lp)
+		lp.play()   # do início: na web o loop recomeça na posição em que arrancou
+		_loops[nome] = lp
 	_sons["short"] = _gera_apito([0.22])
 	_sons["kick"] = _gera_chuto()
 	_sons["beep"] = _gera_bip()
@@ -91,16 +92,28 @@ func _gerar_resto() -> void:
 
 # Suaviza o ganho e o filtro do murmúrio (como o setTargetAtTime).
 func _process(delta: float) -> void:
-	if _bus_publico < 0:
+	if _loops.is_empty():
 		return
 	var b: float = _cur_boost()
-	var alvo_g: float = 0.06 + _nivel * 0.12 + b * 0.25
-	var alvo_f: float = 480.0 + _nivel * 380.0 + b * 650.0
-	var tau: float = 0.15 if b > 0.05 else 0.5
-	_ganho += (alvo_g - _ganho) * (1.0 - exp(-delta / tau))
-	_freq += (alvo_f - _freq) * (1.0 - exp(-delta / 0.3))
-	AudioServer.set_bus_volume_db(_bus_publico, linear_to_db(maxf(_ganho * 2.0, 0.0001)))
-	_filtro.cutoff_hz = _freq
+	# conversa sempre; festa sobe com cada lance e com a pressão; palmas quando o público aperta
+	var alvo_g: float = 0.35 + _nivel * 0.25
+	var alvo_f: float = clampf(b * 1.1 + maxf(_nivel - 0.55, 0.0) * 0.6, 0.0, 1.0)
+	var tau: float = 0.12 if b > 0.05 else 0.6
+	_ganho += (alvo_g - _ganho) * (1.0 - exp(-delta / 0.8))
+	_freq += (alvo_f - _freq) * (1.0 - exp(-delta / tau))
+	_palmas_t -= delta
+	if _palmas_t <= 0.0:
+		_palmas_t = randf_range(8.0, 20.0)
+		_palmas_on = _nivel > 0.4 and randf() < 0.3 + _nivel * 0.5
+	_palmas += ((0.5 if _palmas_on and b < 0.3 else 0.0) - _palmas) * (1.0 - exp(-delta / 1.5))
+	var m: float = 0.0 if muted else 1.0
+	_vol(_loops["calmo"], _ganho * (1.0 - _freq * 0.5) * m)
+	_vol(_loops["festa"], _freq * 0.9 * m)
+	_vol(_loops["palmas"], _palmas * m)
+
+
+func _vol(p: AudioStreamPlayer, g: float) -> void:
+	p.volume_db = linear_to_db(maxf(g, 0.0001))
 
 
 # Pára tudo ao sair (evita playbacks pendurados no servidor de áudio).
@@ -108,8 +121,8 @@ func _exit_tree() -> void:
 	for p in _pool:
 		p.stop()
 		p.stream = null
-	if _murmurio:
-		_murmurio.stop()
+	for lp in _loops.values():
+		lp.stop()
 
 
 # ---------- API pública ----------
@@ -277,9 +290,8 @@ func stop_voice() -> void:
 
 func _set_muted(v: bool) -> void:
 	muted = v
-	var i: int = AudioServer.get_bus_index(BUS_SOM)
-	if i >= 0:
-		AudioServer.set_bus_mute(i, v)
+	if v:
+		stop_voice()
 
 
 func _set_voice_on(v: bool) -> void:
@@ -334,7 +346,7 @@ func _cur_boost() -> float:
 
 # Toca um som pré-gerado num leitor livre do conjunto (se ainda não existir, fica calado).
 func _tocar(nome: String, vol: float) -> void:
-	if _pool.is_empty() or not _sons.has(nome):
+	if muted or _pool.is_empty() or not _sons.has(nome):
 		return
 	var p: AudioStreamPlayer = null
 	for i in POOL:
@@ -349,29 +361,6 @@ func _tocar(nome: String, vol: float) -> void:
 	p.stream = _sons[nome]
 	p.volume_db = linear_to_db(clampf(vol, 0.001, 4.0))
 	p.play()
-
-
-# Buses: Som (geral, mudo) e Publico (murmúrio com filtro) que manda para Som.
-func _criar_buses() -> void:
-	if AudioServer.get_bus_index(BUS_SOM) < 0:
-		AudioServer.add_bus(-1)
-		var i: int = AudioServer.bus_count - 1
-		AudioServer.set_bus_name(i, BUS_SOM)
-		AudioServer.set_bus_send(i, "Master")
-		AudioServer.set_bus_volume_db(i, linear_to_db(MASTER))
-	if AudioServer.get_bus_index(BUS_PUBLICO) < 0:
-		AudioServer.add_bus(-1)
-		var j: int = AudioServer.bus_count - 1
-		AudioServer.set_bus_name(j, BUS_PUBLICO)
-		AudioServer.set_bus_send(j, BUS_SOM)
-		var f: AudioEffectBandPassFilter = AudioEffectBandPassFilter.new()
-		f.cutoff_hz = 650.0
-		f.resonance = 0.3
-		AudioServer.add_bus_effect(j, f)
-	_bus_publico = AudioServer.get_bus_index(BUS_PUBLICO)
-	_filtro = AudioServer.get_bus_effect(_bus_publico, 0) as AudioEffectBandPassFilter
-	AudioServer.set_bus_volume_db(_bus_publico, linear_to_db(0.0001))
-	AudioServer.set_bus_mute(AudioServer.get_bus_index(BUS_SOM), muted)
 
 
 # Envolvente: subida linear, patamar, descida exponencial até 0.0001 (como env() do JS).
@@ -631,24 +620,3 @@ func _gera_radio() -> AudioStreamWAV:
 	return _wav(buf, SR)
 
 
-# Murmúrio do estádio: ruído rosa em loop (o filtro e o volume ficam no bus).
-func _gera_murmurio() -> AudioStreamWAV:
-	var n: int = 4 * SR_BAIXO
-	var fade: int = int(SR_BAIXO * 0.2)
-	var buf: PackedFloat32Array = PackedFloat32Array()
-	buf.resize(n + fade)
-	var b0: float = 0.0
-	var b1: float = 0.0
-	var b2: float = 0.0
-	for i in n + fade:
-		var w: float = randf() * 2.0 - 1.0
-		b0 = 0.99765 * b0 + w * 0.099
-		b1 = 0.963 * b1 + w * 0.2965
-		b2 = 0.57 * b2 + w * 1.0527
-		buf[i] = (b0 + b1 + b2 + w * 0.1848) * 0.08
-	# cruza o fim com o início para o loop não estalar
-	for i in fade:
-		var a: float = float(i) / fade
-		buf[i] = buf[i] * a + buf[n + i] * (1.0 - a)
-	buf.resize(n)
-	return _wav(buf, SR_BAIXO, true)

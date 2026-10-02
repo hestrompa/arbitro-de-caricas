@@ -61,7 +61,8 @@ Ferramentas em tools/mocap: fbxdump/ (projeto Godot que lê o FBX e grava dump.j
 
 ## Som e vozes
 
-- Na web o som usa o modo "Stream" do Godot (audio/general/default_playback_type.web=0). No modo por omissão ("Sample") os sons arrancavam mas saíam mudos; o teste testes/webaudio.mjs mede o sinal à saída do Web Audio.
+- Na web o som é tocado pelo próprio browser (modo "Sample", audio/general/default_playback_type.web=1), por isso não depende dos frames do jogo. Todos os sons vão para o bus Master: nesse modo os buses criados em código ficavam mudos. Não há efeitos de bus; o público mistura-se só com o volume de três loops. testes/webgaps.mjs conta silêncios no som a mexer o árbitro; testes/webvoz.mjs confirma que as falas tocam.
+- Público: assets/som/publico_calmo, _festa e _palmas (loops de 30 s com loop ligado no .import), feitos por tools/vozes/publico.py a partir de centenas de frases ditas pelas mesmas vozes, longe e com eco de estádio. Na web os loops têm de arrancar do início: o browser recomeça cada volta na posição em que o som arrancou.
 - As falas do rádio (assistente, VAR, 4.º árbitro), do árbitro e do relato são ficheiros em assets/voz/, com o nome igual aos 10 primeiros caracteres do md5 do texto. Foram geradas com vozes neurais de português de Portugal e já trazem o ambiente: rádio (banda estreita, estalido e chiado), passos e respiração do assistente a correr, público ao fundo. Se um texto não tiver fala gravada, o jogo usa a voz do sistema como antes.
 - Para mudar ou acrescentar falas: editar tools/vozes/gerar.py e correr `python3 tools/vozes/gerar.py <pasta com as vozes vits-piper-pt_PT-*> godot/projeto/assets/voz`; tools/vozes/ouvir.py transcreve as falas com o Whisper para confirmar que se percebem.
 - Licença das vozes: CC BY-NC-SA 4.0 (não comercial), ver assets/voz/LICENCA-VOZES.md.
