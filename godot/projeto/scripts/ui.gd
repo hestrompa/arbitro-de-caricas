@@ -393,7 +393,15 @@ func show_career(car: Carreira) -> void:
 		var tx := VBoxContainer.new(); tx.custom_minimum_size = Vector2(420, 0); row.add_child(tx)
 		tx.add_child(_lbl(a.name, 17, INK)); tx.add_child(_lbl(a.txt, 13, DIM))
 		var v: int = C.attrs[a.k]
-		row.add_child(_lbl("●".repeat(v) + "○".repeat(10 - v), 18, GOLD))
+		# barra desenhada (a letra da versão web não tem ● nem ○)
+		var bar := HBoxContainer.new(); bar.add_theme_constant_override("separation", 3); bar.alignment = BoxContainer.ALIGNMENT_CENTER
+		bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		for i in 10:
+			var seg := ColorRect.new(); seg.custom_minimum_size = Vector2(14, 14)
+			seg.color = GOLD if i < v else Color(1, 1, 1, 0.12)
+			bar.add_child(seg)
+		row.add_child(bar)
+		row.add_child(_lbl("%d/10" % v, 16, GOLD))
 		var k: String = a.k
 		var b := _btn("+1", func(): main.on_ui("attr", k), Color(), 0, 16); b.disabled = C.pts <= 0 or v >= 10; row.add_child(b)
 	if C.papers.size():
