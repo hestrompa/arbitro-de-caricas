@@ -353,7 +353,7 @@ func show_report(S: Partida, d: Dictionary, career_note: String, is_career: bool
 	report.visible = true
 
 # ---------- menu ----------
-func show_menu(has_career: bool, best: String, voz: bool, som: bool) -> void:
+func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := true) -> void:
 	hide_all()
 	_clear(menu_v)
 	menu_v.add_child(_lbl("ÁRBITRO DE CARICAS", 34, GOLD))
@@ -364,7 +364,8 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool) -> void:
 		menu_v.add_child(_btn(it[0], func(): main.on_ui(k, null), it[2], 500, 20))
 	var hb := HBoxContainer.new(); hb.add_theme_constant_override("separation", 8); menu_v.add_child(hb)
 	hb.add_child(_btn("Voz ligada" if voz else "Voz desligada", func(): main.on_ui("voz", null), Color(), 0, 16))
-	hb.add_child(_btn("Som ligado" if som else "Som desligado", func(): main.on_ui("som", null), Color(), 0, 16))
+	hb.add_child(_btn("Público ligado" if publico else "Público desligado", func(): main.on_ui("publico", null), Color(), 0, 16))
+	hb.add_child(_btn("Todo o som ligado" if som else "Todo o som desligado", func(): main.on_ui("som", null), Color(), 0, 16))
 	if best != "": menu_v.add_child(_lbl("Melhor nota: " + best, 15, DIM))
 	menu_v.add_child(_wrap("Teclas: WASD/setas mover · Shift correr · 1–6 decidir · R rever · C câmara · Espaço pausa · Esc menu", 13, DIM, 500))
 	menu.visible = true

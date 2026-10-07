@@ -1153,7 +1153,8 @@ func decide(d: String, timed_out := false) -> void:
 		else: pts = 0; dc = -12
 		if diff < 0: aggr[atk_t] += 0.12 * -diff
 		if diff > 0: aggr[def_t] += 0.12 * diff
-	if L.get("adv", false) and d != "vantagem" and is_foul(d) and pts == 1: pts = 0.7; L.miss_adv = true
+	# dar ou não vantagem é critério do árbitro: parar o jogo com a decisão certa não tira pontos (só fica a nota)
+	if L.get("adv", false) and d != "vantagem" and is_foul(d) and pts == 1: L.miss_adv = true; dc = 2
 	if timed_out: dc -= 4
 	if L.get("training", false):
 		pts = 1.0 if pts == 1 else 0.0; dc = 0
@@ -1816,8 +1817,8 @@ func half_time() -> void:
 	var rows: Array = []
 	for l in inc:
 		var what: String = LABEL[l.truth] if kind_of(l) == "offside" else str(LABEL.get(l.truth, DEC_LABEL.get(l.truth, l.truth))) + (" · no limite" if interp_of(l).size() else "")
-		var res: String = ("Certo · " + interp_txt(l)) if l.get("interp_good", false) else ("Certo" if l.pts == 1 else ("Meio certo" if l.pts > 0 else "Errado"))
-		rows.append({"L": l, "cells": ["%d'" % l.minute, what, str(DEC_LABEL.get(l.get("decided", ""), "–")), res], "cls": "ok" if l.pts == 1 else ("half" if l.pts > 0 else "bad")})
+		var res: String = verdict_txt(l)
+		rows.append({"L": l, "cells": ["%d'" % l.minute, what, dec_txt(l), res], "cls": "ok" if l.pts == 1 else ("half" if l.pts > 0 else "bad")})
 	half_talk = ""
 	emit("half", {"title": "Intervalo · %d–%d" % [score[0], score[1]], "txt": txt, "rows": rows})
 func second_half(talk := "descanso") -> void:
@@ -1985,23 +1986,40 @@ func end_match(kind: String) -> void:
 	emit("end", {"kind": kind, "grade": grade, "txt": txt, "title": "Relatório do observador · %d–%d" % [score[0], score[1]]})
 
 # linhas da tabela do relatório
+# o mesmo texto no intervalo e no relatório: a mesma decisão certa nunca aparece com avaliações diferentes sem razão
+func verdict_txt(l: Dictionary) -> String:
+	var off := kind_of(l) == "offside"
+	var pts: float = l.pts
+	var dec: String = l.get("decided", "")
+	var why: String
+	if l.get("interp_good", false) and pts == 1: why = "Certo · no limite: " + interp_txt(l) + " serviam" + (" (mas aos %d' foste por outro critério)" % l.crit_flip if l.has("crit_flip") else "")
+	elif l.get("miss_adv", false) and pts == 1: why = "Certo (podias ter dado vantagem)"
+	elif dec == "vantagem" and l.get("adv", false) and pts < 1: why = "Vantagem certa, cartão errado"
+	elif dec == "vantagem" and not l.get("adv", false) and pts < 1: why = "Não havia vantagem: a bola era do adversário"
+	elif l.get("training", false): why = (("Certo · confirmaste a decisão de campo" if dec == l.var_first else "Certo · corrigiste a decisão de campo") if pts == 1 else "Errado · decisão de campo era " + str(DEC_LABEL[l.var_first]).to_lower())
+	elif l.has("var_first"): why = ("Certo só depois do VAR (no campo: %s)" % str(DEC_LABEL.get(l.var_first, l.var_first)).to_lower()) if pts > 0 else "Errado, mesmo depois do VAR"
+	elif pts == 1: why = "Certo"
+	elif l.get("timed_out", false): why = "Sem decisão"
+	elif off: why = "Errado · a bandeira estava certa" if l.flag == (l.truth == "fora") else "Errado · o assistente enganou-se e seguiste-o"
+	elif l.has("card_later") and pts > 0 and pts < 1: why = "Vantagem certa, cartão errado"
+	elif pts > 0: why = "Perto: era " + str(LABEL.get(l.truth, l.truth)).to_lower()
+	else: why = "Errado · estavas mal colocado" if l.get("clarity", 1.0) < 0.45 else "Errado · viste bem, decidiste mal"
+	return why
+
+func dec_txt(l: Dictionary) -> String:
+	var dec: String = l.get("decided", "")
+	var cl: String = l.get("card_later", "")
+	var t: String = str(DEC_LABEL.get(dec, dec if dec != "" else "–")) + (" + " + str(DEC_LABEL[cl]).to_lower() if cl != "" and cl != "nenhum" else "") + (" (tempo)" if l.get("timed_out", false) else "")
+	if l.has("var_first") and not l.get("training", false) and l.var_first != dec: t = str(DEC_LABEL.get(l.var_first, l.var_first)) + ", depois " + t.to_lower() + " (VAR)"
+	return t
+
 func report_rows() -> Array:
 	var out: Array = []
 	for l in incidents:
 		var off := kind_of(l) == "offside"
 		var pts: float = l.pts
 		var dec: String = l.get("decided", "")
-		var why: String
-		if l.get("interp_good", false) and pts == 1: why = "Certo · no limite: " + interp_txt(l) + " serviam" + (" (mas aos %d' foste por outro critério)" % l.crit_flip if l.has("crit_flip") else "")
-		elif l.get("miss_adv", false): why = "Certo, mas havia vantagem"
-		elif dec == "vantagem" and l.get("adv", false) and pts < 1: why = "Vantagem certa, cartão errado"
-		elif dec == "vantagem" and not l.get("adv", false) and pts < 1: why = "Não havia vantagem: a bola era do adversário"
-		elif l.get("training", false): why = (("Certo · confirmaste a decisão de campo" if dec == l.var_first else "Certo · corrigiste a decisão de campo") if pts == 1 else "Errado · decisão de campo era " + str(DEC_LABEL[l.var_first]).to_lower())
-		elif l.has("var_first"): why = "Corrigido com o VAR" if pts > 0 else "Errado, mesmo depois do VAR"
-		elif pts == 1: why = "Certo"
-		elif l.get("timed_out", false): why = "Sem decisão"
-		elif off: why = "Errado · a bandeira estava certa" if l.flag == (l.truth == "fora") else "Errado · o assistente enganou-se e seguiste-o"
-		else: why = "Errado · estavas mal colocado" if l.clarity < 0.45 else "Errado · viste bem, decidiste mal"
+		var why: String = verdict_txt(l)
 		var what: String
 		if off: what = str(LABEL[l.truth]) + " por " + f1(absf(l.oi.margin)) + " m" + (" · no golo" if l.has("goal") else "")
 		else:
@@ -2012,7 +2030,7 @@ func report_rows() -> Array:
 		if off: seen = "Assistente " + ("alinhado" if l.mis < 0.8 else "a " + f1(l.mis) + " m") + " · bandeira " + ("levantada" if l.flag else "em baixo")
 		else: seen = "%d m · clareza %d%%" % [int(round(l.dist)), int(round(l.clarity * 100))]
 		var cl: String = l.get("card_later", "")
-		var dtxt: String = str(DEC_LABEL.get(dec, dec)) + (" + " + str(DEC_LABEL[cl]).to_lower() if cl != "" and cl != "nenhum" else "") + (" (tempo)" if l.get("timed_out", false) else "")
+		var dtxt: String = dec_txt(l)
 		out.append({"L": l, "cells": ["%d'" % l.minute + (" · área" if l.get("in_box", false) else ""), what, dtxt, seen, why], "cls": "ok" if pts == 1 else ("half" if pts > 0 else "bad")})
 	return out
 

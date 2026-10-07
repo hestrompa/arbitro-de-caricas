@@ -18,6 +18,7 @@ const PAPEIS: Dictionary = {
 }
 
 var muted: bool = false: set = _set_muted
+var publico_off: bool = false    # só o ambiente do estádio (público, festa, vaias); apito, rádio e vozes continuam
 var voice_on: bool = true: set = _set_voice_on
 var synth_us: int = 0           # tempo total de síntese (µs)
 var pronto: bool = false        # todos os sons gerados
@@ -112,7 +113,7 @@ func _process(delta: float) -> void:
 	var apoio: float = 0.5 if _palmas_on and b < 0.3 else 0.0
 	_palmas += ((0.0 if _cantar else apoio) - _palmas) * (1.0 - exp(-delta / 1.5))
 	_canto += ((apoio * 1.2 if _cantar else 0.0) - _canto) * (1.0 - exp(-delta / 2.0))
-	var m: float = 0.0 if muted else 1.0
+	var m: float = 0.0 if muted or publico_off else 1.0
 	_vol(_loops["calmo"], _ganho * (1.0 - _freq * 0.5) * m)
 	_vol(_loops["festa"], _freq * 0.9 * m)
 	_vol(_loops["palmas"], _palmas * m)
@@ -150,19 +151,19 @@ func kick(vol: float) -> void:
 # Festa do público.
 func cheer(vol: float) -> void:
 	react(vol)
-	_tocar("cheer", vol)
+	if not publico_off: _tocar("cheer", vol)
 
 
 # Vaias e assobios.
 func boo(vol: float) -> void:
 	react(vol * 0.8)
-	_tocar("boo", vol)
+	if not publico_off: _tocar("boo", vol)
 
 
 # "Uuuh" de remate ao lado.
 func ooh() -> void:
 	react(0.55)
-	_tocar("ooh", 1.0)
+	if not publico_off: _tocar("ooh", 1.0)
 
 
 # Aviso de lance para analisar: dois toques claros, como um pager.
@@ -203,6 +204,16 @@ func react(v: float) -> void:
 func toggle() -> bool:
 	muted = not muted
 	return muted
+
+
+# Liga/desliga só o público (fica guardado).
+func toggle_publico() -> bool:
+	publico_off = not publico_off
+	var cf: ConfigFile = ConfigFile.new()
+	cf.load(CFG)
+	cf.set_value("som", "publico_off", publico_off)
+	cf.save(CFG)
+	return publico_off
 
 
 # Há fala gravada para este texto (inteiro ou frase a frase)?
@@ -311,6 +322,7 @@ func _set_voice_on(v: bool) -> void:
 	if not v:
 		stop_voice()
 	var cf: ConfigFile = ConfigFile.new()
+	cf.load(CFG)
 	cf.set_value("voz", "on", v)
 	cf.save(CFG)
 
@@ -319,6 +331,7 @@ func _carregar_voz() -> void:
 	var cf: ConfigFile = ConfigFile.new()
 	if cf.load(CFG) == OK:
 		voice_on = bool(cf.get_value("voz", "on", true))
+		publico_off = bool(cf.get_value("som", "publico_off", false))
 
 
 # TTS só existe com audio/general/text_to_speech ligado nas definições do projeto.

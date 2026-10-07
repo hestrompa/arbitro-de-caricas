@@ -45,6 +45,7 @@ var ref_vel := 0.0
 var ref_ph := 0.0             # fase da passada
 var ref_olhar := Vector3.ZERO # para onde a cabeça está virada (segue o lance com atraso)
 var fp_vig: ColorRect         # vinheta do cansaço
+var ref_foco := 0.0
 var ref_resp := 0.0           # fase da respiração (soa a cada volta)
 var TC := 2.2
 var DUR := 9.0
@@ -116,6 +117,8 @@ var floods: Array = []
 var night := false
 var slp := {}              # plano do carrinho capturado
 var fan_mesh: ArrayMesh
+var nets: Array = []              # materiais das duas redes (abanam com golo)
+var rede_abana := 0.0
 var fan_mat: ShaderMaterial
 var fan_mms: Array = []
 var fan_festa := 0.0
@@ -221,9 +224,46 @@ func _world() -> void:
 			p.mesh = c; p.material_override = post; p.position = Vector3(0, 1.22, s * 3.66); goal.add_child(p)
 		var bar := MeshInstance3D.new(); var cb := CylinderMesh.new(); cb.top_radius = 0.06; cb.bottom_radius = 0.06; cb.height = 7.32
 		bar.mesh = cb; bar.material_override = post; bar.rotation_degrees = Vector3(90, 0, 0); bar.position = Vector3(0, 2.44, 0); goal.add_child(bar)
-		var net := MeshInstance3D.new(); var nb := BoxMesh.new(); nb.size = Vector3(2.0, 2.44, 7.32)
-		var nm := StandardMaterial3D.new(); nm.albedo_color = Color(1, 1, 1, 0.18); nm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		net.mesh = nb; net.material_override = nm; net.position = Vector3(-1.0 if gx == 0.0 else 1.0, 1.22, 0); goal.add_child(net)
+		var net := MeshInstance3D.new(); net.mesh = _net_mesh(-1.0 if gx == 0.0 else 1.0)
+		var nm := ShaderMaterial.new(); nm.shader = preload("res://shaders/rede.gdshader")
+		net.material_override = nm; net.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF; goal.add_child(net)
+		nets.append(nm)
+		# apoios da rede atrás da baliza
+		for s in [-1.0, 1.0]:
+			var dd := -1.0 if gx == 0.0 else 1.0
+			var ap := MeshInstance3D.new(); var ac := CylinderMesh.new(); ac.top_radius = 0.025; ac.bottom_radius = 0.025; ac.height = 2.68
+			ap.mesh = ac; ap.material_override = post; ap.position = Vector3(dd * 1.45, 1.22, s * 3.68); ap.rotation.z = dd * 0.423; goal.add_child(ap)
+
+# Rede: teto curto, fundo inclinado até ao chão a 2 m e dois lados; UV em metros para a malha,
+# UV2.x = quanto cede (0 junto aos ferros).
+func _net_mesh(d: float) -> ArrayMesh:
+	var st := SurfaceTool.new(); st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var top := 0.9; var fundo := 2.0; var hh := 2.44; var zz := 3.66
+	var quad := func(a: Vector3, b: Vector3, c: Vector3, e: Vector3, nx: int, ny: int) -> void:
+		# grelha de nx*ny entre os 4 cantos (a-b em cima, e-c em baixo)
+		for i in nx:
+			for j in ny:
+				var pts := []
+				for k in [[i, j], [i + 1, j], [i + 1, j + 1], [i, j + 1]]:
+					var u := float(k[0]) / nx; var v := float(k[1]) / ny
+					var p: Vector3 = a.lerp(b, u).lerp(e.lerp(c, u), v)
+					pts.append(p)
+				var ordem := [0, 1, 2, 0, 2, 3]
+				for o in ordem:
+					var p: Vector3 = pts[o]
+					var ce := minf(minf(absf(p.z + zz), absf(p.z - zz)), minf(p.y, absf(p.x))) 
+					st.set_uv(Vector2(p.z + p.x * 0.7, p.y + absf(p.x) * 0.5))
+					st.set_uv2(Vector2(clampf(ce / 1.2, 0.0, 1.0), 0.0))
+					st.add_vertex(p)
+	# teto (da barra até ao topo do fundo)
+	quad.call(Vector3(0, hh, -zz), Vector3(0, hh, zz), Vector3(d * top, hh, zz), Vector3(d * top, hh, -zz), 1, 12)
+	# fundo inclinado
+	quad.call(Vector3(d * top, hh, -zz), Vector3(d * top, hh, zz), Vector3(d * fundo, 0, zz), Vector3(d * fundo, 0, -zz), 6, 12)
+	# lados
+	for s in [-1.0, 1.0]:
+		quad.call(Vector3(0, hh, s * zz), Vector3(d * top, hh, s * zz), Vector3(d * fundo, 0, s * zz), Vector3(0, 0, s * zz), 4, 4)
+	st.generate_normals()
+	return st.commit()
 
 func _stadium() -> void:
 	# bancada: degraus de betão e cadeiras; os adeptos são 3D (_fans)
@@ -232,6 +272,8 @@ func _stadium() -> void:
 	var seatm := StandardMaterial3D.new(); seatm.albedo_color = Color(0.2, 0.22, 0.26); seatm.roughness = 0.95
 	var roofm := StandardMaterial3D.new(); roofm.albedo_color = Color(0.14, 0.15, 0.18)
 	var boardm := StandardMaterial3D.new(); boardm.albedo_color = Color(0.08, 0.1, 0.12)
+	var wallm := StandardMaterial3D.new(); wallm.albedo_color = Color(0.3, 0.31, 0.34); wallm.roughness = 1.0
+	var ledm := StandardMaterial3D.new(); ledm.albedo_color = Color(0.1, 0.25, 0.6); ledm.emission_enabled = true; ledm.emission = Color(0.2, 0.45, 1.0); ledm.emission_energy_multiplier = 0.9
 	var sides := [[Vector3(W / 2, 0, -9), 0.0, W + 30], [Vector3(W / 2, 0, H + 9), 180.0, W + 30], [Vector3(-11, 0, H / 2), 90.0, H + 30], [Vector3(W + 11, 0, H / 2), -90.0, H + 30]]
 	for s in sides:
 		var root := Node3D.new(); root.position = s[0]; root.rotation_degrees.y = s[1]; add_child(root)
@@ -246,6 +288,19 @@ func _stadium() -> void:
 		var txt := Label3D.new(); txt.text = "ÁRBITRO DE CARICAS      APITO DOURADO      RELVADO VERDE      TAÇA DAS CARICAS"
 		txt.font_size = 64; txt.pixel_size = 0.009; txt.modulate = Color(0.95, 0.82, 0.25); txt.position = Vector3(0, 0.45, 3.27)
 		root.add_child(txt)
+		_stand_shell(root, float(s[2]), wallm, ledm)
+	# cantos: bancadas em diagonal que fecham o estádio
+	var cantos := [[Vector3(-15, 0, -13), 45.0], [Vector3(W + 15, 0, -13), -45.0], [Vector3(-15, 0, H + 13), 135.0], [Vector3(W + 15, 0, H + 13), -135.0]]
+	for i in cantos.size():
+		var cn: Array = cantos[i]
+		var root := Node3D.new(); root.position = cn[0]; root.rotation_degrees.y = cn[1]; add_child(root)
+		var stand := MeshInstance3D.new(); var bx := BoxMesh.new(); bx.size = Vector3(30, 0.6, 24)
+		stand.mesh = bx; stand.material_override = seatm
+		stand.rotation_degrees.x = 31; stand.position = Vector3(0, 6.5, -10.5); root.add_child(stand)
+		_fans(root, stand, 30.0, 4 + i, 3.0)
+		var roof := MeshInstance3D.new(); var rb := BoxMesh.new(); rb.size = Vector3(30, 0.5, 18)
+		roof.mesh = rb; roof.material_override = roofm; roof.position = Vector3(0, 19.5, -14); roof.rotation_degrees.x = -8; root.add_child(roof)
+		_stand_shell(root, 30.0, wallm, ledm)
 	for corner in [Vector3(-14, 0, -12), Vector3(W + 14, 0, -12), Vector3(-14, 0, H + 12), Vector3(W + 14, 0, H + 12)]:
 		var pole := MeshInstance3D.new(); var pc := CylinderMesh.new(); pc.top_radius = 0.4; pc.bottom_radius = 0.6; pc.height = 34
 		pole.mesh = pc; pole.material_override = roofm; pole.position = corner + Vector3(0, 17, 0); add_child(pole)
@@ -277,7 +332,21 @@ func _fan_mesh() -> ArrayMesh:
 	st.index()    # vértices partilhados: menos trabalho por adepto
 	return st.commit()
 
-func _fans(root: Node3D, stand: MeshInstance3D, comp: float, lado: int) -> void:
+# frente da bancada (muro com faixa LED), parede de trás até ao teto e pilares que seguram o teto
+func _stand_shell(root: Node3D, comp: float, wallm: Material, ledm: Material) -> void:
+	var muro := MeshInstance3D.new(); var mb := BoxMesh.new(); mb.size = Vector3(comp, 1.6, 0.4)
+	muro.mesh = mb; muro.material_override = wallm; muro.position = Vector3(0, 0.8, 0.6); root.add_child(muro)
+	var led := MeshInstance3D.new(); var lb := BoxMesh.new(); lb.size = Vector3(comp, 0.5, 0.05)
+	led.mesh = lb; led.material_override = ledm; led.position = Vector3(0, 1.25, 0.82); root.add_child(led)
+	var tras := MeshInstance3D.new(); var tb := BoxMesh.new(); tb.size = Vector3(comp, 20.0, 0.6)
+	tras.mesh = tb; tras.material_override = wallm; tras.position = Vector3(0, 10.0, -21.5); root.add_child(tras)
+	var n := maxi(1, int(comp / 30.0))
+	for k in n + 1:
+		var px := lerpf(-comp / 2.0 + 1.0, comp / 2.0 - 1.0, float(k) / n)
+		var pil := MeshInstance3D.new(); var pb := BoxMesh.new(); pb.size = Vector3(0.6, 20.0, 0.6)
+		pil.mesh = pb; pil.material_override = wallm; pil.position = Vector3(px, 10.0, -20.8); root.add_child(pil)
+
+func _fans(root: Node3D, stand: MeshInstance3D, comp: float, lado: int, margem := 4.0) -> void:
 	var mm := MultiMesh.new(); mm.transform_format = MultiMesh.TRANSFORM_3D; mm.use_custom_data = true
 	mm.mesh = fan_mesh if fan_mesh else _fan_mesh()
 	fan_mesh = mm.mesh
@@ -286,8 +355,8 @@ func _fans(root: Node3D, stand: MeshInstance3D, comp: float, lado: int) -> void:
 	var r := RandomNumberGenerator.new(); r.seed = 101 + lado
 	var xf: Transform3D = stand.transform
 	var pts: Array = []
-	var x := -comp / 2.0 + 15.0
-	while x < comp / 2.0 - 15.0:
+	var x := -comp / 2.0 + margem
+	while x < comp / 2.0 - margem:
 		var z := -11.5
 		while z < 11.5:
 			if r.randf() < 0.82: pts.append(Vector3(x + r.randf_range(-0.08, 0.08), 0.3, z))
@@ -308,7 +377,7 @@ func _fans(root: Node3D, stand: MeshInstance3D, comp: float, lado: int) -> void:
 	root.add_child(mi)
 	fan_mms.append([mm, lado, pts])
 	# bandeiras: mastro e pano a ondular, nas filas da frente e do meio
-	var n_b := int(comp / 22.0)
+	var n_b := int(comp / 22.0) if lado < 4 else 0
 	for k in n_b:
 		var bx := lerpf(-comp / 2.0 + 20.0, comp / 2.0 - 20.0, (k + 0.5) / n_b) + r.randf_range(-3, 3)
 		var p: Vector3 = xf * Vector3(bx, 0.3, r.randf_range(-4.0, 9.0))
@@ -514,7 +583,7 @@ func _params_for(truth: String, sd: float) -> Dictionary:
 
 func _restart() -> void:
 	t = 0.0
-	REF = ref_ini; ref_vel = 0.0; ref_olhar = Vector3.ZERO
+	REF = ref_ini; ref_vel = 0.0; ref_olhar = Vector3.ZERO; ref_foco = 0.0
 	min_contact = 99.0; contact_checked = false; slp = {}; kp = {}
 	hit_done = false
 	free_ball = false
@@ -588,6 +657,9 @@ func _process(delta: float) -> void:
 			_menu_cam(delta)
 	if jogo and modo in ["jogo", "flash"]: som.set_crowd(jogo.crowd / 100.0)
 	_fans_step(delta)
+	if rede_abana > 0.0 or delta > 10.0:
+		rede_abana = maxf(0.0, rede_abana - delta * 0.7)
+		for nm in nets: nm.set_shader_parameter("abana", rede_abana * rede_abana)
 
 var fan_lento := 0.0     # segundos seguidos abaixo de 24 fps com o 3D à vista
 var fan_nivel := 0       # 0 todos, 1 metade, 2 sem adeptos
@@ -777,6 +849,8 @@ func _ball3_step(dt: float) -> void:
 		if absf(bv3.y) < 0.01 and b3.y <= 0.111: bv3 *= exp(-dt * 0.9)
 		if b3_net != 0.0 and (b3.x - b3_net) * sc.get("dir_in", 1.0) > 0:
 			b3.x = b3_net; bv3 = Vector3(0, min(bv3.y, 0.0), bv3.z * 0.2)
+			if not sc.get("rede_abanou", false):
+				sc.rede_abanou = true; rede_abana = 1.0
 	_set_ball(b3)
 
 # ---------- cenas ----------
@@ -1169,7 +1243,12 @@ func _camera() -> void:
 		if lance == 9 or ref_olhar == Vector3.ZERO: ref_olhar = look
 		ref_olhar = ref_olhar.lerp(look, clampf(get_process_delta_time() * (7.0 - 3.5 * ref_cansaco), 0.0, 1.0))
 		var alvo := ref_olhar + shake * 0.5 + Vector3.UP * resp + bob
-		cam.fov = (38 if eye.distance_to(look) < 25 else 30) + corre * 1.5 - ref_cansaco * 1.0
+		# foco: como o olho se fixa no lance, o enquadramento aperta com a distância (o lance ocupa ~14 m de altura)
+		var dl := eye.distance_to(look)
+		var foco := clampf(rad_to_deg(2.0 * atan(6.0 / maxf(dl, 1.0))), 15.0, 40.0)
+		if ref_foco == 0.0: ref_foco = foco
+		ref_foco = lerpf(ref_foco, foco, clampf(get_process_delta_time() * 2.0, 0.0, 1.0))
+		cam.fov = ref_foco + corre * 1.5 - ref_cansaco * 1.0
 		cam.look_at_from_position(eye, alvo)
 		# inclina com o balanço da passada
 		cam.rotate_object_local(Vector3(0, 0, 1), sin(ref_ph) * 0.002 * corre + sin(tm * 0.7) * 0.002 * ref_cansaco)
@@ -1749,7 +1828,7 @@ func _show_menu() -> void:
 	ui.info("", ""); ui.ref_say("")
 	som.set_crowd(0.15)
 	var b := _best()
-	ui.show_menu(car.exists(), ("%.1f" % b).replace(".", ",") if b > 0 else "", som.voice_on, not som.muted)
+	ui.show_menu(car.exists(), ("%.1f" % b).replace(".", ",") if b > 0 else "", som.voice_on, not som.muted, not som.publico_off)
 
 func on_ui(a: String, v) -> void:
 	match a:
@@ -1771,6 +1850,7 @@ func on_ui(a: String, v) -> void:
 			if on: som.say("Rádio ligado.", "VAR")
 			_show_menu()
 		"som": som.toggle(); _show_menu()
+		"publico": som.toggle_publico(); _show_menu()
 		"decide": _decide(v)
 		"replay": _replay()
 		"tv": tv_start()
