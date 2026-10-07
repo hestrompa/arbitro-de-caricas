@@ -61,7 +61,11 @@ var hit_done := false
 var toque := {}               # {"t": instante, "pt": ponto, "g": folga} quando houve toque
 var sim_off := 0.0
 var desvio := Vector3.ZERO     # quanto o atacante foi afastado para os corpos não se atravessarem
-var hitstop := 0.0            # segundos reais em câmara lenta logo a seguir ao toque
+var hitstop := 0.0            # segundos reais do "frame de impacto": imagem quase parada, depois câmara lenta
+const HIT_CONGELA := 0.42     # quase parado (como num desenho animado): vê-se bem onde tocou
+const HIT_LENTO := 0.4        # depois volta devagar à velocidade normal
+var brilhos: Array = []       # membros (e bola) que tocaram, a brilhar por cima de tudo: [{mi, j, i, vida}]
+var _estrela: ArrayMesh = null
 const PARTES_TOQUE := {0: [["perna", "pe", "tronco"], ["perna", "pe", "tronco", "braco"]], 4: [["perna", "pe", "tronco"], ["perna", "pe", "tronco", "braco"]], 1: [["mao", "braco"], ["tronco"]], 3: [["tronco", "braco"], ["tronco", "braco"]]}
 var bpos := Vector2.ZERO   # bola
 var bvel := Vector2.ZERO
@@ -597,6 +601,7 @@ func _restart() -> void:
 	min_contact = 99.0; contact_checked = false; slp = {}; kp = {}
 	hit_done = false
 	toque = {}; hitstop = 0.0; sim_off = 0.0
+	_limpa_brilhos()
 	_desfaz_desvio()
 	free_ball = false
 	b3_free = false; b3_net = 0.0; bv3 = Vector3.ZERO
@@ -716,8 +721,9 @@ func _scene_process(delta: float) -> void:
 	if not (modo in ["lance", "var", "rever", "treino"]): return    # o vídeo do observador pode ter acabado agora
 	get_tree().paused = paused
 	# no toque, o tempo abranda um instante (como num desenho animado) para se ver bem o contacto
-	if hitstop > 0.0 and not paused: hitstop -= delta / maxf(Engine.time_scale, 0.01)
-	Engine.time_scale = speed * (0.22 if hitstop > 0.0 else 1.0)
+	var real_dt := delta / maxf(Engine.time_scale, 0.001)
+	if hitstop > 0.0 and not paused: hitstop = maxf(0.0, hitstop - real_dt)
+	Engine.time_scale = speed * _hit_escala()
 	var dt := 0.0 if paused else delta
 	_desfaz_desvio()
 	if modo in ["lance", "var"] and jogo:
@@ -778,6 +784,9 @@ func _scene_process(delta: float) -> void:
 	else: _ball3_step(dt)
 	_var_lines()
 	_camera()
+	# no frame de impacto a câmara aperta um pouco sobre o lance
+	if hitstop > 0.0 and cam_mode != 5: cam.fov *= 1.0 - 0.14 * clampf((hitstop - HIT_LENTO * 0.5) / HIT_CONGELA, 0.0, 1.0)
+	_brilhos_step(0.0 if paused else real_dt)
 	if modo == "treino":
 		var info := ""
 		if hit_done and t > TC + 1.2: info = "Verdade do lance: " + outcome + ("  ·  " + verdict if verdict != "" else "")
@@ -2009,6 +2018,11 @@ func _ball(dt: float) -> void:
 		if ahead < 0.35: bpos = Vector2(ap.x, ap.z) + A * 0.35 + (bpos - Vector2(ap.x, ap.z) - A * (bpos - Vector2(ap.x, ap.z)).dot(A))
 	bvel *= exp(-dt * (1.6 if not free_ball else 0.9))
 	bpos += bvel * dt
+	# corte limpo: nos últimos instantes a bola encontra o pé do defesa, que lhe toca primeiro (e só nela)
+	if clean and lance in [0, 4] and not hit_done and t > TC - 0.25:
+		var pe := _bico_do_pe(def, Vector3(bpos.x, 0.11, bpos.y))
+		var k := clampf((t - (TC - 0.25)) / 0.25, 0.0, 1.0)
+		bpos = bpos.lerp(Vector2(pe.x, pe.z), k * k)
 	if not free_ball and bvel.length() < vA: bvel = A * vA
 	ball.position = Vector3(bpos.x, 0.11, bpos.y)
 	if not paused and bvel.length() > 0.05: ball.rotate(Vector3(bvel.y, 0, -bvel.x).normalized(), bvel.length() / 0.11 * dt)
@@ -2077,9 +2091,14 @@ func _tackle(dt: float) -> void:
 			att.hurt = 1.0
 			att.fall(v3 * 1.1 + Vector3(0, 1.6, 0), [], Vector3.ZERO, "dive", 0.9)
 			return
-		free_ball = true; bvel = (A * 0.6 + D * 0.8).normalized() * 6.0
+		# na falta ninguém tocou na bola: segue em frente sozinha
+		free_ball = true; bvel = A * maxf(bvel.length(), vA * 0.9)
 		if clean:
 			outcome = "corte limpo: o defesa tira a bola, o atacante só tropeça (siga)"
+			var b3 := Vector3(bpos.x, 0.11, bpos.y)
+			_impacto(b3, 0.6, true)
+			_brilha_bola()
+			_brilha(def, b3, ["pe", "perna"], Color(0.3, 0.95, 1.0))
 			bvel = (D * 0.9 - A * 0.2).normalized() * 9.0
 			att.hit(Vector3(0.3, 0.0, 0.25 * side))
 			att.play("jog", 0.2)
@@ -2144,13 +2163,20 @@ func _toque_agora(com_toque: bool) -> bool:
 	var f: Array = Jogador.folga(def, att, pr[0], pr[1])
 	if float(f[0]) <= 0.03 or t >= TC + 0.12:
 		toque = {"t": t, "pt": f[1], "g": f[0]}
-		_impacto(f[1], force)
+		var pa: Array = pr[1]; var pd: Array = pr[0]; var pt: Vector3 = f[1]
+		if lance in [0, 4]:
+			var fp: Array = Jogador.folga(def, att, ["pe", "perna"], ["perna", "pe"])
+			if float(fp[0]) < 0.12: pt = fp[1]; pa = ["perna", "pe"]; pd = ["pe", "perna"]
+		_impacto(pt, force)
+		_brilha(att, pt, pa, Color(1.0, 0.12, 0.08))
+		_brilha(def, pt, pd, Color(1.0, 0.75, 0.1))
 		return true
 	return false
 
 # marca do impacto: anel que se abre no ponto do toque, um tufo de relva/pó e um instante em câmara lenta
-func _impacto(pt: Vector3, f: float) -> void:
-	if modo in ["lance", "treino", "rever", "var"] and tv.is_empty(): hitstop = 0.16 + 0.08 * clampf(f - 0.8, 0.0, 1.0)
+func _impacto(pt: Vector3, f: float, bola := false) -> void:
+	if modo in ["lance", "treino", "rever", "var"] and tv.is_empty(): hitstop = HIT_CONGELA + HIT_LENTO + 0.12 * clampf(f - 0.8, 0.0, 1.0)
+	_estrela_em(pt, Color(0.35, 0.95, 1.0) if bola else Color(1.0, 0.3, 0.05), Color.WHITE, 0.32 + 0.1 * clampf(f - 0.6, 0.0, 1.0))
 	var ring := MeshInstance3D.new(); var tm := TorusMesh.new(); tm.inner_radius = 0.12; tm.outer_radius = 0.16; ring.mesh = tm
 	var mt := StandardMaterial3D.new(); mt.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; mt.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mt.albedo_color = Color(1, 0.95, 0.7, 0.9); mt.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
@@ -2347,3 +2373,122 @@ func _separate(all: Array) -> void:
 			all[i].off += push * wi; all[j].off -= push * wj
 			all[i].node.position += Vector3(push.x, 0, push.y) * wi
 			all[j].node.position -= Vector3(push.x, 0, push.y) * wj
+
+# ---------- frame de impacto: estrela no ponto do toque e membros que tocaram a brilhar ----------
+func _hit_escala() -> float:
+	if hitstop <= 0.0: return 1.0
+	if hitstop > HIT_LENTO: return 0.03
+	return lerpf(1.0, 0.25, hitstop / HIT_LENTO)
+
+# onde fica a bola encostada ao bico do pé do defesa que está mais perto dela
+func _bico_do_pe(j: Jogador, b: Vector3) -> Vector3:
+	var best := Vector3.ZERO; var bd := 1e9
+	for c in j.capsulas():
+		if c[3] != "pe": continue
+		var tip: Vector3 = c[1]
+		var fw: Vector3 = (c[1] - c[0]); fw.y = 0.0
+		var p: Vector3 = tip + (fw.normalized() if fw.length() > 0.01 else Vector3.ZERO) * 0.1
+		var d := p.distance_to(b)
+		if d < bd: bd = d; best = p
+	return best
+
+func _estrela_mesh() -> ArrayMesh:
+	if _estrela != null: return _estrela
+	var st := SurfaceTool.new(); st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# coroa de picos à volta do ponto do toque; o meio fica vazio para se ver bem o contacto
+	var n := 12
+	for i in n * 2:
+		var a0 := TAU * i / (n * 2.0); var a1 := TAU * (i + 1) / (n * 2.0)
+		var r0 := 1.0 if i % 2 == 0 else 0.74; var r1 := 0.74 if i % 2 == 0 else 1.0
+		var i0 := Vector3(cos(a0), sin(a0), 0) * 0.6; var i1 := Vector3(cos(a1), sin(a1), 0) * 0.6
+		var o0 := Vector3(cos(a0) * r0, sin(a0) * r0, 0); var o1 := Vector3(cos(a1) * r1, sin(a1) * r1, 0)
+		st.add_vertex(i0); st.add_vertex(i1); st.add_vertex(o0)
+		st.add_vertex(i1); st.add_vertex(o1); st.add_vertex(o0)
+	_estrela = st.commit()
+	return _estrela
+
+func _mat_brilho(c: Color, bill := false) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.no_depth_test = true; m.cull_mode = BaseMaterial3D.CULL_DISABLED; m.render_priority = 10
+	m.albedo_color = c
+	if bill: m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	return m
+
+# estrela de banda desenhada: abre de repente e fica enquanto a imagem está quase parada
+func _estrela_em(pt: Vector3, fora: Color, dentro: Color, tam: float) -> void:
+	var raiz := Node3D.new(); add_child(raiz); raiz.global_position = pt
+	# de longe (vista do árbitro) a estrela nunca fica pequena demais
+	tam = maxf(tam, cam.global_position.distance_to(pt) * 0.03)
+	for k in 2:
+		# contorno escuro (traço de banda desenhada) e a coroa de cor: vermelha na perna, ciano na bola
+		var mi := MeshInstance3D.new(); mi.mesh = _estrela_mesh()
+		var c: Color = Color(0.05, 0.02, 0.0, 0.6) if k == 0 else fora
+		if k == 1: c.a = 0.95
+		mi.material_override = _mat_brilho(c, true); mi.material_override.render_priority = 10 + k
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.scale = Vector3.ONE * (1.1 if k == 0 else 1.0)
+		raiz.add_child(mi)
+	raiz.scale = Vector3.ONE * 0.01
+	var tw := create_tween().set_ignore_time_scale(true)
+	tw.tween_property(raiz, "scale", Vector3.ONE * tam * 1.25, 0.07)
+	tw.tween_property(raiz, "scale", Vector3.ONE * tam, 0.08)
+	tw.tween_interval(HIT_CONGELA)
+	tw.tween_property(raiz, "scale", Vector3.ONE * tam * 0.2, 0.3)
+	tw.tween_callback(raiz.queue_free)
+	brilhos.append({"mi": raiz, "j": null, "i": -1, "vida": 99.0, "solta": true})
+
+# o membro que tocou fica a brilhar (vê-se através dos corpos) e acompanha o movimento
+func _brilha(j: Jogador, pt: Vector3, partes: Array, c: Color) -> void:
+	var caps: Array = j.capsulas()
+	var bi := -1; var bd := 1e9
+	for i in caps.size():
+		var cp: Array = caps[i]
+		if not (cp[3] in partes): continue
+		var q: Vector3 = Jogador.seg_par(cp[0], cp[1], pt, pt)[0]
+		var d := q.distance_to(pt) - float(cp[2])
+		if d < bd: bd = d; bi = i
+	if bi < 0: return
+	var mi := MeshInstance3D.new(); var cm := CapsuleMesh.new()
+	cm.radius = float(caps[bi][2]) + 0.03; cm.height = 1.0; cm.radial_segments = 12; cm.rings = 4
+	mi.mesh = cm; c.a = 0.6; mi.material_override = _mat_brilho(c)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	brilhos.append({"mi": mi, "j": j, "i": bi, "vida": HIT_CONGELA + HIT_LENTO + 0.6, "a": 0.6})
+	_brilhos_step(0.0)
+
+func _brilha_bola() -> void:
+	var mi := MeshInstance3D.new(); var sm := SphereMesh.new(); sm.radius = 0.17; sm.height = 0.34
+	mi.mesh = sm; mi.material_override = _mat_brilho(Color(0.3, 0.95, 1.0, 0.55))
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	brilhos.append({"mi": mi, "j": null, "i": -2, "vida": HIT_CONGELA + HIT_LENTO + 0.6, "a": 0.55})
+	_brilhos_step(0.0)
+
+func _brilhos_step(rdt: float) -> void:
+	for b in brilhos.duplicate():
+		if b.get("solta", false):
+			if not is_instance_valid(b.mi): brilhos.erase(b)
+			continue
+		b.vida -= rdt
+		var mi: MeshInstance3D = b.mi
+		if b.vida <= 0.0 or not is_instance_valid(mi):
+			if is_instance_valid(mi): mi.queue_free()
+			brilhos.erase(b); continue
+		var al: float = float(b.a) * clampf(b.vida / 0.35, 0.0, 1.0)
+		(mi.material_override as StandardMaterial3D).albedo_color.a = al
+		if int(b.i) == -2:
+			mi.global_position = ball.global_position; continue
+		var cp: Array = (b.j as Jogador).capsulas()[int(b.i)]
+		var p0: Vector3 = cp[0]; var p1: Vector3 = cp[1]
+		var ax := p1 - p0; var ln := maxf(ax.length(), 0.01)
+		var y := ax / ln
+		var x := y.cross(Vector3.FORWARD if absf(y.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT).normalized()
+		var z := x.cross(y)
+		(mi.mesh as CapsuleMesh).height = ln + 2.0 * (mi.mesh as CapsuleMesh).radius
+		mi.global_transform = Transform3D(Basis(x, y, z), (p0 + p1) * 0.5)
+
+func _limpa_brilhos() -> void:
+	for b in brilhos:
+		if is_instance_valid(b.mi): b.mi.queue_free()
+	brilhos.clear()
