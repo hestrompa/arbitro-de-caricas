@@ -413,6 +413,66 @@ func bone_world(name: String) -> Vector3:
 			if pb.bone_name == name: return pb.global_position
 	return skel.global_transform * skel.get_bone_global_pose(bi[name]).origin
 
+# ---------- corpo em cápsulas (para medir o contacto real entre dois jogadores) ----------
+# [ponto a, ponto b, raio, parte]; a pele real fica a ~raio do segmento entre os ossos
+func capsulas() -> Array:
+	var gt := skel.global_transform
+	var P := func(n: String) -> Vector3: return gt * skel.get_bone_global_pose(bi[n]).origin
+	var out: Array = []
+	for sd in ["L", "R"]:
+		out.append([P.call("upperleg01_" + sd), P.call("lowerleg01_" + sd), 0.08, "perna"])
+		out.append([P.call("lowerleg01_" + sd), P.call("foot_" + sd), 0.055, "perna"])
+		var ft: Transform3D = gt * skel.get_bone_global_pose(bi["foot_" + sd])
+		out.append([ft * Vector3(0, -0.04, -0.05), ft * Vector3(0, -0.04, 0.17), 0.045, "pe"])
+		out.append([P.call("upperarm01_" + sd), P.call("lowerarm01_" + sd), 0.05, "braco"])
+		out.append([P.call("lowerarm01_" + sd), P.call("wrist_" + sd), 0.04, "braco"])
+		var wt: Transform3D = gt * skel.get_bone_global_pose(bi["wrist_" + sd])
+		out.append([wt.origin, wt * Vector3(0, 0.09, 0), 0.04, "mao"])
+	out.append([P.call("root"), P.call("spine01"), 0.15, "tronco"])
+	out.append([P.call("spine01"), P.call("neck01"), 0.15, "tronco"])
+	out.append([P.call("head"), P.call("head") + Vector3(0, 0.18, 0), 0.1, "cabeca"])
+	return out
+
+# pontos mais próximos entre dois segmentos 3D
+static func seg_par(p1: Vector3, q1: Vector3, p2: Vector3, q2: Vector3) -> Array:
+	var d1 := q1 - p1; var d2 := q2 - p2; var r := p1 - p2
+	var a := d1.dot(d1); var e := d2.dot(d2); var f := d2.dot(r)
+	var s := 0.0; var t := 0.0
+	if a <= 1e-8 and e <= 1e-8: return [p1, p2]
+	if a <= 1e-8:
+		t = clampf(f / e, 0.0, 1.0)
+	else:
+		var c := d1.dot(r)
+		if e <= 1e-8:
+			s = clampf(-c / a, 0.0, 1.0)
+		else:
+			var b := d1.dot(d2); var den := a * e - b * b
+			s = clampf((b * f - c * e) / den, 0.0, 1.0) if den > 1e-8 else 0.0
+			t = (b * s + f) / e
+			if t < 0.0: t = 0.0; s = clampf(-c / a, 0.0, 1.0)
+			elif t > 1.0: t = 1.0; s = clampf((b - c) / a, 0.0, 1.0)
+	return [p1 + d1 * s, p2 + d2 * t]
+
+static func seg_dist(p1: Vector3, q1: Vector3, p2: Vector3, q2: Vector3) -> float:
+	var c: Array = seg_par(p1, q1, p2, q2)
+	return (c[0] - c[1]).length()
+
+# folga entre a pele de dois jogadores (negativa = sobrepostos), só entre as partes pedidas;
+# devolve [folga, ponto de contacto, direção de a para b]
+static func folga(a: Jogador, b: Jogador, partes_a: Array, partes_b: Array) -> Array:
+	var best := 99.0; var pt := Vector3.ZERO; var dirv := Vector3.ZERO
+	var ca := a.capsulas(); var cb := b.capsulas()
+	for x in ca:
+		if not (x[3] in partes_a): continue
+		for y in cb:
+			if not (y[3] in partes_b): continue
+			var c: Array = seg_par(x[0], x[1], y[0], y[1])
+			var g: float = (c[0] - c[1]).length() - float(x[2]) - float(y[2])
+			if g < best:
+				best = g; pt = (c[0] + c[1]) * 0.5
+				dirv = c[1] - c[0]
+	return [best, pt, dirv.normalized() if dirv.length() > 0.001 else Vector3.ZERO]
+
 func body_pos() -> Vector3:
 	if rag: return bones[0].global_position
 	if phase == "desliza" or phase == "kin" or phase == "chao_k": return skel.global_transform * skel.get_bone_global_pose(0).origin * Vector3(1, 0, 1)

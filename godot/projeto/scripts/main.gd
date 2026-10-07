@@ -57,6 +57,12 @@ var outcome := ""
 var verdict := ""
 var side := 1.0
 var hit_done := false
+# contacto real (pele com pele): o lance reage no instante em que os corpos se tocam, não num tempo fixo
+var toque := {}               # {"t": instante, "pt": ponto, "g": folga} quando houve toque
+var sim_off := 0.0
+var desvio := Vector3.ZERO     # quanto o atacante foi afastado para os corpos não se atravessarem
+var hitstop := 0.0            # segundos reais em câmara lenta logo a seguir ao toque
+const PARTES_TOQUE := {0: [["perna", "pe", "tronco"], ["perna", "pe", "tronco", "braco"]], 4: [["perna", "pe", "tronco"], ["perna", "pe", "tronco", "braco"]], 1: [["mao", "braco"], ["tronco"]], 3: [["tronco", "braco"], ["tronco", "braco"]]}
 var bpos := Vector2.ZERO   # bola
 var bvel := Vector2.ZERO
 var free_ball := false
@@ -134,6 +140,7 @@ func _ready() -> void:
 	hi_q = RenderingServer.get_current_rendering_method() != "gl_compatibility"
 	rng.randomize()
 	_world()
+	var corretor := Corretor.new(); corretor.main = self; corretor.process_priority = 1000; add_child(corretor)
 	_stadium()
 	_fans_colors(AZUL.color, LARANJA.color)
 	if hi_q: _grass()
@@ -480,7 +487,9 @@ func _setup_scene(l: Dictionary) -> void:
 		match k:
 			"foul":
 				if l.get("light", false):
-					c = {"lance": 0, "force": 0.92 if T == "falta" else (0.84 if T == "siga" else 0.6), "side": l.side, "sim": T == "simulacao", "clean": false, "phi": rng.randf_range(55, 75), "vD": 7.2}
+					# toque leve na área, sempre de pé (nunca carrinho): na falta o pé apanha o tornozelo;
+					# no siga o defesa toca primeiro na bola e o atacante cai com facilidade
+					c = {"lance": 0, "force": 0.8 if T == "falta" else 0.6, "side": l.side, "sim": T == "simulacao", "clean": T == "siga", "de_pe": true, "phi": rng.randf_range(55, 75), "vD": 7.2}
 				else:
 					c = _params_for(T, l.side)
 					if c.lance == 0 and T in ["falta", "amarelo", "vermelho"]: c.phi = clamp(float(l.phi), 18.0, 85.0)
@@ -587,6 +596,8 @@ func _restart() -> void:
 	REF = ref_ini; ref_vel = 0.0; ref_olhar = Vector3.ZERO; ref_foco = 0.0
 	min_contact = 99.0; contact_checked = false; slp = {}; kp = {}
 	hit_done = false
+	toque = {}; hitstop = 0.0; sim_off = 0.0
+	_desfaz_desvio()
 	free_ball = false
 	b3_free = false; b3_net = 0.0; bv3 = Vector3.ZERO
 	outcome = ""; verdict = ""
@@ -704,8 +715,11 @@ func _scene_process(delta: float) -> void:
 	_tv_step()
 	if not (modo in ["lance", "var", "rever", "treino"]): return    # o vídeo do observador pode ter acabado agora
 	get_tree().paused = paused
-	Engine.time_scale = speed
+	# no toque, o tempo abranda um instante (como num desenho animado) para se ver bem o contacto
+	if hitstop > 0.0 and not paused: hitstop -= delta / maxf(Engine.time_scale, 0.01)
+	Engine.time_scale = speed * (0.22 if hitstop > 0.0 else 1.0)
 	var dt := 0.0 if paused else delta
+	_desfaz_desvio()
 	if modo in ["lance", "var"] and jogo:
 		jogo.tick(delta)          # temporizadores da partida (o VAR do treino)
 		if not (modo in ["lance", "var"]): return
@@ -2021,10 +2035,11 @@ func _tackle(dt: float) -> void:
 		C = P + A * 1.0 - D * 0.75
 		if t > TC - 0.5 and t < TC - 0.45 and not free_ball: bvel = A * (vA + 2.4)
 	# carrinho: nas faltas a sério e nos cortes limpos o defesa atira-se de pés para a frente e desliza
-	var sl := lance == 0 and not sim_dive and (clean or force >= 0.82)
+	var sl: bool = lance == 0 and not sim_dive and (clean or force >= 0.82) and not cur.get("de_pe", false)
 	var dp: Vector2
 	if t < TC: dp = C - D * vD * (TC - t)
 	else: dp = C + D * 1.6 * (1.0 - exp(-(t - TC) * 3.0))
+	if sim_dive: dp -= D * sim_off       # na simulação o defesa nunca chega a menos de 30 cm
 	if sl:
 		# carrinho capturado (Mixamo): o pé da frente chega ao tornozelo (ou à bola) exatamente em TC
 		if slp.is_empty(): slp = _slide_plan(P + A * 1.4 if clean else P)
@@ -2044,8 +2059,14 @@ func _tackle(dt: float) -> void:
 	if sim_dive: tgt = Vector3(P.x - D.x * 1.5, 0.1, P.y - D.y * 1.5)
 	if stamp and not clean: tgt = att.bone_world("foot_" + leg) - Vector3(A.x, 0, A.y) * 0.1 + Vector3(0, 0.07, 0)
 	var w: float = clamp(1.0 - abs(t - TC) / 0.28, 0.0, 1.0)
+	# depois do toque o pé fica onde tocou (não atravessa a perna do atacante)
+	if not toque.is_empty() and t < toque.t + 0.2: tgt = toque.get("pe", tgt); w = 1.0
 	if not sl: def.ik = {"foot_R": [tgt, w]}
-	if not hit_done and t >= TC:
+	if sim_dive and t > TC - 0.5:
+		var gs: float = Jogador.folga(def, att, ["perna", "pe", "tronco"], ["perna", "pe", "tronco", "braco"])[0]
+		if gs < 0.32: sim_off = minf(sim_off + (0.32 - gs) * 0.8, 2.0)
+	if not hit_done and _toque_agora(not (sim_dive or clean)):
+		if not toque.is_empty(): toque.pe = tgt
 		hit_done = true
 		att.hurt_leg = leg
 		var v3 := Vector3(A.x, 0, A.y) * vA
@@ -2062,7 +2083,7 @@ func _tackle(dt: float) -> void:
 			bvel = (D * 0.9 - A * 0.2).normalized() * 9.0
 			att.hit(Vector3(0.3, 0.0, 0.25 * side))
 			att.play("jog", 0.2)
-		elif force < 0.78:
+		elif force < 0.78 and not L.get("fall", false):
 			outcome = "toque leve no tornozelo: desequilibra, não cai (falta discutível)"
 			att.push(D * 2.2 * force); att.hit(Vector3(0.0, 0.0, 1.2 * side))
 			att.play("jog", 0.2)
@@ -2083,6 +2104,72 @@ func _tackle(dt: float) -> void:
 		att.move(att.pos + away * v * dt, away, v)
 		att.play("jog" if v > 1.0 else "idle", 0.25)
 	elif hit_done: _settle(att, dt, A)
+
+# Os corpos não se atravessam: depois do toque encostam (no máximo 2 cm), e sem falta (simulação,
+# corte limpo) ficam sempre afastados. Cede o atacante (ou o defesa, se o atacante já estiver em queda livre).
+# Corre depois das animações deste frame (nó "Corretor", prioridade alta) e é desfeito no início do seguinte,
+# por isso nunca se acumula nem atrasa um frame.
+var desvio_j: Jogador = null
+func _desfaz_desvio() -> void:
+	if desvio_j != null and desvio != Vector3.ZERO: desvio_j.node.position -= desvio
+	desvio = Vector3.ZERO; desvio_j = null
+
+func _sem_atravessar() -> void:
+	if not (modo in ["lance", "var", "rever", "treino"]) or not (lance in [0, 1, 3, 4]): return
+	var minimo := 99.0
+	if (sim_dive or clean) and lance in [0, 4] and t > TC - 0.4 and t < TC + 1.5: minimo = 0.15
+	elif not toque.is_empty() and t < toque.t + 0.6: minimo = -0.02
+	if minimo > 50.0: return
+	var j: Jogador = att if not att.rag else def
+	if j.rag: return
+	var sinal := 1.0 if j == att else -1.0
+	for it in 10:
+		var f: Array = Jogador.folga(def, att, ["perna", "pe", "tronco", "braco", "mao"], ["perna", "pe", "tronco", "braco", "mao"])
+		var g: float = f[0]
+		if g >= minimo: break
+		var n: Vector3 = f[2]; n.y = 0.0
+		if n.length() < 0.2:
+			var a3 := att.body_pos(); var d3 := def.body_pos()
+			n = Vector3(a3.x - d3.x, 0, a3.z - d3.z)
+		n = n.normalized() if n.length() > 0.01 else Vector3(A.x, 0, A.y)
+		var dv := n * (minimo - g) * (1.2 if it < 5 else 2.0) * sinal
+		desvio += dv; desvio_j = j; j.node.position += dv
+
+# Há toque? Nas faltas o lance reage no primeiro instante em que as peles se tocam (perto de TC);
+# se por azar a animação não chegar a tocar, força-se o toque em TC + 0,12 s. Sem toque (simulação, corte limpo): TC.
+func _toque_agora(com_toque: bool) -> bool:
+	if not com_toque: return t >= TC
+	if t < TC - 0.3: return false
+	var pr: Array = PARTES_TOQUE.get(lance, [["perna", "pe"], ["perna", "pe"]])
+	var f: Array = Jogador.folga(def, att, pr[0], pr[1])
+	if float(f[0]) <= 0.03 or t >= TC + 0.12:
+		toque = {"t": t, "pt": f[1], "g": f[0]}
+		_impacto(f[1], force)
+		return true
+	return false
+
+# marca do impacto: anel que se abre no ponto do toque, um tufo de relva/pó e um instante em câmara lenta
+func _impacto(pt: Vector3, f: float) -> void:
+	if modo in ["lance", "treino", "rever", "var"] and tv.is_empty(): hitstop = 0.16 + 0.08 * clampf(f - 0.8, 0.0, 1.0)
+	var ring := MeshInstance3D.new(); var tm := TorusMesh.new(); tm.inner_radius = 0.12; tm.outer_radius = 0.16; ring.mesh = tm
+	var mt := StandardMaterial3D.new(); mt.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; mt.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	mt.albedo_color = Color(1, 0.95, 0.7, 0.9); mt.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	ring.material_override = mt; ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	ring.rotation_degrees.x = 90
+	add_child(ring); ring.global_position = pt
+	var tw := create_tween(); tw.set_parallel(true)
+	tw.tween_property(ring, "scale", Vector3.ONE * (2.2 + f), 0.35)
+	tw.tween_property(mt, "albedo_color:a", 0.0, 0.35)
+	tw.chain().tween_callback(ring.queue_free)
+	if pt.y < 0.6:
+		var pf := CPUParticles3D.new(); pf.one_shot = true; pf.amount = 14; pf.lifetime = 0.6; pf.explosiveness = 1.0
+		pf.direction = Vector3(0, 1, 0); pf.spread = 70.0; pf.initial_velocity_min = 0.8; pf.initial_velocity_max = 1.8; pf.gravity = Vector3(0, -6, 0)
+		pf.scale_amount_min = 0.03; pf.scale_amount_max = 0.06
+		var qm := QuadMesh.new(); qm.size = Vector2(1, 1); pf.mesh = qm
+		var pm := StandardMaterial3D.new(); pm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; pm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES; pm.albedo_color = Color(0.32, 0.5, 0.2)
+		qm.material = pm
+		add_child(pf); pf.global_position = pt; pf.emitting = true
+		get_tree().create_timer(1.2, true, false, true).timeout.connect(pf.queue_free)
 
 # tropeção capturado: o corpo cai para a frente como na captura, depois fica queixoso no chão
 func _trip(j: Jogador, d: Vector2, k: float) -> void:
@@ -2142,6 +2229,10 @@ func _check_contact() -> void:
 	if sim_dive and min_contact < 0.3:
 		outcome = "houve toque na perna: falta"
 		if not L.is_empty() and not L.has("decided") and L.truth == "simulacao": L.truth = "falta"
+	# a verdade segue o que o 3D mostra: entrada que acerta na perna sem tocar primeiro na bola nunca é "lance limpo"
+	if not sim_dive and not clean and not toque.is_empty() and not L.is_empty() and not L.has("decided") and L.get("truth", "") == "siga":
+		L.truth = "falta"; L.erase("interp")
+		outcome = "acertou na perna sem tocar na bola: falta"
 	if OS.is_debug_build(): print("contacto ", "sim" if sim_dive else ("limpo" if clean else "falta"), " %.2f m" % min_contact)
 
 # 2) empurrão nas costas: o defesa chega por trás e empurra com as duas mãos
@@ -2155,7 +2246,7 @@ func _push(dt: float) -> void:
 	var w: float = clamp(1.0 - abs(t - TC) / 0.3, 0.0, 1.0)
 	def.ik = {"wrist_L": [back + Vector3(-A.y, 0, A.x) * 0.13, w], "wrist_R": [back - Vector3(-A.y, 0, A.x) * 0.13, w]}
 	def.lean = Vector3(0.25 * w, 0, 0)
-	if not hit_done and t >= TC:
+	if not hit_done and _toque_agora(true):
 		hit_done = true
 		free_ball = true; bvel = A * 6.0
 		var v3 := Vector3(A.x, 0, A.y) * vA
@@ -2215,7 +2306,7 @@ func _shoulder(dt: float) -> void:
 	var lw: float = clamp(1.0 - abs(t - TC) / 0.35, 0.0, 1.0)
 	def.lean = Vector3(0, 0, 0.28 * lw * side)
 	att.lean = Vector3(0, 0, -0.2 * lw * side)
-	if not hit_done and t >= TC:
+	if not hit_done and _toque_agora(true):
 		hit_done = true
 		if force < 1.2:
 			outcome = "carga de ombro legal (lado a lado, bola em disputa): o laranja perde o equilíbrio"

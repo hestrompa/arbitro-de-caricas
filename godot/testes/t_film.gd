@@ -3,6 +3,8 @@ extends SceneTree
 var m
 const OUT = "/tmp/claude-0/-home-claude/03cb57f4-a453-5d33-87b7-2efcd6ebbd73/scratchpad/godot/t/f/"
 var CASES = [
+	["area_siga", {"lance": 0, "force": 0.6, "side": 1.0, "sim": false, "clean": true, "de_pe": true, "phi": 65.0, "vD": 7.2}],
+	["area_falta", {"lance": 0, "force": 0.8, "side": 1.0, "sim": false, "clean": false, "de_pe": true, "phi": 65.0, "vD": 7.2}],
 	["sim", {"lance": 0, "force": 0.6, "side": 1.0, "sim": true, "clean": false, "phi": 50.0, "vD": 8.0}],
 	["limpo", {"lance": 0, "force": 0.6, "side": 1.0, "sim": false, "clean": true, "phi": 50.0, "vD": 8.0}],
 	["falta", {"lance": 0, "force": 1.0, "side": 1.0, "sim": false, "clean": false, "phi": 50.0, "vD": 8.0}],
@@ -29,7 +31,7 @@ func _initialize():
 		if OS.get_environment("TV") != "": m.tv_start()
 		m.cam_mode = int(OS.get_environment("CAM")) if OS.get_environment("CAM") != "" else 1
 		var k := 0
-		for dt in [-0.6, -0.25, 0.0, 0.15, 0.35, 0.7, 1.3]:
+		for dt in [-0.25, -0.08, 0.0, 0.05, 0.2, 0.5]:
 			while m.t < m.TC + dt: await process_frame
 			await process_frame
 			root.get_viewport().get_texture().get_image().save_png(OUT + "%s_%d.png" % [c[0], k])
