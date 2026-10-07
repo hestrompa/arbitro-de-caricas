@@ -13,7 +13,7 @@ const BOX_D := 16.5
 const BOX_W := 40.3
 const SPOT := 11.0
 const G := 9.8
-const MATCH_SECONDS := 300.0       # 5 minutos reais = 90 minutos de jogo
+const MATCH_SECONDS := 270.0       # 90 minutos de jogo; com as caricas a 1,5x são 3 minutos reais
 const HOME := 0                    # a equipa da casa
 const LINE_IN := 0.17              # centro da bola a 17 cm da linha: passou toda
 const ROLES := [

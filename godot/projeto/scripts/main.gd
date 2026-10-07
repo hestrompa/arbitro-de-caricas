@@ -95,6 +95,7 @@ var end_data := {}
 var is_career := false
 # televisão: repetição com vários ângulos e câmara lenta; jogos à noite com luz artificial
 const TV_SHOTS := [[4, -1.4, 1.6, 1.0, "Câmara principal"], [2, -0.9, 1.1, 0.4, "Atrás do lance"], [3, -0.55, 0.8, 0.22, "De perto"]]
+const RITMO := 1.5          # velocidade das caricas (com MATCH_SECONDS = 270, o jogo dura 3 minutos reais)
 var tv := {}
 # vídeo do observador: os lances mal decididos, cada um visto de quatro maneiras
 const OBS_SHOTS := [[0, -2.2, 1.4, 1.0, "A tua vista"], [4, -1.2, 1.2, 0.5, "Câmara principal"], [3, -0.5, 0.8, 0.25, "De perto"], [5, -1.4, 1.4, 0.6, "Onde devias estar"]]
@@ -690,7 +691,8 @@ func _match_process(delta: float) -> void:
 		flash_t -= delta
 		if flash_t <= 0: _enter_lance()
 		return
-	if modo == "jogo" and not match_paused and jogo: jogo.tick(delta)
+	# caricas a 1,5x: o jogo corre mais depressa; perguntas, protestos e o tutorial ficam ao ritmo normal
+	if modo == "jogo" and not match_paused and jogo: jogo.tick(delta * (RITMO if jogo.mode == "play" and not jogo.tut else 1.0))
 
 func _menu_cam(delta: float) -> void:
 	t += delta
@@ -700,6 +702,7 @@ func _menu_cam(delta: float) -> void:
 
 func _scene_process(delta: float) -> void:
 	_tv_step()
+	if not (modo in ["lance", "var", "rever", "treino"]): return    # o vídeo do observador pode ter acabado agora
 	get_tree().paused = paused
 	Engine.time_scale = speed
 	var dt := 0.0 if paused else delta
