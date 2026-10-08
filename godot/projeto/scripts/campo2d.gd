@@ -220,6 +220,12 @@ func _draw() -> void:
 	_carica(rp, sc * 1.3, Color("f4e04d"), Color("111111"), false, false)
 	draw_string(font, rp + Vector2(-sc * 2, sc * 0.45), "Á", HORIZONTAL_ALIGNMENT_CENTER, sc * 4, int(max(8.0, sc * 1.2)), Color("111111"))
 	if jogo.ref_target != null: draw_arc(w2s(jogo.ref_target), sc * 0.8, 0, TAU, 16, Color(1, 1, 0.4, 0.6), 2)
+	# lance: o mesmo anel vermelho que aparece no mini-campo do 3D, no sítio exato do lance
+	if main and main.modo == "flash" and main.L.has("P"):
+		var lp: Vector2 = w2s(main.L.P)
+		var pul := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 110.0)
+		draw_arc(lp, sc * (4.0 + pul * 1.5), 0, TAU, 32, Color(1, 0.2, 0.15, 0.95), maxf(2.0, sc * 0.35))
+		draw_line(rp, lp, Color(1, 0.86, 0.2, 0.6), 1.5)
 	# marcador e barras
 	draw_rect(Rect2(0, 0, size.x, TOP - 6), Color(0, 0, 0, 0.55))
 	var t0: Dictionary = jogo.teams[0]

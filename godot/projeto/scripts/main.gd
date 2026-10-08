@@ -88,6 +88,7 @@ var modo := "menu"         # menu | carreira | jogo | flash | lance | var | gest
 var jogo: Partida
 var campo: Campo2D
 var ui: UI
+var radar: Radar          # mini-campo do lance 3D (mesma orientação das caricas)
 var som: Som
 var car := Carreira.new()
 var L := {}                # lance mostrado
@@ -187,6 +188,7 @@ func _ready() -> void:
 func _labels() -> void:
 	var layer := CanvasLayer.new(); layer.layer = 4; add_child(layer)
 	lab1 = Label.new(); lab1.position = Vector2(14, 10)
+	radar = Radar.new(); radar.main = self; radar.visible = false; layer.add_child(radar)
 	lab2 = Label.new(); lab2.position = Vector2(14, 34)
 	for l in [lab1, lab2]:
 		l.add_theme_font_size_override("font_size", 15)
@@ -787,6 +789,8 @@ func _scene_process(delta: float) -> void:
 	# no frame de impacto a câmara aperta um pouco sobre o lance
 	if hitstop > 0.0 and cam_mode != 5: cam.fov *= 1.0 - 0.14 * clampf((hitstop - HIT_LENTO * 0.5) / HIT_CONGELA, 0.0, 1.0)
 	_brilhos_step(0.0 if paused else real_dt)
+	radar.visible = modo in ["lance", "var", "rever"] and jogo != null
+	if radar.visible: radar.position = Vector2(14, get_viewport().get_visible_rect().size.y - radar.size.y - 14)
 	if modo == "treino":
 		var info := ""
 		if hit_done and t > TC + 1.2: info = "Verdade do lance: " + outcome + ("  ·  " + verdict if verdict != "" else "")
@@ -1258,10 +1262,7 @@ func _camera() -> void:
 		var corre := clampf(ref_vel / 5.0, 0.0, 1.0)
 		var resp_f := 0.25 + ref_cansaco * 0.45 + corre * 0.2           # respirações por segundo
 		var resp := sin(tm * TAU * resp_f) * (0.004 + ref_cansaco * 0.012) * (1.0 - corre * 0.6)
-		var rv := fmod(tm * resp_f, 1.0)
-		if rv < ref_resp and modo in ["lance", "treino"] and ref_cansaco + corre * 0.3 > 0.25:
-			som.respiro(clampf(ref_cansaco * 0.9 + corre * 0.3, 0.15, 0.9))
-		ref_resp = rv
+		# sem som de respiração do árbitro a correr (o arfar era demasiado)
 		# os olhos compensam a passada (como na vida real): balanço pequeno e suave
 		var bob := Vector3.UP * (absf(sin(ref_ph)) * 0.018 - 0.009) * corre + lado * sin(ref_ph) * 0.008 * corre
 		eye += bob + Vector3.UP * resp + shake
@@ -1513,7 +1514,7 @@ func _new_match(teams: Array, career := false) -> void:
 func _to_2d() -> void:
 	visible = false
 	get_viewport().disable_3d = true
-	campo.visible = true
+	campo.visible = true; radar.visible = false
 	paused = false; speed = 1.0
 	get_tree().paused = false; Engine.time_scale = 1.0
 	ui.info("", ""); ui.ref_say(""); ui.dec.visible = false; ui.var_frame.visible = false
