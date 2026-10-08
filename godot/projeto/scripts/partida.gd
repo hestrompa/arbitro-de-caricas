@@ -23,10 +23,12 @@ const ROLES := [
 const LABEL := {"siga": "Lance limpo", "falta": "Falta", "amarelo": "Falta para amarelo", "vermelho": "Falta para vermelho", "simulacao": "Simulação",
 	"fora": "Fora de jogo", "emjogo": "Em jogo", "mao": "Mão na bola", "maoAmarelo": "Mão na bola para amarelo", "penalti": "Falta do defesa",
 	"ataque": "Falta do atacante", "vantagem": "Vantagem", "valido": "Golo limpo", "anular": "Falta do atacante antes do golo",
-	"entrou": "A bola entrou toda", "naoEntrou": "A bola não entrou toda"}
+	"entrou": "A bola entrou toda", "naoEntrou": "A bola não entrou toda",
+	"pen_ok": "Penálti bem batido", "repetir": "Penálti para repetir", "livreind": "Livre indireto para a defesa"}
 const DEC_LABEL := {"siga": "Siga", "falta": "Falta", "amarelo": "Amarelo", "vermelho": "Vermelho", "simulacao": "Simulação", "fora": "Fora de jogo",
 	"emjogo": "Em jogo", "mao": "Mão", "maoAmarelo": "Mão + amarelo", "penalti": "Penálti", "ataque": "Falta atacante", "vantagem": "Vantagem",
-	"nenhum": "Sem cartão", "valido": "Golo válido", "anular": "Golo anulado", "entrou": "Golo", "naoEntrou": "Não entrou"}
+	"nenhum": "Sem cartão", "valido": "Golo válido", "anular": "Golo anulado", "entrou": "Golo", "naoEntrou": "Não entrou",
+	"pen_ok": "Validar", "repetir": "Repetir", "livreind": "Livre indireto"}
 const SEV := {"siga": 0, "falta": 1, "amarelo": 2, "vermelho": 3}
 const WHY := {"reiterada": "faltas repetidas", "tatica": "falta tática"}
 # decisões possíveis por tipo de lance (teclas 1..6)
@@ -40,6 +42,7 @@ const KEYS := {
 	"aereo": ["siga", "falta", "amarelo", "vermelho"],
 	"agarrao": ["siga", "falta", "amarelo", "vermelho"],
 	"pisao": ["siga", "falta", "amarelo", "vermelho"],
+	"pen": ["pen_ok", "repetir", "livreind"],
 }
 const PAIR_UP := {"falta": "amarelo", "amarelo": "vermelho"}
 const PAIR_DN := {"amarelo": "falta", "vermelho": "amarelo"}
@@ -112,6 +115,8 @@ var no_pick: Pl = null
 var no_pick_t := 0.0
 var target: Pl = null
 var bpen := false
+var pen_forca := ""           # testes: força o tipo de penálti
+var pen_3d := false           # o próximo penálti é visto em 3D (o árbitro julga a execução)
 var parado_dono: Pl = null   # reinício (livre, canto, penálti, lançamento, pontapé de saída): a bola fica parada até ser batida
 var off_info := {}
 var trail: Array = []
@@ -381,7 +386,9 @@ func on_ball(p: Pl, dt: float) -> void:
 		return
 	p.cd = rand(0.45, 0.9)
 	if p.penalty:
-		p.penalty = false; shoot(p, true); return
+		p.penalty = false
+		if pen_3d: pen_3d = false; start_pen_scene(p); return
+		shoot(p, true); return
 	var to_goal := (goal - p.p).normalized()
 	var choices: Array = []
 	var dg := p.p.distance_to(goal)
@@ -1159,6 +1166,7 @@ func decide(d: String, timed_out := false) -> void:
 		start_var(L, d); return
 	L.decided = d; L.timed_out = timed_out
 	if kind_of(L) == "offside": _decide_offside(L, d, timed_out); return
+	if kind_of(L) == "pen": _decide_pen(L, d, timed_out); return
 	if L.get("scene", false) and L.get("goal_ctx", false): _decide_goal(L, d, timed_out); return
 	if L.get("scene", false): _decide_scene(L, d, timed_out); return
 	var pts := 0.0
@@ -1357,6 +1365,81 @@ func _decide_scene(L: Dictionary, d: String, timed_out: bool) -> void:
 	feed_decision(L, d, m)
 	_finish(L, d, m, func(): protest_after(against, sev, pts < 1))
 
+# ---- penálti visto em 3D: o árbitro julga a execução (Lei 14)
+# guarda-redes adiantado: golo vale, defesa repete-se · paragem na corrida já feita: livre indireto e amarelo ao marcador
+# colega do marcador dentro da área antes do pontapé: golo repete-se, falhado dá livre indireto à defesa
+func start_pen_scene(tk: Pl) -> void:
+	var team := tk.team
+	var dir := float(dirs(team))
+	var gx := opp_goal_x(team)
+	var spot := Vector2(gx - dir * SPOT, H / 2)
+	var gk: Pl = null
+	for p in active():
+		if p.role == "gk" and p.team != team: gk = p
+	if gk == null: shoot(tk, true); return
+	var infr := pen_forca if pen_forca != "" else pick_truth({"nenhuma": 0.4, "gr": 0.25, "paradinha": 0.15, "invasao": 0.2})
+	var golo: bool = rng.randf() < {"nenhuma": 0.75, "gr": 0.45, "paradinha": 0.6, "invasao": 0.7}[infr]
+	var truth := "pen_ok"
+	match infr:
+		"gr": truth = "pen_ok" if golo else "repetir"
+		"paradinha": truth = "livreind"
+		"invasao": truth = "repetir" if golo else "livreind"
+	var lado := 1.0 if rng.randf() < 0.5 else -1.0                       # para onde vai a bola
+	var gk_lado := lado if not golo else -lado                            # golo: o guarda-redes vai para o outro lado
+	if not golo and rng.randf() < 0.25: gk_lado = lado                    # às vezes é ao poste ou por cima: o guarda-redes adivinha mas não toca
+	var L0 := {"kind": "pen", "truth": truth, "P": spot, "A": Vector2(dir, 0), "D": Vector2(-dir, 0), "infr": infr, "golo": golo,
+		"lado": lado, "gk_lado": gk_lado, "gx": gx, "dir_in": dir, "in_box": true, "att": pinfo(tk), "def": pinfo(gk), "flash": "Penálti!"}
+	if infr == "invasao":
+		var mates: Array = active().filter(func(q): return q.team == team and q != tk and q.role != "gk")
+		var inv: Pl = nearest(mates, spot)[0]
+		if inv:
+			# o invasor espera à entrada da área, como os outros, e arranca antes do tempo
+			# do lado contrário ao árbitro, para entrar no campo de visão dele
+			inv.p = Vector2(gx - dir * (BOX_D + 1.6), H / 2 + (-1.0 if ref.y > H / 2 else 1.0) * rand(3.0, 7.0))
+			L0.inv = pinfo(inv); L0.inv_p = inv.p
+	start_scene(L0, Vector2(dir, 0), [tk, gk], "Penálti!")
+
+func _decide_pen(L: Dictionary, d: String, timed_out: bool) -> void:
+	var ok: bool = d == L.truth
+	var pts := 1.0 if ok else 0.0
+	var dc := 4.0 if ok else -10.0
+	if timed_out: dc -= 4
+	ctrl(dc)
+	L.pts = pts; incidents.append(L); stress_after(L); added += 0.3
+	var tk: Pl = players[L.att.id]
+	var gk: Pl = players[L.def.id]
+	var team := tk.team
+	reset_ball(bp)
+	var m: String
+	var against: int
+	match d:
+		"pen_ok":
+			if L.golo:
+				goal_award(team); m = "Penálti convertido: golo " + de_t(team); against = 1 - team
+			else:
+				gk.p = Vector2(float(L.gx) - float(L.dir_in) * 1.5, H / 2)
+				bp = gk.p; owner = gk; last = gk.team; gk.cd = 1.0
+				m = "Penálti falhado: bola para o guarda-redes"; against = team
+		"repetir":
+			penalty(tk, false)
+			m = "Penálti para repetir"; against = team if L.golo else 1 - team
+		_:
+			var defs: Array = active().filter(func(q): return q.team != team and q.role != "gk")
+			var dp: Pl = nearest(defs, L.P)[0]
+			if dp == null: dp = gk
+			dp.p = L.P - Vector2(-float(L.dir_in) * 0.8, 0)
+			bp = L.P; owner = dp; last = dp.team; dp.cd = 0.9; dp.set_piece = true; parado_dono = dp
+			m = "Livre indireto para " + art_t(1 - team); against = team
+			if L.infr == "paradinha":
+				tk.yellow += 1
+				if tk.yellow >= 2: tk.off = true
+				m = "Amarelo ao %d por parar na corrida · " % tk.num + m
+	if d != "pen_ok": sfx("whistle", "short")
+	L.against = against
+	crowd_react(against, pts < 1)
+	feed_decision(L, d, m)
+	_finish(L, d, m, func(): protest_after(against, 0.3, pts < 1))
+
 func goal_verdict(L: Dictionary, allowed: bool) -> String:
 	var team: int = L.goal
 	reset_ball(bp)
@@ -1401,7 +1484,8 @@ func _decide_goal(L: Dictionary, d: String, timed_out: bool) -> void:
 	feed_decision(L, d, m)
 	_finish(L, d, m, func(): protest_after(against, 0.4 if allowed else 0.5, pts < 1))
 
-func penalty(att: Pl) -> void:
+func penalty(att: Pl, cena := true) -> void:
+	pen_3d = cena and training.is_empty() and not tut and rng.randf() < 0.75
 	var team := att.team
 	var dir := dirs(team)
 	var spot_x := opp_goal_x(team) - dir * SPOT
@@ -1420,6 +1504,8 @@ func penalty(att: Pl) -> void:
 			p.p = Vector2(opp_goal_x(team) - dir * (BOX_D + rand(1, 4)), H / 2 + rand(-10, 10))
 	# o marcador recua para a corrida; a bola fica na marca até ao pontapé
 	taker.p = Vector2(spot_x - dir * 3.0, H / 2 + rand(-1.2, 1.2)); taker.v = Vector2.ZERO
+	# o árbitro coloca-se ao lado, entre a marca e a entrada da área (o assistente fica na linha de golo)
+	ref = Vector2(spot_x - dir * 5.5, H / 2 + (7.0 if ref.y > H / 2 else -7.0)); ref_target = null
 	reset_ball(Vector2(spot_x, H / 2))
 	owner = taker; last = team; taker.cd = 1.8; taker.penalty = true; parado_dono = taker
 	pause = 1.8
@@ -1922,6 +2008,10 @@ func ref_says(L: Dictionary, d: String) -> String:
 	elif L.get("light", false) and d == "falta": s = "Tocou-lhe no pé, é penálti!"
 	elif k == "agarrao": s = {"siga": "Foi só um toque. Siga!", "falta": "Agarraste a camisola. Falta.", "amarelo": "Agarraste e paraste o contra-ataque. Amarelo.", "vermelho": "Agarrão a impedir um golo. Vermelho!"}.get(d, "Siga!")
 	elif k == "golo": s = "Foi ombro com ombro. O golo conta!" if d == "valido" else "Empurraste o defesa antes do remate. Golo anulado."
+	elif k == "pen":
+		s = {"pen_ok": "Penálti bem batido. " + ("Golo!" if L.golo else "Bola do guarda-redes."),
+			"repetir": "O penálti vai ser repetido." + (" O guarda-redes saiu da linha antes do pontapé." if L.infr == "gr" else (" Entraste na área antes do pontapé." if L.infr == "invasao" else "")),
+			"livreind": "Paraste no fim da corrida: é proibido. Livre indireto e amarelo." if L.infr == "paradinha" else "Entraste na área antes do pontapé. Livre indireto para a defesa."}.get(d, "")
 	elif k == "linha": s = "A bola passou toda a linha. É golo!" if d == "entrou" else "Não passou toda a linha. Não há golo."
 	elif k == "mao": s = "Braço junto ao corpo, posição natural. Siga!" if d == "siga" else ("Braço aberto, a fazer o corpo maior. É mão." if d == "mao" else "Mão deliberada a cortar o remate: amarelo.")
 	elif k == "canto": s = "Disputa normal na área. Siga, levanta-te!" if d == "siga" else ("Empurrou-o pelas costas. Penálti!" if d == "penalti" else "Afastaste o defesa com o braço. Falta atacante.")
@@ -1944,6 +2034,13 @@ func gest_of(L: Dictionary, d: String) -> Dictionary:
 	var atk_t: int = int(L.oi.team) if k == "offside" else (int(L.goal) if L.has("goal") else (int(L.att.team) if L.has("att") else 0))
 	var pen := Vector2(opp_goal_x(atk_t) - dirs(atk_t) * SPOT, H / 2)
 	var g := {"type": "siga", "who": att_id, "spot": gest_spot(L)}
+	if k == "pen":
+		if d == "pen_ok" and L.golo: g.merge({"type": "point", "to": Vector2(W / 2, H / 2), "elev": -0.12, "who": -1, "run": true}, true)
+		elif d == "repetir": g.merge({"type": "point", "to": pen, "elev": -0.55, "who": -1}, true)
+		elif d == "livreind" and L.infr == "paradinha": g.merge({"type": "card", "col": "yellow", "second": players[att_id].off, "who": att_id}, true)
+		elif d == "livreind": g.merge({"type": "up", "who": -1}, true)
+		g.dur = 2.6
+		return g
 	if d == "vermelho": g.merge({"type": "card", "col": "red", "who": def_id}, true)
 	elif d == "amarelo" or d == "maoAmarelo" or d == "simulacao":
 		var w: int = att_id if d == "simulacao" else def_id
@@ -1970,6 +2067,11 @@ func radio_lance(L: Dictionary) -> void:
 		radio("Assistente", "Levantei: para mim o recetor está fora." if L.flag else "Bandeira em baixo: vi-o em linha."); return
 	if L.get("goal_ctx", false):
 		radio("VAR", "Estamos a ver o golo. Decide tu primeiro."); return
+	if kind_of(L) == "pen":
+		# o assistente está na linha de golo: vê o guarda-redes (nem sempre tem a certeza)
+		if L.infr == "gr" and rng.randf() < 0.7: radio("Assistente", "Atenção: o guarda-redes saiu da linha antes do pontapé.")
+		elif L.infr != "gr" and rng.randf() < 0.3: radio("Assistente", "Guarda-redes na linha, da minha parte está tudo bem.")
+		return
 	if L.clarity < 0.5 and rng.randf() < (0.85 if ast_boost else 0.65):
 		var right := rng.randf() < (0.92 if ast_boost else 0.8)
 		var alt: Array = choices_for(L).filter(func(x): return x != L.truth and x != "vantagem")

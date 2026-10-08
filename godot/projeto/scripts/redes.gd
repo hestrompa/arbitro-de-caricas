@@ -35,6 +35,7 @@ static func prejudicado(S: Partida, l: Dictionary) -> int:
 
 static func resumo_erro(S: Partida, l: Dictionary) -> String:
 	var d: String = l.get("decided", "")
+	if S.kind_of(l) == "pen": return "penálti mal resolvido (%s)" % str(Partida.DEC_LABEL.get(d, d)).to_lower()
 	if S.kind_of(l) == "offside": return "fora de jogo inventado" if d == "fora" else "fora de jogo por assinalar"
 	if l.get("goal_ctx", false): return "golo mal validado" if d in ["valido", "entrou", "emjogo"] else "golo limpo anulado"
 	if l.get("in_box", false): return "penálti inventado" if S.is_foul(d) else "penálti por marcar"

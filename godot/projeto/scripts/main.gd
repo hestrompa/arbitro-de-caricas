@@ -507,6 +507,7 @@ func _setup_scene(l: Dictionary) -> void:
 			"linha": c = {"lance": 8}
 			"offside": c = {"lance": 9}
 			"golo": c = {"lance": 10, "side": l.s}
+			"pen": c = {"lance": 11, "side": l.lado}
 		l.cur = c
 	cur = c
 	# quem está à volta: os mais perto do lance
@@ -514,6 +515,7 @@ func _setup_scene(l: Dictionary) -> void:
 	var used := [int(l.att.id), int(l.def.id) if l.has("def") else -1]
 	var first: Array = []
 	if k == "canto" and l.has("taker"): first.append({"id": l.taker.id, "team": l.taker.team, "role": l.taker.role, "num": l.taker.num, "p": l.corner, "v": Vector2.ZERO})
+	if k == "pen" and l.has("inv"): first.append({"id": l.inv.id, "team": l.inv.team, "role": l.inv.role, "num": l.inv.num, "p": l.inv_p, "v": Vector2.ZERO})
 	if k == "golo" and l.has("taker"): first.append({"id": l.taker.id, "team": l.taker.team, "role": "gk", "num": l.taker.num, "p": Vector2(l.gx - l.dir_in * 0.7, l.G.y * 0.4 + 34 * 0.6), "v": Vector2.ZERO})
 	others = others.filter(func(o): return not (int(o.id) in used) and not first.any(func(f): return int(f.id) == int(o.id)))
 	others.sort_custom(func(a, b): return a.p.distance_to(P) < b.p.distance_to(P))
@@ -528,12 +530,17 @@ func _setup_scene(l: Dictionary) -> void:
 		else:
 			e.node.visible = false; e.set_meta("spot", Vector2(-40, -40)); e.set_meta("v", Vector2.ZERO)
 	sc.n_extras = mini(list.size(), extras.size())
-	if k in ["canto", "golo", "linha", "mao", "offside", "aereo"]: sc.approach = false
+	if k in ["canto", "golo", "linha", "mao", "offside", "aereo", "pen"]: sc.approach = false
 	match k:
 		"aereo": sc.K = l.K
 		"mao": sc.K = l.K; sc.Sd = l.Sd; sc.arm = l.arm_out; sc.s = l.side
 		"canto": sc.Q = l.Q; sc.V = l.V; sc.s = l.s; sc.corner = l.corner; sc.fall = l.get("fall", false); A = l.V
 		"linha": sc.B = l.B; sc.bh = l.bh; sc.Pk = l.Pk; sc.gx = l.gx; sc.dir_in = l.dir_in
+		"pen":
+			sc.gx = l.gx; sc.dir_in = l.dir_in; sc.infr = l.infr; sc.golo = l.golo; sc.lado = l.lado; sc.gk_lado = l.gk_lado; sc.inv = l.has("inv")
+			# no penálti o árbitro coloca-se ao lado, entre a marca e a entrada da área
+			var pd := Vector2(-A.y, A.x) * (1.0 if REF.y > P.y else -1.0)
+			_ref_corrida(P - A * 5.5 + pd * 7.0, float(jogo.stamina) if jogo else 100.0)
 		"golo": sc.C = l.C; sc.Pk = l.Pk; sc.G = l.G; sc.s = l.s; sc.gx = l.gx; sc.dir_in = l.dir_in; sc.fall = l.get("fall", false); P = l.C
 		"offside": _setup_offside(l)
 
@@ -644,6 +651,7 @@ func _restart() -> void:
 		8: TC = 1.7
 		9: TC = 1.8
 		10: TC = 1.8
+		11: TC = 2.8
 	DUR = TC + 7.8
 	if modo != "treino": DUR = 1e9
 	att.play("run", 0.0); def.play("run", 0.0)
@@ -760,8 +768,9 @@ func _scene_process(delta: float) -> void:
 		8: _line(dt)
 		9: _offside(dt)
 		10: _goalfoul(dt)
+		11: _penalty(dt)
 	if sc.get("approach", true): _extras_step(dt)
-	elif lance != 9: _extras_idle(dt)
+	elif lance != 9 and lance != 11: _extras_idle(dt)
 	var all: Array = [att, def] + extras
 	all = all.filter(func(p): return p.node.visible)
 	for p in all:
@@ -1239,6 +1248,7 @@ func _focus() -> Vector3:
 		8: return Vector3(sc.B.x, 0.4, sc.B.y)
 		9: return Vector3(sc.line_x, 0.9, sc.recv.y)
 		10: return Vector3(b3.x, 0.8, b3.z).lerp(Vector3(P.x, 0.9, P.y), 0.4)
+		11: return Vector3(P.x, 0.8, P.y).lerp(Vector3(float(sc.gx), 0.9, H / 2), 0.25)
 	return Vector3(P.x, 0.9, P.y)
 
 func _camera() -> void:
@@ -1272,7 +1282,7 @@ func _camera() -> void:
 		var alvo := ref_olhar + shake * 0.5 + Vector3.UP * resp + bob
 		# foco: como o olho se fixa no lance, o enquadramento aperta com a distância (o lance ocupa ~14 m de altura)
 		var dl := eye.distance_to(look)
-		var foco := clampf(rad_to_deg(2.0 * atan(6.0 / maxf(dl, 1.0))), 15.0, 40.0)
+		var foco := clampf(rad_to_deg(2.0 * atan(6.0 / maxf(dl, 1.0))), 15.0, 52.0 if lance == 11 else 40.0)
 		if ref_foco == 0.0: ref_foco = foco
 		ref_foco = lerpf(ref_foco, foco, clampf(get_process_delta_time() * 2.0, 0.0, 1.0))
 		cam.fov = ref_foco + corre * 1.5 - ref_cansaco * 1.0
@@ -1296,6 +1306,12 @@ func _camera() -> void:
 			var cz := H / 2 - 3.66 - 2.5 if B.y < H / 2 else H / 2 + 3.66 + 2.5
 			cam.fov = 28
 			cam.look_at_from_position(Vector3(sc.gx, 0.45, cz), Vector3(sc.gx, 0.2, B.y))
+			return
+		if lance == 11:
+			# de lado, na linha da área de baliza: vê-se o guarda-redes na linha e o marcador
+			var gx2: float = float(sc.gx) - float(sc.dir_in) * 5.5
+			cam.fov = 58
+			cam.look_at_from_position(Vector3(gx2, 1.4, H / 2 + 10.5), Vector3(gx2, 0.7, H / 2))
 			return
 		if lance == 6:
 			var Sd: Vector2 = sc.Sd
@@ -2493,3 +2509,86 @@ func _limpa_brilhos() -> void:
 	for b in brilhos:
 		if is_instance_valid(b.mi): b.mi.queue_free()
 	brilhos.clear()
+
+# 11) penálti: corrida, pontapé e guarda-redes. O árbitro julga a execução: guarda-redes adiantado,
+# paragem ilegal no fim da corrida ou um colega do marcador a entrar na área antes do pontapé.
+func _penalty(dt: float) -> void:
+	var gx: float = float(sc.gx)
+	var di: float = float(sc.dir_in)
+	var perp := Vector2(-A.y, A.x)
+	var infr: String = sc.infr
+	var lado: float = float(sc.lado)
+	# marcador: espera, corre (em diagonal, como quase todos) e bate. Na "paradinha" pára no fim da corrida e só depois remata
+	var ini := P - A * 3.4 - perp * lado * 1.3
+	var fim := P - A * 0.45 - perp * lado * 0.25
+	var t_corre := TC - 1.25
+	if not att.rag:
+		if t < t_corre:
+			att.move(ini, (P - ini).normalized(), 0.0); att.play("idle", 0.3)
+		elif t < TC + 0.3:
+			var dirc := (fim - ini).normalized()
+			if infr == "paradinha":
+				var k: float = clampf((t - t_corre) / 0.75, 0.0, 1.0)
+				var pp := ini.lerp(fim - A * 0.5, k)
+				if t < TC - 0.42: att.move(pp, dirc, 3.6 if k < 1.0 else 0.0); att.play("run" if k < 1.0 else "idle", 0.12)
+				else:
+					att.move((fim - A * 0.5).lerp(fim, clampf((t - (TC - 0.42)) / 0.42, 0.0, 1.0)), dirc, 1.2); att.play("kick", 0.08)
+			else:
+				var k: float = clampf((t - t_corre) / (TC - t_corre), 0.0, 1.0)
+				att.move(ini.lerp(fim, k), dirc, 3.0)
+				att.play("kick" if t > TC - 0.35 else "run", 0.1)
+		else: _settle(att, dt, A)
+	# guarda-redes: na linha até ao pontapé (no "gr" adianta-se antes do pontapé) e depois atira-se
+	var linha := Vector2(gx - di * 0.15, H / 2)
+	if not def.rag and def.phase != "kin" and def.phase != "chao_k":
+		var gp := linha
+		if infr == "gr" and t > TC - 0.45: gp = linha - Vector2(di, 0) * clampf((t - (TC - 0.45)) / 0.4, 0.0, 1.0) * 1.3
+		def.move(gp, Vector2(-di, 0), 1.5 if gp != linha and t < TC else 0.0)
+		def.play("jog" if infr == "gr" and t > TC - 0.45 and t < TC else "idle", 0.2)
+		if t > TC + 0.04 and not sc.has("mergulho"):
+			sc.mergulho = true
+			var cur_gp := Vector2(def.body_pos().x, def.body_pos().z)
+			_gk_dive(def, Vector2(cur_gp.x, H / 2 + float(sc.gk_lado) * 2.6), Vector2(-di, 0))
+	# os outros esperam fora da área e entram quando a bola é batida (o invasor entra antes)
+	var caixa_x := gx - di * 16.5
+	for i in extras.size():
+		var e: Jogador = extras[i]
+		if not e.node.visible or e.rag or e.phase != "anim": continue
+		var cu: Vector2 = e.get_meta("cur")
+		var arranca := TC - 1.0 if (i == 0 and bool(sc.inv)) else TC + 0.08
+		if t > arranca:
+			var alvo := Vector2(gx - di * 9.0, lerpf(cu.y, H / 2, 0.4))
+			var v: float = 5.5 if (i == 0 and bool(sc.inv)) else 4.5
+			var dv := alvo - cu
+			if dv.length() > 0.3: cu += dv.normalized() * minf(dv.length(), v * dt)
+			e.set_meta("cur", cu)
+			e.move(cu, dv.normalized() if dv.length() > 0.3 else Vector2(-di, 0), v if dv.length() > 0.3 else 0.0)
+			e.play("run" if dv.length() > 0.3 else "idle", 0.2)
+		else:
+			var to := P - cu
+			e.move(cu, to.normalized() if to.length() > 0.1 else A, 0.0); e.play("idle", 0.3)
+	if bool(sc.inv) and not sc.has("inv_marca") and t >= TC:
+		# no instante do pontapé fica registado onde estava o invasor (já dentro da área)
+		var ip: Vector3 = extras[0].body_pos()
+		sc.inv_marca = (ip.x - caixa_x) * di
+	# bola: na marca até ao pontapé
+	if not b3_free:
+		b3 = Vector3(P.x, 0.11, P.y)
+		if t >= TC:
+			b3_free = true
+			var golo: bool = sc.golo
+			var poste := H / 2 + lado * 3.66
+			var alvo3: Vector3
+			if golo: alvo3 = Vector3(gx + di * 0.3, randf_range(0.3, 1.6), H / 2 + lado * randf_range(1.6, 3.0))
+			elif float(sc.gk_lado) == lado: alvo3 = Vector3(gx - di * 0.5, 0.6, H / 2 + lado * 2.2); sc.defende = true
+			else: alvo3 = Vector3(gx + di * 0.3, 0.9, poste + lado * 0.6)
+			var tv := 0.42
+			bv3 = (alvo3 - b3) / tv + Vector3(0, 9.8 * tv * 0.5, 0)
+			if golo: b3_net = gx + di * 1.6
+			sc.t_chega = TC + tv
+			som.kick(0.8)
+	elif sc.get("defende", false) and t >= float(sc.t_chega) and not sc.has("defendeu"):
+		sc.defendeu = true
+		bv3 = Vector3(-di * 5.0, 2.2, lado * 4.0)
+	outcome = {"nenhuma": "penálti bem batido", "gr": "o guarda-redes saiu da linha antes do pontapé", "paradinha": "o marcador parou no fim da corrida antes de rematar",
+		"invasao": "um colega do marcador entrou na área antes do pontapé"}[infr] + (" · golo" if sc.golo else " · sem golo")
