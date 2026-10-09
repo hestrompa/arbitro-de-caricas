@@ -24,11 +24,12 @@ const LABEL := {"siga": "Lance limpo", "falta": "Falta", "amarelo": "Falta para 
 	"fora": "Fora de jogo", "emjogo": "Em jogo", "mao": "Mão na bola", "maoAmarelo": "Mão na bola para amarelo", "penalti": "Falta do defesa",
 	"ataque": "Falta do atacante", "vantagem": "Vantagem", "valido": "Golo limpo", "anular": "Falta do atacante antes do golo",
 	"entrou": "A bola entrou toda", "naoEntrou": "A bola não entrou toda",
-	"pen_ok": "Penálti bem batido", "repetir": "Penálti para repetir", "livreind": "Livre indireto para a defesa"}
+	"pen_ok": "Penálti bem batido", "repetir": "Penálti para repetir", "livreind": "Livre indireto para a defesa",
+	"atraso": "Atraso com o pé: livre indireto"}
 const DEC_LABEL := {"siga": "Siga", "falta": "Falta", "amarelo": "Amarelo", "vermelho": "Vermelho", "simulacao": "Simulação", "fora": "Fora de jogo",
 	"emjogo": "Em jogo", "mao": "Mão", "maoAmarelo": "Mão + amarelo", "penalti": "Penálti", "ataque": "Falta atacante", "vantagem": "Vantagem",
 	"nenhum": "Sem cartão", "valido": "Golo válido", "anular": "Golo anulado", "entrou": "Golo", "naoEntrou": "Não entrou",
-	"pen_ok": "Validar", "repetir": "Repetir", "livreind": "Livre indireto"}
+	"pen_ok": "Validar", "repetir": "Repetir", "livreind": "Livre indireto", "atraso": "Livre indireto"}
 const SEV := {"siga": 0, "falta": 1, "amarelo": 2, "vermelho": 3}
 const WHY := {"reiterada": "faltas repetidas", "tatica": "falta tática"}
 # decisões possíveis por tipo de lance (teclas 1..6)
@@ -43,6 +44,7 @@ const KEYS := {
 	"agarrao": ["siga", "falta", "amarelo", "vermelho"],
 	"pisao": ["siga", "falta", "amarelo", "vermelho"],
 	"pen": ["pen_ok", "repetir", "livreind"],
+	"atraso": ["siga", "atraso"],
 }
 const PAIR_UP := {"falta": "amarelo", "amarelo": "vermelho"}
 const PAIR_DN := {"amarelo": "falta", "vermelho": "amarelo"}
@@ -603,6 +605,7 @@ func physics(dt: float) -> void:
 		var dmin := 2.0 if (bp.y < 0 or bp.y > H) else 9.15
 		for q in act:
 			if q == owner or (q.team == owner.team and not owner.penalty) or (q.role == "gk" and owner.penalty): continue
+			if absf(q.p.x - own_goal_x(q.team)) < 0.8 and absf(q.p.y - H / 2) < GOAL_W / 2 + 0.5: continue   # na linha de golo, entre os postes (Lei 13)
 			var dq: Vector2 = q.p - bp
 			var dl: float = dq.length()
 			if dl < dmin:
@@ -670,6 +673,7 @@ func physics(dt: float) -> void:
 			bv = n * 9 + Vector2(dirs(best.team) * 3, 0); bvz = 2; no_pick = best; no_pick_t = 0.4; last = best.team; bpen = false
 			toast("Defesa do guarda-redes", 1.2)
 			return
+	if best.role == "gk" and last == best.team and kicker != null and kicker != best and kicker.team == best.team and atraso_check(best, kicker): return
 	owner = best; last = best.team; target = null; bpen = false; trail = []
 	best.cd = rand(0.9, 1.4) if best.role == "gk" else rand(0.7, 1.4); best.dribble = Vector2.ZERO
 	if best.role == "gk" and mode == "play": stall_check(best)
@@ -1217,6 +1221,7 @@ func decide(d: String, timed_out := false) -> void:
 	L.decided = d; L.timed_out = timed_out
 	if kind_of(L) == "offside": _decide_offside(L, d, timed_out); return
 	if kind_of(L) == "pen": _decide_pen(L, d, timed_out); return
+	if kind_of(L) == "atraso": _decide_atraso(L, d, timed_out); return
 	if L.get("scene", false) and L.get("goal_ctx", false): _decide_goal(L, d, timed_out); return
 	if L.get("scene", false): _decide_scene(L, d, timed_out); return
 	var pts := 0.0
@@ -1448,6 +1453,74 @@ func start_pen_scene(tk: Pl) -> void:
 			inv.p = Vector2(gx - dir * (BOX_D + 1.6), H / 2 + (-1.0 if ref.y > H / 2 else 1.0) * rand(3.0, 7.0))
 			L0.inv = pinfo(inv); L0.inv_p = inv.p
 	start_scene(L0, Vector2(dir, 0), [tk, gk], "Penálti!")
+
+# ---- atraso ao guarda-redes (Lei 12): o guarda-redes não pode agarrar com as mãos uma bola que um colega
+# lhe passou deliberadamente com o pé. De cabeça, de peito ou num corte falhado (desvio) pode. Livre indireto.
+func atraso_check(gk: Pl, k: Pl) -> bool:
+	if mode != "play" or not training.is_empty() or tut or lance_cd > 0 or bpen or not in_own_box(gk.team, gk.p) or rng.randf() > (0.45 if atraso_forca == "" else 1.0): return false
+	start_atraso(gk, k)
+	return true
+var atraso_forca := ""          # testes: obriga o próximo atraso a ser "pe", "cabeca" ou "corte"
+func start_atraso(gk: Pl, k: Pl) -> void:
+	var como := atraso_forca if atraso_forca != "" else pick_truth({"pe": 0.5, "cabeca": 0.25, "corte": 0.25})
+	var team := gk.team
+	var di := float(dirs(team))             # para dentro do campo, a partir da baliza do guarda-redes
+	var gx := own_goal_x(team)
+	var G := Vector2(gx + di * clampf(rel(team, gk.p.x), 4.0, 10.0), clampf(gk.p.y, H / 2 - 9, H / 2 + 9))
+	var K0: Vector2 = shot_from if shot_from != null and kicker == k else k.p
+	var away := (K0 - G).normalized() if K0.distance_to(G) > 1.0 else Vector2(di, 0)
+	if away.x * di < 0.3: away = Vector2(di, away.y).normalized()
+	var K := G + away * clampf(K0.distance_to(G), 11.0, 22.0)
+	var opps: Array = active().filter(func(q): return q.team != team and q.role != "gk")
+	var riv: Pl = nearest(opps, K)[0]
+	var s := 1.0 if rng.randf() < 0.5 else -1.0
+	var R := K + away.rotated(deg_to_rad(28) * s) * 8.0     # de onde o adversário remata (no corte) ou de onde vem a pressionar
+	var L0 := {"kind": "atraso", "truth": "atraso" if como == "pe" else "siga", "P": G, "G": G, "K": K, "R": R, "como": como, "s": s,
+		"gx": gx, "dir_in": di, "in_box": false, "att": pinfo(k), "def": pinfo(gk), "A": (G - K).normalized(), "D": (K - G).normalized(), "flash": "Atraso?"}
+	if riv: L0.rival = pinfo(riv)
+	gk.p = G; k.p = K
+	if riv: riv.p = R
+	shot_from = null
+	start_scene(L0, Vector2(-away.y, away.x), [gk, k] + ([riv] if riv else []), "Atraso?")
+
+func _decide_atraso(L: Dictionary, d: String, timed_out: bool) -> void:
+	var ok: bool = d == L.truth
+	var pts := 1.0 if ok else 0.0
+	var dc := 3.0 if ok else -6.0
+	if timed_out: dc -= 4
+	ctrl(dc)
+	L.pts = pts; incidents.append(L); stress_after(L); added += 0.2
+	var gk: Pl = players[L.def.id]
+	var team := gk.team
+	var di := float(L.dir_in)
+	reset_ball(bp)
+	var m: String
+	var against: int
+	if d == "atraso":
+		# livre indireto onde o guarda-redes agarrou a bola; dentro da área de baliza passa para a linha dos 5,5 m (Lei 13)
+		var at: Vector2 = L.G
+		if rel(team, at.x) < 5.5 and absf(at.y - H / 2) < GOAL_W / 2 + 5.5: at.x = float(L.gx) + di * 5.5
+		var atk := 1 - team
+		var mates: Array = active().filter(func(q): return q.team == atk and q.role != "gk")
+		var tk: Pl = nearest(mates, at)[0]
+		bp = at
+		if tk:
+			tk.p = at + Vector2(di * 0.8, 0); owner = tk; last = atk; tk.cd = 1.4; tk.set_piece = true; parado_dono = tk
+		# a defesa pode ficar em cima da linha de golo, entre os postes, mesmo a menos de 9,15 m
+		var n := 0
+		for q in active():
+			if q.team == team and q.p.distance_to(at) < 9.15:
+				q.p = Vector2(float(L.gx) + di * 0.3, H / 2 + (n - 3) * 1.0); n += 1
+		m = "Atraso ao guarda-redes: livre indireto " + de_t(atk) + " dentro da área"; against = team
+		sfx("whistle", "short")
+	else:
+		bp = gk.p; owner = gk; last = team; gk.cd = 1.0
+		m = "Siga: " + {"cabeca": "atraso de cabeça, o guarda-redes pode agarrar", "corte": "foi um corte falhado, não um passe"}.get(L.como, "o guarda-redes pode agarrar")
+		against = 1 - team
+	L.against = against
+	crowd_react(against, pts < 1)
+	feed_decision(L, d, m)
+	_finish(L, d, m, func(): protest_after(against, 0.2, pts < 1))
 
 func _decide_pen(L: Dictionary, d: String, timed_out: bool) -> void:
 	var ok: bool = d == L.truth
@@ -2052,6 +2125,7 @@ func feed_decision(L: Dictionary, d: String, msg_: String) -> void:
 	var dn: int = L.def.num if L.has("def") else 0
 	var intro: String
 	if L.get("goal_ctx", false) and k != "offside": intro = pick(["Revisão do golo: ", "Antes de validar o golo: ", "Golo em análise: "])
+	elif k == "atraso": intro = pick(["Bola atrasada para o guarda-redes " + de_t(L.def.team) + ": ", "O guarda-redes agarra a bola que veio do %d: " % an])
 	elif k == "aereo": intro = pick(["Disputa no ar entre o %d e o %d: " % [an, dn], "Bola longa e choque de cabeças: "])
 	elif k == "pisao": intro = pick(["Entrada por trás do %d %s: " % [dn, de_t(L.def.team)], "O %d protege a bola e leva com o pé do %d: " % [an, dn]])
 	elif L.get("gk_out", false): intro = pick(["O guarda-redes sai da área ao encontro do %d: " % an, "Saída arriscada do guarda-redes fora da área: "])
@@ -2086,6 +2160,8 @@ func ref_says(L: Dictionary, d: String) -> String:
 		s = {"pen_ok": "Penálti bem batido. " + ("Golo!" if L.golo else "Bola do guarda-redes."),
 			"repetir": "O penálti vai ser repetido." + (" O guarda-redes saiu da linha antes do pontapé." if L.infr == "gr" else (" Entraste na área antes do pontapé." if L.infr == "invasao" else "")),
 			"livreind": "Paraste no fim da corrida: é proibido. Livre indireto e amarelo." if L.infr == "paradinha" else "Entraste na área antes do pontapé. Livre indireto para a defesa."}.get(d, "")
+	elif k == "atraso":
+		s = "Passe deliberado com o pé e agarraste com as mãos. Livre indireto!" if d == "atraso" else {"cabeca": "Foi de cabeça, podes agarrar. Siga!", "corte": "Foi um corte falhado, não um passe. Siga!"}.get(L.como, "Siga!")
 	elif k == "linha": s = "A bola passou toda a linha. É golo!" if d == "entrou" else "Não passou toda a linha. Não há golo."
 	elif k == "mao": s = "Braço junto ao corpo, posição natural. Siga!" if d == "siga" else ("Braço aberto, a fazer o corpo maior. É mão." if d == "mao" else "Mão deliberada a cortar o remate: amarelo.")
 	elif k == "canto": s = "Disputa normal na área. Siga, levanta-te!" if d == "siga" else ("Empurrou-o pelas costas. Penálti!" if d == "penalti" else "Afastaste o defesa com o braço. Falta atacante.")
@@ -2120,6 +2196,7 @@ func gest_of(L: Dictionary, d: String) -> Dictionary:
 		var w: int = att_id if d == "simulacao" else def_id
 		g.merge({"type": "card", "col": "yellow", "second": w >= 0 and players[w].off, "who": w}, true)
 	elif d == "fora": g.merge({"type": "up", "who": att_id}, true)
+	elif d == "atraso": g.merge({"type": "up", "who": def_id}, true)
 	elif d == "vantagem": g.merge({"type": "adv", "who": -1}, true)
 	elif d == "valido" or d == "entrou" or (L.has("goal") and d == "emjogo"): g.merge({"type": "point", "to": Vector2(W / 2, H / 2), "elev": -0.12, "who": -1, "run": true}, true)
 	elif d == "anular" or d == "ataque": g.merge({"type": "point", "dir": Vector2(dirs(1 - atk_t), 0), "elev": 0.12, "who": att_id}, true)

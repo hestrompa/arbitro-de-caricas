@@ -510,6 +510,7 @@ func _setup_scene(l: Dictionary) -> void:
 			"offside": c = {"lance": 9}
 			"golo": c = {"lance": 10, "side": l.s}
 			"pen": c = {"lance": 11, "side": l.lado}
+			"atraso": c = {"lance": 12, "side": l.s}
 		l.cur = c
 	cur = c
 	# quem está à volta: os mais perto do lance
@@ -518,6 +519,7 @@ func _setup_scene(l: Dictionary) -> void:
 	var first: Array = []
 	if k == "canto" and l.has("taker"): first.append({"id": l.taker.id, "team": l.taker.team, "role": l.taker.role, "num": l.taker.num, "p": l.corner, "v": Vector2.ZERO})
 	if k == "aereo" and l.has("passer"): first.append({"id": l.passer.id, "team": l.passer.team, "role": l.passer.role, "num": l.passer.num, "p": l.K, "v": Vector2.ZERO})
+	if k == "atraso" and l.has("rival"): first.append({"id": l.rival.id, "team": l.rival.team, "role": l.rival.role, "num": l.rival.num, "p": l.R, "v": Vector2.ZERO})
 	if k == "pen" and l.has("inv"): first.append({"id": l.inv.id, "team": l.inv.team, "role": l.inv.role, "num": l.inv.num, "p": l.inv_p, "v": Vector2.ZERO})
 	if k == "golo" and l.has("taker"): first.append({"id": l.taker.id, "team": l.taker.team, "role": "gk", "num": l.taker.num, "p": Vector2(l.gx - l.dir_in * 0.7, l.G.y * 0.4 + 34 * 0.6), "v": Vector2.ZERO})
 	others = others.filter(func(o): return not (int(o.id) in used) and not first.any(func(f): return int(f.id) == int(o.id)))
@@ -533,7 +535,7 @@ func _setup_scene(l: Dictionary) -> void:
 		else:
 			e.node.visible = false; e.set_meta("spot", Vector2(-40, -40)); e.set_meta("v", Vector2.ZERO)
 	sc.n_extras = mini(list.size(), extras.size())
-	if k in ["canto", "golo", "linha", "mao", "offside", "aereo", "pen"]: sc.approach = false
+	if k in ["canto", "golo", "linha", "mao", "offside", "aereo", "pen", "atraso"]: sc.approach = false
 	match k:
 		"aereo": sc.K = l.K; sc.passer = l.has("passer") and list.size() > 0
 		"mao": sc.K = l.K; sc.Sd = l.Sd; sc.arm = l.arm_out; sc.s = l.side
@@ -544,6 +546,7 @@ func _setup_scene(l: Dictionary) -> void:
 			# no penálti o árbitro coloca-se ao lado, entre a marca e a entrada da área
 			var pd := Vector2(-A.y, A.x) * (1.0 if REF.y > P.y else -1.0)
 			_ref_corrida(P - A * 5.5 + pd * 7.0, float(jogo.stamina) if jogo else 100.0)
+		"atraso": sc.G = l.G; sc.K = l.K; sc.R = l.R; sc.como = l.como; sc.gx = l.gx; sc.dir_in = l.dir_in; sc.rival = l.has("rival") and list.size() > 0
 		"golo": sc.C = l.C; sc.Pk = l.Pk; sc.G = l.G; sc.s = l.s; sc.gx = l.gx; sc.dir_in = l.dir_in; sc.fall = l.get("fall", false); P = l.C
 		"offside": _setup_offside(l)
 
@@ -655,6 +658,7 @@ func _restart() -> void:
 		9: TC = 1.8
 		10: TC = 1.8
 		11: TC = 2.8
+		12: TC = 2.6
 	DUR = TC + 7.8
 	if modo != "treino": DUR = 1e9
 	t2d = _t2d()
@@ -773,6 +777,7 @@ func _scene_process(delta: float) -> void:
 		9: _offside(dt)
 		10: _goalfoul(dt)
 		11: _penalty(dt)
+		12: _atraso(dt)
 	if sc.get("approach", true): _extras_step(dt)
 	elif lance != 9 and lance != 11: _extras_idle(dt)
 	var all: Array = [att, def] + extras
@@ -863,6 +868,7 @@ func _extras_idle(dt: float) -> void:
 		if lance == 10 and i == 0: continue
 		if lance == 7 and i == 0: continue
 		if lance == 5 and i == 0 and sc.get("passer", false): continue
+		if lance == 12 and i == 0 and sc.get("rival", false): continue
 		if _segue_2d(e): continue
 		var cu: Vector2 = e.get_meta("cur")
 		var v: Vector2 = e.get_meta("v")
@@ -877,7 +883,7 @@ func _extras_idle(dt: float) -> void:
 func _t2d() -> float:
 	if modo == "treino" or not L.has("hist"): return -1.0
 	match lance:
-		0, 1, 2, 3, 4, 6, 8: return TC
+		0, 1, 2, 3, 4, 6, 8, 12: return TC
 		5: return TC - 1.5
 		7: return TC - 1.3
 	return -1.0
@@ -1104,6 +1110,81 @@ func _corner(dt: float) -> void:
 			b3_free = true
 			bv3 = Vector3(-V.x * 6, 2.0, -V.y * 6) if T != "ataque" else Vector3(V.x * 4, 1.0, V.y * 4)
 
+# 12) atraso ao guarda-redes: passe com o pé (livre indireto), de cabeça ou num corte falhado (pode agarrar).
+# O guarda-redes agarra a bola em TC: rasteira baixa-se (gk_catch, mãos no chão aos 0,72 s), alta à altura do peito (gk_catch2, 0,40 s)
+func _atraso(dt: float) -> void:
+	var G: Vector2 = sc.G
+	var K: Vector2 = sc.K
+	var como: String = sc.como
+	var kg := (G - K).normalized()
+	var alta := como != "pe"
+	var fly := clampf(K.distance_to(G) / 11.0, 1.1, 1.8) if not alta else 1.05
+	var tk := TC - fly
+	var gclip := "gk_catch2" if alta else "gk_catch"
+	var gkey := 0.40 if alta else 0.72
+	if not sc.has("gk_at"):
+		# o guarda-redes coloca-se de modo a que as mãos fiquem em G no instante TC
+		var R := Basis(Vector3.UP, atan2(-kg.x, -kg.y))
+		var mid := R * ((def.clip_bone(gclip, gkey, "wrist_L") + def.clip_bone(gclip, gkey, "wrist_R")) * 0.5)
+		var r0 := R * def.clip_bone(gclip, 0.0, "root")
+		sc.gk_at = G - Vector2(mid.x, mid.z) + Vector2(r0.x, r0.z)
+		sc.mao_y = maxf(mid.y, 0.11)
+	var gk_at: Vector2 = sc.gk_at
+	if not def.rag:
+		if t < TC - gkey: def.move(gk_at, -kg, 0.0); def.play("idle", 0.3)
+		elif not sc.get("gk_on", false):
+			sc.gk_on = true; def.kin(gclip, 0.0, -kg, gk_at, 1.0, "anim", 0.15)
+	var C3: Vector3                         # onde o defesa toca na bola
+	match como:
+		"pe":
+			# tem a bola controlada, olha para o guarda-redes e passa com o pé
+			if not _kin_run(att, "atraso", "m_kick", 0.4, "foot_R", K, kg, 0.0, tk, 2.4) and t > tk: _settle(att, dt, kg)
+			C3 = Vector3(K.x, 0.11, K.y)
+			if t < tk: b3 = Vector3(K.x - kg.x * 2.4 * (tk - t), 0.11, K.y - kg.y * 2.4 * (tk - t))
+		"cabeca":
+			# bola longa do adversário a cair; o defesa recua e cabeceia para trás, para o guarda-redes
+			if not _kin_run(att, "cab", "header", 1.13, "head", K, kg, 0.55, tk, 3.0, true) and t > tk: _settle(att, dt, kg)
+			var hy: float = att.clip_bone("header", 1.13, "head").y + 0.12
+			C3 = Vector3(K.x, hy, K.y)
+			if t < tk:
+				var S3 := Vector3(K.x - kg.x * 30.0, 0.11, K.y - kg.y * 30.0)
+				var k := (t - (tk - 1.7)) / 1.7
+				b3 = _arc(S3, C3, 11.0, k) if k > 0 else S3
+		_:
+			# o adversário remata ou cruza; o defesa tenta aliviar, a bola sai-lhe mal do pé e sobe para o guarda-redes
+			var Rp: Vector2 = sc.R
+			var tr := tk - 0.45
+			var rd := (K - Rp).normalized()
+			var riv: Jogador = extras[0]
+			if sc.get("rival", false) and riv.node.visible and not riv.rag:
+				if not _kin_run(riv, "rem", "m_kick", 0.4, "foot_R", Rp, rd, 0.0, tr, 2.0) and t > tr: _settle(riv, dt, rd)
+			if not _kin_run(att, "corte", "m_kick", 0.4, "foot_R", K, -rd, 0.0, tk, 1.5) and t > tk: _settle(att, dt, -rd)
+			C3 = Vector3(K.x, 0.25, K.y)
+			if t < tr: b3 = Vector3(Rp.x - rd.x * 2.0 * (tr - t), 0.11, Rp.y - rd.y * 2.0 * (tr - t))
+			elif t < tk: b3 = Vector3(Rp.x, 0.11, Rp.y).lerp(C3, (t - tr) / 0.45)
+	if como != "corte" and sc.get("rival", false):
+		# o adversário vem a pressionar quem tem a bola
+		var rv: Jogador = extras[0]
+		var Rq: Vector2 = sc.R
+		if rv.node.visible and not rv.rag:
+			var kk := clampf(t / (TC + 0.6), 0.0, 0.65)
+			rv.move(Rq.lerp(K, kk), (K - Rq).normalized(), 3.5 if kk < 0.65 else 0.0)
+			rv.play("jog" if kk < 0.65 else "idle", 0.3)
+	if t >= tk and not hit_done:
+		var k := clampf((t - tk) / fly, 0.0, 1.0)
+		# as mãos do guarda-redes (vivas) são o destino: a bola chega mesmo às mãos
+		var mao := Vector3(G.x, sc.mao_y, G.y)
+		if sc.get("gk_on", false): mao = (def.bone_world("wrist_L") + def.bone_world("wrist_R")) * 0.5
+		if alta: b3 = _arc(C3, mao, 2.6 if como == "cabeca" else 3.4, k)
+		else: b3 = C3.lerp(Vector3(mao.x, 0.11, mao.z), 1.0 - pow(1.0 - k, 1.5))
+		if t >= TC:
+			hit_done = true
+			outcome = {"pe": "passe deliberado com o pé para o guarda-redes, que agarra com as mãos", "cabeca": "atraso de cabeça: o guarda-redes pode agarrar",
+				"corte": "corte falhado do defesa (não é passe): o guarda-redes pode agarrar"}.get(como, "")
+	if hit_done:
+		b3 = (def.bone_world("wrist_L") + def.bone_world("wrist_R")) * 0.5 + Vector3(0, 0.02, 0)
+		b3.y = maxf(b3.y, 0.11)
+
 # 8) bola na linha: o guarda-redes agarra-a em cima da linha
 func _line(dt: float) -> void:
 	var B: Vector2 = sc.B
@@ -1309,6 +1390,7 @@ func _focus() -> Vector3:
 		9: return Vector3(sc.line_x, 0.9, sc.recv.y)
 		10: return Vector3(b3.x, 0.8, b3.z).lerp(Vector3(P.x, 0.9, P.y), 0.4)
 		11: return Vector3(P.x, 0.8, P.y).lerp(Vector3(float(sc.gx), 0.9, H / 2), 0.25)
+		12: return Vector3(b3.x, 0.8, b3.z).lerp(Vector3(P.x, 0.9, P.y), 0.5)
 	return Vector3(P.x, 0.9, P.y)
 
 func _camera() -> void:
