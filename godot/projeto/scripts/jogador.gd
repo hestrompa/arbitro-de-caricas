@@ -51,6 +51,7 @@ var pts: Array = []
 var bi := {}                      # nome do osso -> índice
 var team := 0
 var num := 0
+var fase_passo := 0.0     # cada jogador começa as corridas noutra fase da passada (dois lado a lado não correm em espelho)
 
 var state := ""
 var phase := "anim"               # anim | queda | chao | levantar | desliza | kin (captura com deslocamento) | chao_k
@@ -102,6 +103,7 @@ func _init(parent: Node3D, kit: Dictionary, n: int, id: int, tm: int) -> void:
 	node.process_mode = Node.PROCESS_MODE_PAUSABLE
 	parent.add_child(node)
 	var r := RandomNumberGenerator.new(); r.seed = id * 7919 + 13
+	fase_passo = fposmod(id * 0.37, 1.0)
 	mat = ShaderMaterial.new(); mat.shader = KIT
 	var skin_i: int = r.randi() % SKINS.size()
 	mat.set_shader_parameter("skin_tex", load("res://assets/skin_%s.jpg" % SKINS[skin_i]))
@@ -232,9 +234,16 @@ func _build_body() -> void:
 # ---------- animação ----------
 func play(name: String, blend := 0.15, from := 0.0) -> void:
 	if state == name: return
+	var era := state
+	var f := fase_passo
+	# ciclos: entre corrida e trote mantém-se a fase do passo; vindo de outra coisa, cada um tem a sua
+	if era in ["run", "jog"] and name in ["run", "jog"] and anim.current_animation_length > 0.0:
+		f = anim.current_animation_position / anim.current_animation_length
 	state = name
 	anim.play(name, blend)
 	if from > 0.0: anim.seek(from, true)
+	elif name in ["run", "jog", "idle"] and anim.current_animation_length > 0.0:
+		anim.seek(f * anim.current_animation_length, true)
 
 func anim_rot(an: Animation, bone: String, tm: float) -> Quaternion:
 	var tr := an.find_track(NodePath("Jogador/Skeleton3D:" + bone), Animation.TYPE_ROTATION_3D)
@@ -305,6 +314,7 @@ func update(dt: float, t: float) -> void:
 	_body_lean(dt)
 	_springs(dt)
 	_stagger(dt)
+	_arm_swing(dt)
 	_ik()
 	_balance(dt)
 
@@ -396,6 +406,30 @@ func _aim(i: int, from: Vector3, to: Vector3) -> void:
 	if p >= 0: pb = skel.get_bone_global_pose(p).basis
 	var nb := Basis(q) * g.basis
 	skel.set_bone_pose_rotation(i, (pb.inverse() * nb).get_rotation_quaternion())
+
+# A corrida capturada (CMU) leva as duas mãos à frente, como quem segura um tabuleiro.
+# Na corrida, cada braço balança ao contrário da perna do mesmo lado: mão à frente do peito
+# quando o pé contrário vai à frente, mão atrás da anca quando vai atrás (cotovelo dobrado).
+var swing_w := 0.0
+func _arm_swing(dt: float) -> void:
+	var want := 1.0 if state == "run" else 0.0
+	swing_w = move_toward(swing_w, want, dt * 4.0)
+	var w := swing_w * clampf(1.0 - layer_w * 2.0, 0.0, 1.0) * 0.9
+	if w <= 0.01: return
+	var gt := skel.global_transform
+	var hip := (skel.get_bone_global_pose(bi["upperleg01_L"]).origin + skel.get_bone_global_pose(bi["upperleg01_R"]).origin) * 0.5
+	for sd in ["L", "R"]:
+		var wk: String = "wrist_" + sd
+		if ik.has(wk) and float(ik[wk][1]) > 0.0: continue
+		var op: String = "R" if sd == "L" else "L"
+		var foot := skel.get_bone_global_pose(bi["foot_" + op]).origin
+		var sw := clampf((foot.z - hip.z) / 0.42, -1.0, 1.0)
+		var u := smoothstep(-1.0, 1.0, sw)
+		var sh := skel.get_bone_global_pose(bi["upperarm01_" + sd]).origin
+		var side := signf(sh.x - hip.x)
+		var back := Vector3(side * 0.10, -0.40, -0.20)
+		var front := Vector3(-side * 0.02, -0.22, 0.28)
+		two_bone("upperarm01_" + sd, "lowerarm01_" + sd, wk, gt * (sh + back.lerp(front, u)), w)
 
 func _ik() -> void:
 	for k in ik.keys():

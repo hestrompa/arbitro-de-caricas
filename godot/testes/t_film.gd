@@ -12,6 +12,7 @@ var CASES = [
 	["empurrao", {"lance": 1, "force": 1.1, "side": 1.0, "sim": false, "clean": false, "phi": 50.0, "vD": 8.0}],
 	["linha", {"lance": 8, "force": 1.0, "side": 1.0, "sim": false, "clean": false, "phi": 50.0, "vD": 8.0}],
 	["golo", {"lance": 10, "force": 1.0, "side": 1.0, "sim": false, "clean": false, "phi": 50.0, "vD": 8.0}],
+	["puxao", {"lance": 2, "force": 0.9, "side": 1.0, "sim": false, "clean": false}],
 	["ombro", {"lance": 3, "force": 1.0, "side": 1.0, "sim": false, "clean": false, "phi": 50.0, "vD": 8.0}],
 ]
 func _initialize():
@@ -31,7 +32,9 @@ func _initialize():
 		if OS.get_environment("TV") != "": m.tv_start()
 		m.cam_mode = int(OS.get_environment("CAM")) if OS.get_environment("CAM") != "" else 1
 		var k := 0
-		for dt in [-0.25, -0.08, 0.0, 0.05, 0.2, 0.5]:
+		var dts := [-0.25, -0.08, 0.0, 0.05, 0.2, 0.5]
+		if OS.get_environment("CEDO") != "": dts = [-1.6, -1.3, -1.0, -0.7, -0.4, -0.1]
+		for dt in dts:
 			while m.t < m.TC + dt: await process_frame
 			await process_frame
 			root.get_viewport().get_texture().get_image().save_png(OUT + "%s_%d.png" % [c[0], k])

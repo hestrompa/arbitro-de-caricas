@@ -812,7 +812,7 @@ func _scene_process(delta: float) -> void:
 	if modo == "treino":
 		var info := ""
 		if hit_done and t > TC + 1.2: info = "Verdade do lance: " + outcome + ("  ·  " + verdict if verdict != "" else "")
-		lab1.text = "GODOT 4 · %s   |   %s   |   %s s   |   N lance seguinte · R repetir (outro toque) · 1-4 câmaras · Espaço pausa · S lento · Esc menu" % [LANCES[lance], ["A TUA VISTA", "VISTA IDEAL", "ATRÁS DO LANCE", "DE PERTO"][cam_mode], ("%+.2f" % (t - TC)).replace(".", ",")]
+		lab1.text = "GODOT 4 · %s   |   %s   |   %s s   |   N lance seguinte · R repetir (outro toque) · 1-4 câmaras · Espaço pausa · S lento · Esc menu" % [LANCES[lance] if lance < LANCES.size() else str(lance), ["A TUA VISTA", "VISTA IDEAL", "ATRÁS DO LANCE", "DE PERTO"][cam_mode], ("%+.2f" % (t - TC)).replace(".", ",")]
 		lab2.text = info
 	else:
 		lab1.text = ""; lab2.text = ""
@@ -2163,7 +2163,7 @@ func _dribble(dt: float) -> void:
 	var ahead := Vector2(bpos.x - ap.x, bpos.y - ap.z).dot(A)
 	if touchT <= 0.0 and ahead < 0.75:
 		touchT = 0.5
-		bvel = A * (vA * 1.35)
+		bvel = A * (clampf(att.speed, 1.0, vA) * 1.35)
 	# o pé que está à frente desce até à bola no momento do toque
 	var fk := "foot_R" if att.bone_world("foot_R").distance_to(Vector3(bpos.x, 0.1, bpos.y)) < att.bone_world("foot_L").distance_to(Vector3(bpos.x, 0.1, bpos.y)) else "foot_L"
 	var w: float = clamp(1.0 - abs(touchT - 0.45) / 0.08, 0.0, 1.0) * 0.8
@@ -2182,9 +2182,16 @@ func _ball(dt: float) -> void:
 		var pe := _bico_do_pe(def, Vector3(bpos.x, 0.11, bpos.y))
 		var k := clampf((t - (TC - 0.25)) / 0.25, 0.0, 1.0)
 		bpos = bpos.lerp(Vector2(pe.x, pe.z), k * k)
-	if not free_ball and bvel.length() < vA: bvel = A * vA
+	# a bola acompanha quem a conduz: se ele abranda (agarrado, a proteger), ela não lhe foge
+	var va := clampf(att.speed, 1.0, vA)
+	if not free_ball and bvel.length() < va: bvel = A * va
+	if not free_ball and ahead_of_att() > 1.6: bvel = A * minf(bvel.length(), va * 0.8)
 	ball.position = Vector3(bpos.x, 0.11, bpos.y)
 	if not paused and bvel.length() > 0.05: ball.rotate(Vector3(bvel.y, 0, -bvel.x).normalized(), bvel.length() / 0.11 * dt)
+
+func ahead_of_att() -> float:
+	var ap := att.body_pos()
+	return Vector2(bpos.x - ap.x, bpos.y - ap.z).dot(A)
 
 func _leg_of(p: Jogador, near: Vector3) -> String:
 	return "L" if p.bone_world("lowerleg01_L").distance_to(near) + p.bone_world("foot_L").distance_to(near) < p.bone_world("lowerleg01_R").distance_to(near) + p.bone_world("foot_R").distance_to(near) else "R"
@@ -2463,7 +2470,7 @@ func _pull(dt: float) -> void:
 	var hand := "wrist_L" if side > 0 else "wrist_R"
 	def.ik = {hand: [shoulder, gw]}
 	def.layer = "pull"; def.layer_w = 0.45 * gw
-	att.layer = "held"; att.layer_w = 0.5 * gw
+	att.layer = "held"; att.layer_w = 0.35 * gw
 	att.lean = Vector3(-0.25 * gw, 0, -0.15 * gw * side)
 	if not hit_done and t >= TC:
 		hit_done = true
