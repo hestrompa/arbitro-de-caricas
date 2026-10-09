@@ -73,7 +73,10 @@ var jump := 0.0                   # salto (bola no ar)
 var rag := false
 var ragT := 0.0
 var drive_off := 0.0
-var gr := false                   # é guarda-redes (outra maneira de esperar)              # a queda segue a captura a partir deste instante
+var gr := false                   # é guarda-redes (outra maneira de esperar)
+var gesto := ""                   # reação depois de um lance: "braco", "bracos", "abre", "cabeca"
+var gesto_t := 0.0                # tempo que falta (negativo = ainda não começou)
+var gesto_dur := 1.0              # a queda segue a captura a partir deste instante
 var drive_anim := "dive"
 var drive_k := 0.55
 var hurt := 0.0                   # 0 = nada, 1 = muito queixoso
@@ -336,6 +339,7 @@ func update(dt: float, t: float) -> void:
 	_arm_swing(dt)
 	_ik()
 	_balance(dt)
+	_gesto(dt)
 
 # tronco de outra animação por cima das pernas a correr (puxar a camisola, ser agarrado)
 func _layers(t: float) -> void:
@@ -367,6 +371,38 @@ func _balance(dt: float) -> void:
 	var flap := sin(stum_t * 18.0) * 0.06
 	two_bone("upperarm01_L", "lowerarm01_L", "wrist_L", sl + side * 0.5 + Vector3(0, 0.12 + flap, 0) + back, w)
 	two_bone("upperarm01_R", "lowerarm01_R", "wrist_R", sr - side * 0.5 + Vector3(0, 0.12 - flap, 0) + back, w)
+
+# depois de um lance: pedir falta de braço no ar, abrir os braços ("nem lhe toquei"), mãos na cabeça
+func reage(g: String, atraso: float, dur: float) -> void:
+	gesto = g; gesto_t = -atraso; gesto_dur = dur
+
+func _gesto(dt: float) -> void:
+	if gesto == "": return
+	gesto_t += dt
+	if gesto_t < 0.0: return
+	if gesto_t > gesto_dur: gesto = ""; return
+	var w: float = clampf(gesto_t / 0.25, 0.0, 1.0) * clampf((gesto_dur - gesto_t) / 0.35, 0.0, 1.0)
+	w = w * w * (3.0 - 2.0 * w)
+	var sl := bone_world("upperarm01_L"); var sr := bone_world("upperarm01_R")
+	var side := (sl - sr).normalized()
+	var fw := Vector3(sin(node.rotation.y), 0, cos(node.rotation.y))
+	var up := Vector3.UP
+	match gesto:
+		"braco":
+			# um braço esticado no ar, a pedir falta
+			two_bone("upperarm01_R", "lowerarm01_R", "wrist_R", sr + up * 0.58 + fw * 0.12 - side * 0.08, w)
+		"bracos":
+			two_bone("upperarm01_L", "lowerarm01_L", "wrist_L", sl + up * 0.55 + fw * 0.1 + side * 0.12, w)
+			two_bone("upperarm01_R", "lowerarm01_R", "wrist_R", sr + up * 0.55 + fw * 0.1 - side * 0.12, w)
+		"abre":
+			# braços abertos, palmas para a frente: "o que foi?"
+			var bob := sin(gesto_t * 5.0) * 0.04
+			two_bone("upperarm01_L", "lowerarm01_L", "wrist_L", sl + side * 0.42 + fw * 0.22 - up * (0.12 + bob), w)
+			two_bone("upperarm01_R", "lowerarm01_R", "wrist_R", sr - side * 0.42 + fw * 0.22 - up * (0.12 - bob), w)
+		"cabeca":
+			var h := bone_world("head")
+			two_bone("upperarm01_L", "lowerarm01_L", "wrist_L", h + side * 0.13 + up * 0.08 - fw * 0.02, w)
+			two_bone("upperarm01_R", "lowerarm01_R", "wrist_R", h - side * 0.13 + up * 0.08 - fw * 0.02, w)
 
 func hit(ang: Vector3) -> void:
 	sv += ang
@@ -777,7 +813,8 @@ func reset() -> void:
 	for ab in proxies: ab.collision_layer = L_PROXY
 	slide_v = 0.0; snap = true; body_lean = Vector3.ZERO; stum_t = 0.0; last_speed = 0.0
 	state = ""; off = Vector2.ZERO; lift = 0.0; jump = 0.0; sp = Vector3.ZERO; sv = Vector3.ZERO
-	stag = Vector2.ZERO; stagv = Vector2.ZERO; ik.clear(); layer = ""; layer_w = 0.0; lean = Vector3.ZERO; hurt = 0.0
+	stag = Vector2.ZERO; stagv = Vector2.ZERO; ik.clear(); layer = ""; layer_w = 0.0; lean = Vector3.ZERO; hurt = 0.0; gesto = ""
+	if has_meta("reac"): remove_meta("reac")
 
 # ---------- contacto com o chão e com os outros ----------
 func gpts() -> Array:

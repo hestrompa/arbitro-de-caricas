@@ -859,8 +859,25 @@ func _extras_step(dt: float) -> void:
 			e.set_meta("cur", cu); e.set_meta("vel", vel)
 			sp = vel.length()
 			face = vel.normalized() if sp > 1.2 else (to.normalized() if to.length() > 0.1 else e.dir)
+			# reagem ao lance: os da equipa do derrubado pedem falta ao árbitro, os outros protestam a inocência
+			if not e.has_meta("reac"): e.set_meta("reac", _reacao(e, to.length()))
+			if e.gesto != "" and e.gesto_t > 0.0 and sp < 1.2 and (REF - cu).length() > 0.5: face = (REF - cu).normalized()
 		e.move(cu, face, sp)
 		e.play("run" if sp > 4.2 else ("jog" if sp > 0.7 else "idle"), 0.3)
+func _reacao(e: Jogador, dist: float) -> String:
+	if not (lance <= 4 or lance == 6) or dist > 28.0: return ""
+	var r := rng.randf()
+	var g := ""
+	if e.team == att.team:
+		if r < 0.45: g = "braco"
+		elif r < 0.62: g = "bracos"
+		elif r < 0.72: g = "cabeca"
+	else:
+		if r < 0.4: g = "abre"
+		elif r < 0.5: g = "cabeca"
+	if g != "": e.reage(g, 0.25 + rng.randf() * 0.6 + dist * 0.02, 1.2 + rng.randf() * 1.0)
+	return g
+
 # nas cenas paradas (cantos, golos) os outros mexem-se pouco, de frente para a bola
 func _extras_idle(dt: float) -> void:
 	for i in extras.size():
