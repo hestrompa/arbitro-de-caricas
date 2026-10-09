@@ -111,6 +111,9 @@ var owner: Pl = null
 var last := 0
 var kicker: Pl = null
 var shot_from = null
+# rasto das caricas (últimos ~3,5 s, de 0,1 em 0,1 s): o lance 3D repete o que se viu antes do flash
+var hist: Array = []
+var hist_cd := 0.0
 var no_pick: Pl = null
 var no_pick_t := 0.0
 var target: Pl = null
@@ -212,6 +215,7 @@ func who(num: int, team: int) -> String:
 		if q.team == team and q.num == num and q.short != "": return q.short + " (%d) " % num + de_t(team)
 	return "o %d " % num + de_t(team)
 func emit(nm: String, d := {}) -> void:
+	if nm == "lance" and d.has("L") and not d.L.has("hist"): d.L["hist"] = hist_pack()
 	if ev.is_valid(): ev.call(nm, d)
 func toast(s: String, secs := 2.0) -> void: emit("toast", {"txt": s, "secs": secs})
 func sfx(k: String, a = null) -> void: emit("sfx", {"k": k, "a": a})
@@ -288,6 +292,22 @@ func formation_pos(p: Pl) -> Vector2:
 
 func reset_ball(at: Vector2) -> void:
 	bp = at; bv = Vector2.ZERO; bz = 0; bvz = 0; target = null; off_info = {}; trail = []; bpen = false
+	hist = []   # bola parada: os jogadores foram reposicionados, o rasto anterior já não serve
+func hist_step(dt: float) -> void:
+	hist_cd -= dt
+	if hist_cd > 0: return
+	hist_cd = 0.1
+	hist.append(hist_now())
+	if hist.size() > 36: hist.pop_front()
+func hist_now() -> Dictionary:
+	var ps := {}
+	for p in active(): ps[p.id] = p.p
+	return {"t": t, "ps": ps, "b": bp}
+# o rasto com tempos relativos ao instante do flash (tau <= 0)
+func hist_pack() -> Array:
+	var out: Array = []
+	for h in hist + [hist_now()]: out.append({"tau": h.t - t, "ps": h.ps, "b": h.b})
+	return out
 
 func kickoff(team: int) -> void:
 	for p in players:
@@ -678,7 +698,28 @@ func corner(team: int, y: float) -> void:
 		p.p = Vector2(x + (-0.6 if x < 1 else 0.6), y); owner = p; p.cd = 1.1; p.set_piece = true; last = team; parado_dono = p
 	toast("Canto para " + art_t(team), 1.4)
 	pause = 1.1
-	if p: corner_check(team, p, false)
+	if p:
+		corner_setup(team, p)
+		corner_check(team, p, false)
+
+# canto: a área enche-se antes do pontapé (quem ataca entre a marca e a pequena área, quem defende a marcar)
+func corner_setup(team: int, tk: Pl) -> void:
+	var dir := dirs(team)
+	var gx := opp_goal_x(team)
+	# enquanto a área se enche o árbitro também tem tempo de chegar: se ficou muito longe, vai para a
+	# entrada da área do lado contrário ao canto (onde se colocam os árbitros)
+	var rs := Vector2(gx - dir * 17.5, H / 2 + (8.0 if bp.y < H / 2 else -8.0))
+	if ref.distance_to(rs) > 22.0: ref = rs; ref_target = null
+	for p in active():
+		if p == tk: continue
+		p.v = Vector2.ZERO
+		if p.role == "gk":
+			if p.team != team: p.p = Vector2(gx - dir * 0.8, H / 2 + rand(-0.8, 0.8))
+			continue
+		var mine: bool = p.team == team
+		if mine and p.line == "d" and p.role != "lcb" and p.role != "rcb": continue
+		if not mine and p.line == "a" and rng.randf() < 0.6: continue   # um ou dois ficam à espera do contra-ataque
+		p.p = Vector2(gx - dir * (rand(6, 14) if mine else rand(2.5, 10)), H / 2 + rand(-9, 9))
 
 func goal(team: int) -> void:
 	if goal_check(team): return
@@ -816,6 +857,7 @@ func _play_step(dt: float) -> void:
 		ai_step(dt)
 		if mode != "play": return
 		physics(dt)
+	hist_step(dt)
 
 # ---------- lances ----------
 func kind_of(L: Dictionary) -> String: return str(L.get("kind", "foul"))
@@ -946,9 +988,10 @@ func hand_check(p: Pl, sp: float) -> bool:
 	return true
 func start_hand(k: Pl, d: Pl) -> void:
 	var truth := pick_truth({"siga": 0.45, "mao": 0.38, "maoAmarelo": 0.17})
-	var Sd := (d.p - k.p).normalized()
+	var K0: Vector2 = shot_from if shot_from != null and kicker == k else k.p
+	var Sd := (d.p - K0).normalized()
 	if Sd == Vector2.ZERO: Sd = Vector2(dirs(k.team), 0)
-	var dist0: float = clamp(d.p.distance_to(k.p), 7, 15)
+	var dist0: float = clamp(d.p.distance_to(K0), 7, 15)
 	var P := d.p
 	var arm_out: float
 	if truth == "mao": arm_out = rand(1.15, 1.45)
@@ -958,6 +1001,9 @@ func start_hand(k: Pl, d: Pl) -> void:
 		"in_box": in_own_box(d.team, d.p), "att": pinfo(k), "def": pinfo(d), "A": Sd, "D": -Sd}, Vector2(-Sd.y, Sd.x), [k, d], "Mão?")
 
 # ---- canto ou cruzamento: empurrões na área
+# o 3D (main._corner, TC 2,4 s) corre a 3 m/s até ao ponto de encontro Q e o pontapé sai 1,3 s antes:
+# no instante do pontapé o atacante está a 3,9 m de Q, com o defesa colado atrás
+const CANTO_ANTES := 3.9
 func corner_check(team: int, tk: Pl, cross: bool) -> void:
 	if mode != "play" or not training.is_empty() or tut or lance_cd > (3.0 if cross else 9.0) or rng.randf() > (0.6 if cross else 0.75): return
 	var dir := dirs(team)
@@ -975,20 +1021,21 @@ func corner_check(team: int, tk: Pl, cross: bool) -> void:
 	var start := Vector2(gx - dir * 14, H / 2 - near * 3)
 	var V := (Q - start).normalized()
 	var truth := pick_truth({"siga": 0.45, "penalti": 0.33, "ataque": 0.22})
-	# quem sobra vai para a área: atacantes perto da marca de penálti, defesas entre eles e a baliza
-	var others: Array = []
-	for p in active():
-		if p == att or p == def or p == tk: continue
-		if p.role == "gk":
-			if p.team != team: others.append({"id": p.id, "team": p.team, "role": p.role, "num": p.num, "p": Vector2(gx - dir * 0.8, H / 2 + near * 0.6), "v": Vector2.ZERO})
-			continue
-		var mine: bool = p.team == team
-		if mine and p.line == "d" and p.role != "lcb" and p.role != "rcb": continue
-		var x := gx - dir * (rand(6, 14) if mine else rand(2.5, 10))
-		var y := H / 2 + rand(-9, 9)
-		var v := (Q - Vector2(x, y)).normalized() * rand(0, 1.8)
-		others.append({"id": p.id, "team": p.team, "role": p.role, "num": p.num, "p": Vector2(x, y), "v": v})
-	start_scene({"kind": "canto", "truth": truth, "P": Q, "Q": Q, "V": V, "s": 1.0 if rng.randf() < 0.5 else -1.0, "in_box": true, "corner": bp, "gx": gx, "dir": dir,
+	var s := 1.0 if rng.randf() < 0.5 else -1.0
+	var perp := Vector2(-V.y, V.x) * s
+	if not cross:
+		# bola parada: as caricas ficam exatamente como o 3D começa
+		att.p = Q - V * CANTO_ANTES
+		def.p = att.p + (V * 0.15 + perp * 0.6 if truth == "ataque" else -V * 0.55 + perp * 0.35)
+	elif att.p.distance_to(Q) < 9.0:
+		# em jogo corrido o ponto de encontro fica no caminho de quem lá está
+		if att.p.distance_to(Q) > 0.8: V = (Q - att.p).normalized()
+		Q = att.p + V * CANTO_ANTES
+		perp = Vector2(-V.y, V.x) * s
+	att.v = Vector2.ZERO; def.v = Vector2.ZERO
+	# os outros ficam onde estão nas caricas
+	var others: Array = others_near(Q, [att, def, tk], 32)
+	start_scene({"kind": "canto", "truth": truth, "P": Q, "Q": Q, "V": V, "s": s, "in_box": true, "corner": bp, "gx": gx, "dir": dir,
 		"fall": truth == "penalti" or (truth == "siga" and rng.randf() < 0.4), "att": pinfo(att), "def": pinfo(def), "taker": pinfo(tk), "others": others,
 		"A": V, "D": V, "cross": cross}, Vector2(-V.y, V.x), [att, def, tk], "Cruzamento" if cross else "Canto")
 
@@ -1045,7 +1092,7 @@ func aerial_check(p: Pl, m: Pl) -> void:
 	var V := (Q - p.p).normalized()
 	var truth := pick_truth({"siga": 0.38, "falta": 0.3, "amarelo": 0.17 * opp.hard_k, "vermelho": 0.12 * opp.hard_k})
 	start_scene({"kind": "aereo", "truth": truth, "P": Q, "Q": Q, "V": V, "s": 1.0 if rng.randf() < 0.5 else -1.0, "K": p.p, "in_box": in_own_box(opp.team, Q),
-		"att": pinfo(m), "def": pinfo(opp), "A": V, "D": -V, "fall": truth != "siga" or rng.randf() < 0.3}, Vector2(-V.y, V.x), [m, opp], "Lance!", false)
+		"att": pinfo(m), "def": pinfo(opp), "passer": pinfo(p), "A": V, "D": -V, "fall": truth != "siga" or rng.randf() < 0.3}, Vector2(-V.y, V.x), [m, opp], "Lance!", false)
 
 # ---- contra-ataque: o defesa fica para trás e agarra a camisola
 func grab_check(att: Pl, def: Pl) -> bool:

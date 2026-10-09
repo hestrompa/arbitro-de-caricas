@@ -83,6 +83,7 @@ var bv3 := Vector3.ZERO
 var b3_free := false
 var b3_net := 0.0          # x da rede quando a bola vai para a baliza (0 = sem rede)
 var sc := {}               # dados da cena atual
+var t2d := -1.0            # instante da cena que corresponde ao flash das caricas (antes disso repete o rasto 2D)
 # partida
 var modo := "menu"         # menu | carreira | jogo | flash | lance | var | gesto | intervalo | rever | treino | fim
 var jogo: Partida
@@ -465,6 +466,7 @@ func _kit(team: int, role: String) -> Dictionary:
 func _dress(j: Jogador, info: Dictionary) -> void:
 	var tm := int(info.team)
 	j.set_kit(_kit(tm, str(info.get("role", ""))), int(info.num), tm)
+	j.set_meta("pid", int(info.get("id", -1)))
 	j.label.modulate = jogo.teams[tm].get("text", Color(0.97, 0.97, 0.95)) if jogo else Color(0.97, 0.97, 0.95)
 	j.mat.set_shader_parameter("numcol", j.label.modulate)
 	j.node.visible = true
@@ -515,6 +517,7 @@ func _setup_scene(l: Dictionary) -> void:
 	var used := [int(l.att.id), int(l.def.id) if l.has("def") else -1]
 	var first: Array = []
 	if k == "canto" and l.has("taker"): first.append({"id": l.taker.id, "team": l.taker.team, "role": l.taker.role, "num": l.taker.num, "p": l.corner, "v": Vector2.ZERO})
+	if k == "aereo" and l.has("passer"): first.append({"id": l.passer.id, "team": l.passer.team, "role": l.passer.role, "num": l.passer.num, "p": l.K, "v": Vector2.ZERO})
 	if k == "pen" and l.has("inv"): first.append({"id": l.inv.id, "team": l.inv.team, "role": l.inv.role, "num": l.inv.num, "p": l.inv_p, "v": Vector2.ZERO})
 	if k == "golo" and l.has("taker"): first.append({"id": l.taker.id, "team": l.taker.team, "role": "gk", "num": l.taker.num, "p": Vector2(l.gx - l.dir_in * 0.7, l.G.y * 0.4 + 34 * 0.6), "v": Vector2.ZERO})
 	others = others.filter(func(o): return not (int(o.id) in used) and not first.any(func(f): return int(f.id) == int(o.id)))
@@ -532,7 +535,7 @@ func _setup_scene(l: Dictionary) -> void:
 	sc.n_extras = mini(list.size(), extras.size())
 	if k in ["canto", "golo", "linha", "mao", "offside", "aereo", "pen"]: sc.approach = false
 	match k:
-		"aereo": sc.K = l.K
+		"aereo": sc.K = l.K; sc.passer = l.has("passer") and list.size() > 0
 		"mao": sc.K = l.K; sc.Sd = l.Sd; sc.arm = l.arm_out; sc.s = l.side
 		"canto": sc.Q = l.Q; sc.V = l.V; sc.s = l.s; sc.corner = l.corner; sc.fall = l.get("fall", false); A = l.V
 		"linha": sc.B = l.B; sc.bh = l.bh; sc.Pk = l.Pk; sc.gx = l.gx; sc.dir_in = l.dir_in
@@ -654,6 +657,7 @@ func _restart() -> void:
 		11: TC = 2.8
 	DUR = TC + 7.8
 	if modo != "treino": DUR = 1e9
+	t2d = _t2d()
 	att.play("run", 0.0); def.play("run", 0.0)
 	for e in extras: e.play("jog", 0.0)
 	bpos = P - A * vA * TC + A * 0.7
@@ -820,6 +824,7 @@ func _extras_step(dt: float) -> void:
 	for i in extras.size():
 		var e: Jogador = extras[i]
 		if not e.node.visible or e.rag or e.phase != "anim": continue
+		if _segue_2d(e): continue
 		var spot: Vector2 = e.get_meta("spot")
 		var vv: Vector2 = e.get_meta("v", Vector2.ZERO)
 		if vv.length() < 1.5:
@@ -857,6 +862,8 @@ func _extras_idle(dt: float) -> void:
 		if not e.node.visible or e.rag or e.phase != "anim": continue
 		if lance == 10 and i == 0: continue
 		if lance == 7 and i == 0: continue
+		if lance == 5 and i == 0 and sc.get("passer", false): continue
+		if _segue_2d(e): continue
 		var cu: Vector2 = e.get_meta("cur")
 		var v: Vector2 = e.get_meta("v")
 		if v.length() > 0.2 and t < TC + 0.6: cu += v * dt * 0.6
@@ -864,6 +871,44 @@ func _extras_idle(dt: float) -> void:
 		var to := Vector2(b3.x, b3.z) - cu
 		e.move(cu, to.normalized() if to.length() > 0.1 else Vector2(0, 1), v.length() * 0.6 if t < TC + 0.6 else 0.0)
 		e.play("jog" if v.length() > 1.0 and t < TC + 0.6 else "idle", 0.4)
+
+# ---------- o 3D continua as caricas ----------
+# em que instante da cena estava o jogo 2D quando parou (o flash); antes disso os outros repetem o rasto 2D
+func _t2d() -> float:
+	if modo == "treino" or not L.has("hist"): return -1.0
+	match lance:
+		0, 1, 2, 3, 4, 6, 8: return TC
+		5: return TC - 1.5
+		7: return TC - 1.3
+	return -1.0
+# posição de um jogador nas caricas tau segundos antes do flash (null se não houver rasto)
+func _hist_pos(id: int, tau: float) -> Variant:
+	var h: Array = L.get("hist", [])
+	if h.is_empty() or id < 0: return null
+	var prev = null
+	var pt := 0.0
+	for s in h:
+		if not s.ps.has(id): continue
+		var q: Vector2 = s.ps[id]
+		if s.tau >= tau:
+			if prev == null: return q
+			return (prev as Vector2).lerp(q, clamp((tau - pt) / maxf(s.tau - pt, 0.001), 0.0, 1.0))
+		prev = q; pt = s.tau
+	return prev
+# antes do instante do flash, quem está à volta faz exatamente o que fez nas caricas
+func _segue_2d(e: Jogador) -> bool:
+	if t2d < 0.0 or t >= t2d: return false
+	var id := int(e.get_meta("pid", -1))
+	var a = _hist_pos(id, t - t2d)
+	if a == null: return false
+	var b = _hist_pos(id, minf(t - t2d + 0.15, 0.0))
+	var vel: Vector2 = ((b as Vector2) - (a as Vector2)) / maxf(minf(0.15, t2d - t), 0.02)
+	var sp := vel.length()
+	var face: Vector2 = vel / sp if sp > 0.6 else e.dir
+	e.set_meta("cur", a); e.set_meta("vel", vel)
+	e.move(a, face, sp)
+	e.play("run" if sp > 4.2 else ("jog" if sp > 0.7 else "idle"), 0.3)
+	return true
 
 # ---------- bola no ar ----------
 func _arc(a: Vector3, b: Vector3, h: float, k: float) -> Vector3:
@@ -944,6 +989,12 @@ func _aerial(dt: float) -> void:
 				att.hurt = 1.0; bv3 = Vector3(-A.x * 2, 3.0, -A.y * 2) - p3 * 3
 				att.fall(v3 * 0.5 + Vector3(0, 0.4, 0), ["head", "spine03"], -Vector3(A.x, 0, A.y) * 2.0 - p3 * 2.6 + Vector3(0, 0.6, 0), "fallback", 0.45, Vector3(0, 2.0 * side, 0))
 		outcome = {"siga": "os dois saltam à bola, sem braço", "falta": "empurra-o nas costas durante o salto", "amarelo": "usa o braço como alavanca no ombro", "vermelho": "cotovelada na cara"}.get(T, "")
+	# quem fez o passe longo: chuta no sítio onde estava nas caricas
+	var psr: Jogador = extras[0]
+	if sc.get("passer", false) and psr.node.visible and not psr.rag:
+		var K0: Vector2 = sc.K
+		var tp := (P - K0).normalized()
+		if not _kin_run(psr, "passe", "m_kick", 0.4, "foot_R", K0, tp, 0.0, TC - 1.5, 1.5) and t > TC - 1.5: _settle(psr, dt, tp)
 	if not b3_free:
 		var K: Vector2 = sc.K
 		var from := Vector3(K.x, 0.11, K.y)
@@ -992,10 +1043,19 @@ func _corner(dt: float) -> void:
 	var v := 3.0
 	var ap := Q + V * v * minf(t - TC, 0.25)
 	var tk := TC - 1.3
+	var dof := V * 0.15 + perp * 0.6 if T == "ataque" else -V * 0.55 + perp * 0.35
+	# em jogo corrido os dois partem de onde estavam nas caricas e juntam-se ao lance antes do salto
+	if not sc.has("off_a"):
+		var a2 = _hist_pos(int(L.att.id), 0.0) if L.has("att") else null
+		var d2 = _hist_pos(int(L.def.id), 0.0) if L.has("def") else null
+		var a_tk := Q - V * v * (TC - tk)
+		sc.off_a = ((a2 as Vector2) - a_tk).limit_length(4.0) if a2 != null else Vector2.ZERO
+		sc.off_d = ((d2 as Vector2) - a_tk - dof).limit_length(4.0) if d2 != null else Vector2.ZERO
+	var wo := 1.0 - smoothstep(tk, TC - 0.35, t)
 	if t < TC + 0.4:
-		if not att.rag: att.move(ap, V, v if t < TC + 0.25 else 0.5); att.play("jog", 0.3)
-		var dp := ap - V * 0.55 + perp * 0.35
-		if T == "ataque": dp = ap + V * 0.15 + perp * 0.6
+		var a_at: Vector2 = ap + (sc.off_a as Vector2) * wo
+		if not att.rag: att.move(a_at, V, v if t < TC + 0.25 else 0.5); att.play("jog", 0.3)
+		var dp: Vector2 = ap + dof + (sc.off_d as Vector2) * wo
 		if not def.rag: def.move(dp, V, v); def.play("jog", 0.3)
 	else:
 		_settle(att, dt, V); _settle(def, dt, V)
