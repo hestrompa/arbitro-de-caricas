@@ -697,6 +697,7 @@ func _restart() -> void:
 # ---------- ciclo ----------
 func _process(delta: float) -> void:
 	if fp_vig and fp_vig.visible and not (modo in ["lance", "treino"]): fp_vig.visible = false
+	if pip_box and pip_box.visible and not (modo in ["lance", "var", "rever"]): pip_box.visible = false   # câmara do passe só no lance
 	if not tv.is_empty() and not (modo in ["var", "rever", "treino"]): _tv_end()
 	match modo:
 		"jogo", "flash", "intervalo", "fim":
