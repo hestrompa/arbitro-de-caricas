@@ -1,5 +1,6 @@
 class_name UI
 extends CanvasLayer
+const VERSAO := preload("res://scripts/versao.gd")   # gerado pelo publicar.sh
 # Todos os ecrãs e avisos: menu, carreira, decisões, perguntas, protestos, intervalo, relatório,
 # rádio, relato, frase do árbitro, tutorial e ficha do jogador. Cada botão chama main.on_ui(ação, valor).
 
@@ -368,6 +369,7 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 	hb.add_child(_btn("Todo o som ligado" if som else "Todo o som desligado", func(): main.on_ui("som", null), Color(), 0, 16))
 	if best != "": menu_v.add_child(_lbl("Melhor nota: " + best, 15, DIM))
 	menu_v.add_child(_wrap("Teclas: WASD/setas mover · Shift correr · 1–6 decidir · R rever · C câmara · Espaço pausa · Esc menu", 13, DIM, 500))
+	menu_v.add_child(_lbl("Versão " + VERSAO.TXT, 13, DIM))
 	menu.visible = true
 
 # ---------- carreira ----------

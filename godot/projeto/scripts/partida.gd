@@ -320,7 +320,7 @@ func kickoff(team: int) -> void:
 		for p in active():
 			if p.team == team and p.role != "gk": taker = p; break
 	taker.p = Vector2(W / 2 - dirs(team) * 1.1, H / 2)
-	owner = taker; last = team; taker.cd = 0.6; pause = 1.0; parado_dono = taker
+	owner = taker; last = team; taker.cd = 0.6; taker.set_piece = true; pause = 1.0; parado_dono = taker
 
 func move_to(p: Pl, tg: Vector2, speed: float, dt: float) -> void:
 	var d := tg - p.p
@@ -421,6 +421,9 @@ func on_ball(p: Pl, dt: float) -> void:
 			if s.x < 1.1 and s.y < 0.95: blk += 1
 		choices.append({"type": "shoot", "sc": (1 - dg / 28) * 1.8 - ang * 0.7 - blk * 0.3 + rand(0, 0.35) + (0.55 if in_own_box(1 - p.team, p.p) else 0.0)})
 	var was_set := p.set_piece
+	# Lei 11: não há fora de jogo num lançamento, num canto nem num pontapé de baliza (nos livres há)
+	var canto_bp := (bp.x < 1.0 or bp.x > W - 1.0) and (bp.y < 1.0 or bp.y > H - 1.0)
+	var sem_offside := was_set and (bp.y < 0 or bp.y > H or canto_bp or p.role == "gk")
 	var wide := absf(p.p.y - H / 2) > 18 and rel(p.team, p.p.x) > W - 32
 	for m in mates:
 		var d: float = m.p.distance_to(p.p)
@@ -463,12 +466,12 @@ func on_ball(p: Pl, dt: float) -> void:
 		"shoot": shoot(p, false)
 		"pass":
 			pass_to(p, c.m, c.lofted)
-			if not was_set: offside_snap(p, c.m)
+			if not sem_offside: offside_snap(p, c.m)
 			if c.cross and not was_set: corner_check(p.team, p, true)
-			elif c.lofted and not was_set: aerial_check(p, c.m)
+			elif c.lofted and not sem_offside: aerial_check(p, c.m)
 		"through":
 			kick(p, c.tg, false); target = c.m
-			offside_snap(p, c.m)
+			if not sem_offside: offside_snap(p, c.m)
 		"dribble": p.dribble = c.dir
 		_:
 			kick(p, Vector2(abs_x(p.team, rel(p.team, p.p.x) + 30), H / 2 + rand(-12, 12)), true)
@@ -835,7 +838,7 @@ func tick(dt: float) -> void:
 
 func _play_step(dt: float) -> void:
 	t += dt
-	if add_min and t >= MATCH_SECONDS * (1 + add_min / 90.0):
+	if add_min and t >= MATCH_SECONDS * (1 + add_min / 90.0) and pode_acabar(dt):
 		end_match("fim"); return
 	lance_cd -= dt
 	for k in 2: aggr[k] = max(0.05, aggr[k] - 0.012 * dt)
@@ -845,7 +848,7 @@ func _play_step(dt: float) -> void:
 	crowd += (crowd_base - crowd) * 0.02 * dt
 	stress_step(dt)
 	if tut: tut_step()
-	half_check(); added_time_check(); pend_step(dt); stall_step(dt); fk_step(dt); coach_step(dt)
+	half_check(dt); added_time_check(); pend_step(dt); stall_step(dt); fk_step(dt); coach_step(dt)
 	if mode != "play": return
 	if not training.is_empty():
 		lance_cd = 1e9; training.next -= dt
@@ -1967,9 +1970,32 @@ func crit_txt() -> String:
 func crit_penalty() -> float: return minf(1.0, 0.3 * crit_flips)
 
 # ---------- intervalo ----------
-func half_check() -> void:
-	if half or not training.is_empty() or tut or mode != "play" or t < MATCH_SECONDS / 2 or pause > 0 or not ask.is_empty() or not fk.is_empty() or not pend_card.is_empty() or bpen: return
-	half = 1; half_time()
+func half_check(dt := 0.0) -> void:
+	if half or not training.is_empty() or tut or mode != "play" or t < MATCH_SECONDS / 2 or pause > 0 or not pode_acabar(dt): return
+	half = 1; fim_folga = 0.0; half_time()
+
+# ---- fim de cada parte
+# Lei 7: a parte prolonga-se sempre até se bater um penálti (e até a bola desse penálti parar).
+# Prática dos árbitros: com um ataque perigoso a decorrer (bola no último terço com quem ataca,
+# remate ou cruzamento a caminho da baliza, livre ou canto perto da área) espera-se que acabe,
+# até FOLGA_MAX segundos de simulação (cerca de 1 minuto de jogo).
+const FOLGA_MAX := 3.0
+var fim_folga := 0.0
+func pode_acabar(dt: float) -> bool:
+	if bpen or not ask.is_empty() or not fk.is_empty() or not pend_card.is_empty(): return false
+	if parado_dono != null and parado_dono.penalty: return false
+	if pen_3d: return false
+	if perigo():
+		fim_folga += dt
+		return fim_folga > FOLGA_MAX
+	return true
+func perigo() -> bool:
+	var team: int = owner.team if owner else last
+	if owner and owner.role == "gk": return false
+	var gx := opp_goal_x(team)
+	if absf(bp.x - gx) > 30: return false
+	if owner: return true
+	return bv.length() > 4 and (gx - bp.x) * bv.x > 0
 func half_time() -> void:
 	mode = "intervalo"
 	sfx("whistle", "end")
@@ -1986,6 +2012,7 @@ func half_time() -> void:
 	emit("half", {"title": "Intervalo · %d–%d" % [score[0], score[1]], "txt": txt, "rows": rows})
 func second_half(talk := "descanso") -> void:
 	if mode != "intervalo": return
+	fim_folga = 0.0
 	var msg := ""
 	match talk:
 		"capitaes":
