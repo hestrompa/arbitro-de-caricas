@@ -987,10 +987,10 @@ func _aerial(dt: float) -> void:
 				if L.get("fall", false): att.hurt = 0.2; att.fall(v3 * 0.6 + Vector3(0, 0.4, 0), [], Vector3.ZERO, "dive", 0.8)
 			"falta":
 				att.hurt = 0.2; bv3 = Vector3(A.x * 3, 2.5, A.y * 3) - p3 * 2
-				att.fall(v3 + Vector3(0, 0.5, 0), ["spine03", "spine02"], v3 * 1.3 + Vector3(A.x, 0.3, A.y) * 2.6, "dive", 0.6)
+				att.fall(v3 + Vector3(0, 0.5, 0), ["spine03", "spine02"], v3 * 1.3 + Vector3(A.x, 0.3, A.y) * 2.6, "trip", 0.6, Vector3.ZERO, 0.3)
 			"amarelo":
 				att.hurt = 0.5; bv3 = Vector3(-A.x * 2, 2.5, -A.y * 2) - p3 * 3
-				att.fall(v3 * 0.8 - p3 * 1.6 + Vector3(0, 0.5, 0), ["spine03", "upperarm01_L", "upperarm01_R"], -p3 * 3.4 + Vector3(0, 0.2, 0), "dive", 0.5)
+				att.fall(v3 * 0.8 - p3 * 1.6 + Vector3(0, 0.5, 0), ["spine03", "upperarm01_L", "upperarm01_R"], -p3 * 3.4 + Vector3(0, 0.2, 0), "trip", 0.5, Vector3.ZERO, 0.3)
 			_:
 				att.hurt = 1.0; bv3 = Vector3(-A.x * 2, 3.0, -A.y * 2) - p3 * 3
 				att.fall(v3 * 0.5 + Vector3(0, 0.4, 0), ["head", "spine03"], -Vector3(A.x, 0, A.y) * 2.0 - p3 * 2.6 + Vector3(0, 0.6, 0), "fallback", 0.45, Vector3(0, 2.0 * side, 0))
@@ -1085,7 +1085,7 @@ func _corner(dt: float) -> void:
 		var p3 := Vector3(perp.x, 0, perp.y)
 		match T:
 			"penalti":
-				att.hurt = 0.3; att.fall(v3 + Vector3(0, 0.3, 0), ["spine03", "spine02"], v3 * 1.2 + Vector3(V.x, 0.25, V.y) * 2.6, "dive", 0.6)
+				att.hurt = 0.3; att.fall(v3 + Vector3(0, 0.3, 0), ["spine03", "spine02"], v3 * 1.2 + Vector3(V.x, 0.25, V.y) * 2.6, "trip", 0.6, Vector3.ZERO, 0.3)
 				outcome = "o defesa empurra-o pelas costas"
 			"ataque":
 				def.push(Vector2(p3.x, p3.z) * 2.6)
@@ -1311,7 +1311,7 @@ func _goalfoul(dt: float) -> void:
 		var p3 := Vector3(perp.x, 0, perp.y)
 		if T == "anular":
 			def.push(perp * 3.0); def.hit(Vector3(0, 0, 1.2 * float(sc.s)))
-			if sc.fall: def.hurt = 0.2; def.fall(Vector3(A.x, 0, A.y) * v * 0.6 + p3 * 2.4 + Vector3(0, 0.3, 0), ["spine03", "upperarm01_L", "upperarm01_R"], p3 * 3.2, "dive", 0.5)
+			if sc.fall: def.hurt = 0.2; def.fall(Vector3(A.x, 0, A.y) * v * 0.6 + p3 * 2.4 + Vector3(0, 0.3, 0), ["spine03", "upperarm01_L", "upperarm01_R"], p3 * 3.2, "trip", 0.5, Vector3.ZERO, 0.3)
 			outcome = "o atacante afasta o defesa com o braço antes de rematar"
 		else:
 			def.push(perp * 1.2); att.hit(Vector3(0, 0, -0.5 * float(sc.s)))
@@ -2364,9 +2364,10 @@ func _impacto(pt: Vector3, f: float, bola := false) -> void:
 		get_tree().create_timer(1.2, true, false, true).timeout.connect(pf.queue_free)
 
 # tropeção capturado: o corpo cai para a frente como na captura, depois fica queixoso no chão
-func _trip(j: Jogador, d: Vector2, k: float) -> void:
+func _trip(j: Jogador, d: Vector2, k: float, from := 0.12, blend := 0.08) -> void:
 	var bp := j.body_pos()
-	j.kin("trip", 0.12, d, Vector2(bp.x, bp.z), k, "chao", 0.08)
+	j.kin("trip", from, d, Vector2(bp.x, bp.z), k, "chao", blend, false, TRIP_CHAO)
+const TRIP_CHAO := -1.0
 
 # quando começar o carrinho, de onde e a que velocidade, para o pé chegar ao alvo no instante TC
 # Captura com um momento-chave (cabeça na bola, pé na bola): onde pôr o jogador e quando arrancar,
@@ -2448,8 +2449,17 @@ func _push(dt: float) -> void:
 		else:
 			outcome = "empurrão forte: projetado para a frente (falta, pode ser amarelo)"
 			att.hurt = 0.3
-			att.fall(v3 + Vector3(A.x, 0.3, A.y) * 2.6 * force, ["spine03", "head"], v3 * 1.3 + Vector3(A.x, 0.2, A.y) * 3.0 * force, "dive", 0.6)
+			# dá dois ou três passos aos tropeções, de tronco à frente, e só depois cai de mãos no chão
+			att.push(A * 2.4 * force); att.hit(Vector3(2.2 * force, 0, 0))
+			sc.cai_em = t + 0.28 / force
 		def.hit(Vector3(-0.8, 0, 0))
+	if hit_done and sc.has("cai_em") and att.phase == "anim":
+		att.lean = Vector3(0.3 * clampf((t - TC) / 0.2, 0.0, 1.0), 0, 0)
+		att.move(att.pos + A * att.speed * dt, A, maxf(att.speed - 2.0 * dt, 4.0)); att.play("run", 0.1)
+		if t >= sc.cai_em:
+			sc.erase("cai_em"); att.lean = Vector3.ZERO
+			_trip(att, A, 1.0, 0.3, 0.15)
+		return
 	if hit_done: _settle(att, dt, A)
 
 # 3) puxão de camisola: corre ao lado, agarra e trava; ao largar, o atacante desequilibra-se
@@ -2508,7 +2518,7 @@ func _shoulder(dt: float) -> void:
 			outcome = "carga forte e tardia: cai de lado (falta)"
 			free_ball = true; bvel = A * 5.0
 			att.hurt = 0.4
-			att.fall(Vector3(A.x, 0, A.y) * vA - Vector3(perp.x, 0, perp.y) * 2.2 * force, ["spine03", "upperarm01_L", "upperarm01_R"], -Vector3(perp.x, 0, perp.y) * 3.0 * force, "dive", 0.5)
+			att.fall(Vector3(A.x, 0, A.y) * vA - Vector3(perp.x, 0, perp.y) * 2.2 * force, ["spine03", "upperarm01_L", "upperarm01_R"], -Vector3(perp.x, 0, perp.y) * 3.0 * force, "trip", 0.5, Vector3.ZERO, 0.3)
 
 # dois jogadores nunca ocupam o mesmo espaço; quem está caído é um obstáculo (contorna-se)
 func _separate(all: Array) -> void:

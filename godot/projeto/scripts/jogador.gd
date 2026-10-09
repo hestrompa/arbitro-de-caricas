@@ -72,6 +72,7 @@ var lift := 0.0
 var jump := 0.0                   # salto (bola no ar)
 var rag := false
 var ragT := 0.0
+var drive_off := 0.0              # a queda segue a captura a partir deste instante
 var drive_anim := "dive"
 var drive_k := 0.55
 var hurt := 0.0                   # 0 = nada, 1 = muito queixoso
@@ -160,6 +161,22 @@ func _init(parent: Node3D, kit: Dictionary, n: int, id: int, tm: int) -> void:
 	for q in PTS: pts.append([bi[q[0]], q[1], q[2]])
 	if clip_speed.is_empty():
 		for c in ["run", "jog"]: clip_speed[c] = _measure_speed(c)
+		for c in ["trip", "trip_m"]: _sem_escorpiao(anim.get_animation(c))
+
+# o tropeção capturado cai de peito e atira as pernas por cima da cabeça (parece o pino):
+# depois de o peito chegar à relva, as pernas vão direitas para a pose final, estendidas no chão
+static func _sem_escorpiao(an: Animation) -> void:
+	if an == null: return
+	for i in an.get_track_count():
+		if an.track_get_type(i) != Animation.TYPE_ROTATION_3D: continue
+		var b := String(an.track_get_path(i).get_concatenated_subnames())
+		if not (b == "root" or b.begins_with("upperleg") or b.begins_with("lowerleg") or b.begins_with("foot")): continue
+		var fim: Quaternion = an.rotation_track_interpolate(i, an.length)
+		for k in an.track_get_key_count(i):
+			var w := smoothstep(0.4, 0.72, an.track_get_key_time(i, k))
+			if w <= 0.0: continue
+			var q: Quaternion = an.track_get_key_value(i, k)
+			an.track_set_key_value(i, k, q.slerp(fim, w))
 
 # muda de equipamento e número (o mesmo corpo serve para qualquer jogador do jogo)
 func set_kit(kit: Dictionary, n: int, tm: int) -> void:
@@ -514,9 +531,15 @@ func body_pos() -> Vector3:
 	return node.position
 
 # ---------- queda ----------
-func fall(v: Vector3, hit_bones: Array, hit_v: Vector3, anim_name := "dive", k := 0.55, spin := Vector3.ZERO) -> void:
+func fall(v: Vector3, hit_bones: Array, hit_v: Vector3, anim_name := "dive", k := 0.55, spin := Vector3.ZERO, off := 0.0) -> void:
 	rag = true; ragT = 0.0; phase = "queda"
-	drive_anim = anim_name; drive_k = k
+	drive_anim = anim_name; drive_k = k; drive_off = off
+	if anim_name != "dive":
+		# quem é derrubado não voa: mantém o embalo da corrida, sem saltar, e o toque só o desequilibra
+		v.y = minf(v.y, 0.25)
+		hit_v.y = minf(hit_v.y, 0.2)
+		var extra := hit_v + v * 0.2 - v
+		if extra.length() > 2.5: hit_v = v * 0.8 + extra.normalized() * 2.5
 	for ab in proxies: ab.collision_layer = 0
 	sim.influence = 0.0
 	sim.physical_bones_start_simulation()
@@ -533,7 +556,7 @@ func fall(v: Vector3, hit_bones: Array, hit_v: Vector3, anim_name := "dive", k :
 # corpo ativo: cada parte tenta seguir a pose alvo; a física (chão, outros jogadores) tem a última palavra
 func physics_step(_pdt: float, t: float) -> void:
 	if not rag or phase == "levantar": return
-	if phase == "queda": _drive(drive_anim, ragT, drive_k if ragT < 0.9 else 0.3, {})
+	if phase == "queda": _drive(drive_anim, ragT + drive_off, drive_k if ragT < 0.9 else 0.3, {})
 	elif phase == "chao":
 		if hurt > 0.0: _drive(drive_anim, 9.0, 0.22, _hurt_pose(t))
 		else: _drive(drive_anim, 9.0, 0.15, {})
@@ -623,7 +646,7 @@ func _slide_step(dt: float) -> void:
 # Toca o clip a partir de "from" com o corpo virado para d; a anca nesse instante fica em "at".
 # O próprio clip leva o corpo (desliza, cai, rebola); os pés/corpo ficam sempre assentes na relva.
 static var _kin_info := {}
-func kin(clip: String, from: float, d: Vector2, at: Vector2, k := 1.0, next := "anim", blend := 0.12, air := false) -> void:
+func kin(clip: String, from: float, d: Vector2, at: Vector2, k := 1.0, next := "anim", blend := 0.12, air := false, ate := -1.0) -> void:
 	if rag: return
 	phase = "kin"; kin_next = next
 	kin_air = air; kin_y = 99.0
@@ -635,7 +658,7 @@ func kin(clip: String, from: float, d: Vector2, at: Vector2, k := 1.0, next := "
 	node.rotation.y = yaw
 	var r0: Vector3 = Basis(Vector3.UP, yaw) * (fk(clip, from)[0] as Transform3D).origin
 	node.position = Vector3(at.x - r0.x, node.position.y, at.y - r0.z)
-	kin_end = anim.get_animation(clip).length - 0.04
+	kin_end = anim.get_animation(clip).length - 0.04 if ate < 0.0 else ate
 	groundT = 0.0
 
 # onde fica um osso (no espaço do modelo) num instante do clip: para acertar o contacto
@@ -682,7 +705,7 @@ func _kin_step(dt: float) -> void:
 			# fica deitado (encolhido, queixoso) no sítio onde a queda acabou
 			var at := Vector2(rw.x, rw.z)
 			phase = "chao_k"
-			state = ""; play("lying", 0.35); anim.speed_scale = 1.0
+			state = ""; play("lying", 0.5); anim.speed_scale = 1.0
 			var r0: Vector3 = node.global_transform.basis * (fk("lying", 0.0)[0] as Transform3D).origin
 			node.position.x = at.x - r0.x; node.position.z = at.y - r0.z
 			groundT = 0.0
