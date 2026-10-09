@@ -467,6 +467,7 @@ func _dress(j: Jogador, info: Dictionary) -> void:
 	var tm := int(info.team)
 	j.set_kit(_kit(tm, str(info.get("role", ""))), int(info.num), tm)
 	j.set_meta("pid", int(info.get("id", -1)))
+	j.gr = str(info.get("role", "")) == "gk"
 	j.label.modulate = jogo.teams[tm].get("text", Color(0.97, 0.97, 0.95)) if jogo else Color(0.97, 0.97, 0.95)
 	j.mat.set_shader_parameter("numcol", j.label.modulate)
 	j.node.visible = true
@@ -484,7 +485,7 @@ func _setup_scene(l: Dictionary) -> void:
 	P = l.P; A = l.get("A", Vector2(1, 0)); REF = l.ref
 	_ref_corrida(REF, float(jogo.stamina) if jogo else 100.0)
 	if A == Vector2.ZERO: A = Vector2(1, 0)
-	for j in [att, def, refj] + extras: j.reset(); j.node.visible = true
+	for j in [att, def, refj] + extras: j.reset(); j.gr = false; j.node.visible = true
 	_dress(att, l.att)
 	if l.has("def") and int(l.def.id) >= 0: _dress(def, l.def)
 	refj.set_kit(_ref_kit(), 0, 2)

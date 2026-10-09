@@ -72,7 +72,8 @@ var lift := 0.0
 var jump := 0.0                   # salto (bola no ar)
 var rag := false
 var ragT := 0.0
-var drive_off := 0.0              # a queda segue a captura a partir deste instante
+var drive_off := 0.0
+var gr := false                   # é guarda-redes (outra maneira de esperar)              # a queda segue a captura a partir deste instante
 var drive_anim := "dive"
 var drive_k := 0.55
 var hurt := 0.0                   # 0 = nada, 1 = muito queixoso
@@ -250,6 +251,7 @@ func _build_body() -> void:
 
 # ---------- animação ----------
 func play(name: String, blend := 0.15, from := 0.0) -> void:
+	if gr and name == "idle": name = "gk_idle"       # o guarda-redes espera meio agachado, de braços abertos
 	if state == name: return
 	var era := state
 	var f := fase_passo
@@ -259,7 +261,7 @@ func play(name: String, blend := 0.15, from := 0.0) -> void:
 	state = name
 	anim.play(name, blend)
 	if from > 0.0: anim.seek(from, true)
-	elif name in ["run", "jog", "idle"] and anim.current_animation_length > 0.0:
+	elif name in ["run", "jog", "idle", "gk_idle"] and anim.current_animation_length > 0.0:
 		anim.seek(f * anim.current_animation_length, true)
 
 func anim_rot(an: Animation, bone: String, tm: float) -> Quaternion:
