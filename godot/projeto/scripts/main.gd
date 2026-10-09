@@ -90,6 +90,11 @@ var jogo: Partida
 var campo: Campo2D
 var ui: UI
 var radar: Radar          # mini-campo do lance 3D (mesma orientação das caricas)
+var pip_box: Panel        # câmara do passe no fora de jogo: quem passa e o instante em que a bola parte
+var pip_cam: Camera3D
+var pip_lbl: Label
+var pip_estilo: StyleBoxFlat
+var pip_alvo := Vector3.ZERO
 var som: Som
 var car := Carreira.new()
 var L := {}                # lance mostrado
@@ -190,6 +195,17 @@ func _labels() -> void:
 	var layer := CanvasLayer.new(); layer.layer = 4; add_child(layer)
 	lab1 = Label.new(); lab1.position = Vector2(14, 10)
 	radar = Radar.new(); radar.main = self; radar.visible = false; layer.add_child(radar)
+	pip_box = Panel.new(); pip_box.size = Vector2(358, 204); pip_box.visible = false; pip_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pip_estilo = StyleBoxFlat.new(); pip_estilo.bg_color = Color(0, 0, 0, 0.6); pip_estilo.set_border_width_all(3); pip_estilo.border_color = Color(1, 1, 1, 0.6)
+	pip_box.add_theme_stylebox_override("panel", pip_estilo)
+	var pc := SubViewportContainer.new(); pc.stretch = true; pc.position = Vector2(3, 3); pc.size = Vector2(352, 198); pc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sv := SubViewport.new(); sv.size = Vector2i(352, 198); sv.render_target_update_mode = SubViewport.UPDATE_WHEN_VISIBLE
+	pc.add_child(sv); pip_box.add_child(pc)
+	pip_cam = Camera3D.new(); pip_cam.fov = 32.0; sv.add_child(pip_cam)
+	pip_lbl = Label.new(); pip_lbl.position = Vector2(10, 6); pip_lbl.add_theme_font_size_override("font_size", 15)
+	pip_lbl.add_theme_color_override("font_outline_color", Color.BLACK); pip_lbl.add_theme_constant_override("outline_size", 5)
+	pip_box.add_child(pip_lbl)
+	layer.add_child(pip_box)
 	lab2 = Label.new(); lab2.position = Vector2(14, 34)
 	for l in [lab1, lab2]:
 		l.add_theme_font_size_override("font_size", 15)
@@ -612,6 +628,7 @@ func _params_for(truth: String, sd: float) -> Dictionary:
 	return c
 
 func _restart() -> void:
+	pip_alvo = Vector3.ZERO
 	t = 0.0
 	REF = ref_ini; ref_vel = 0.0; ref_olhar = Vector3.ZERO; ref_foco = 0.0
 	min_contact = 99.0; contact_checked = false; slp = {}; kp = {}
@@ -810,6 +827,7 @@ func _scene_process(delta: float) -> void:
 	_brilhos_step(0.0 if paused else real_dt)
 	radar.visible = modo in ["lance", "var", "rever"] and jogo != null
 	if radar.visible: radar.position = Vector2(14, get_viewport().get_visible_rect().size.y - radar.size.y - 14)
+	_pip_step()
 	if modo == "treino":
 		var info := ""
 		if hit_done and t > TC + 1.2: info = "Verdade do lance: " + outcome + ("  ·  " + verdict if verdict != "" else "")
@@ -1275,6 +1293,30 @@ func _offside(dt: float) -> void:
 			b3 = Vector3(q.x, 0.11, q.y)
 	if not hit_done and t >= TC:
 		hit_done = true
+		if sc.get("passer") != null and modo != "var": som.kick(0.7)   # ouve-se o passe
+
+# câmara do passe: o assistente não vê quem passa (está a olhar para a linha), por isso mostra-se numa janela
+# à parte o jogador com a bola, vista da linha lateral; quando a bola parte a moldura fica amarela.
+func _pip_step() -> void:
+	var on: bool = lance == 9 and modo in ["lance", "var", "rever"] and sc.get("passer") != null and cam_mode != 5
+	pip_box.visible = on
+	if not on: return
+	var vs := get_viewport().get_visible_rect().size
+	pip_box.position = Vector2(vs.x - pip_box.size.x - 14, 146)   # por baixo do rádio do assistente
+	var pj: Jogador = sc.passer
+	var pp: Vector3 = pj.node.global_position
+	var bp: Vector3 = ball.global_position
+	var foco: Vector3 = pp.lerp(bp, clampf((t - TC) / 1.6, 0.0, 0.55)) if t >= TC else pp.lerp(bp, 0.3)
+	foco.y = 0.8
+	pip_alvo = foco if pip_alvo == Vector3.ZERO or pip_alvo.distance_to(foco) > 25.0 else pip_alvo.lerp(foco, clampf(get_process_delta_time() * 5.0, 0.0, 1.0))
+	var lado := -1.0 if float(sc.ast.y) < H / 2 else 1.0     # do lado do assistente
+	var aberto: float = clampf((t - TC) / 1.2, 0.0, 1.0)        # depois do passe abre um pouco para se ver a bola a ir
+	var eye := pip_alvo + Vector3(-float(sc.dir) * 3.0, 2.6 + aberto * 1.5, lado * (8.5 + aberto * 5.0))
+	pip_cam.look_at_from_position(eye, pip_alvo)
+	var partiu: bool = t >= TC - 0.001 and t < TC + 0.9
+	pip_estilo.border_color = Color(1.0, 0.85, 0.2) if partiu else Color(1, 1, 1, 0.6)
+	pip_lbl.text = "A BOLA PARTIU" if partiu else ("Câmara do passe" if t < TC else "Câmara do passe · depois do passe")
+	pip_lbl.add_theme_color_override("font_color", Color(1.0, 0.86, 0.3) if partiu else Color(0.97, 0.97, 0.94))
 
 # A verdade do fora de jogo mede-se no corpo 3D que se vê, no instante do passe: a parte mais adiantada
 # do atacante (sem braços) contra a do penúltimo defesa (o guarda-redes conta-se como último) e a bola.
@@ -2041,7 +2083,7 @@ func on_ui(a: String, v) -> void:
 			modo = "carreira"; _show_menu_bg(); ui.show_career(car)
 		"career_play":
 			var B := car.match_brief()
-			_new_match(Carreira.teams_for(B.h, B.a, car.C.tier), true)
+			_new_match(car.career_teams(B), true)
 			car.setup_match(jogo)
 		"career_reset": car.new_career(); ui.show_career(car)
 		"attr": car.add_attr(v); ui.show_career(car)

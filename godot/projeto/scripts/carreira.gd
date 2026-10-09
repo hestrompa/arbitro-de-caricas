@@ -39,6 +39,9 @@ const STORIES := {
 	"expulsoes": {"txt": "O último jogo entre eles acabou com duas expulsões.", "aggr": [0.15, 0.15], "crowd": 5},
 	"crise": {"txt": "A equipa da casa não ganha há seis jogos e o público está impaciente.", "aggr": [0.04, 0.0], "crowd": 18},
 	"calmo": {"txt": "Jogo a meio da tabela, sem muito em jogo.", "aggr": [-0.03, -0.03], "crowd": -6},
+	"topo": {"txt": "Primeiro contra segundo: quem ganhar fica com a liderança.", "aggr": [0.1, 0.1], "crowd": 14},
+	"fundo": {"txt": "Os dois últimos da tabela: jogo nervoso, ninguém pode perder.", "aggr": [0.12, 0.12], "crowd": 6},
+	"aflito": {"txt": "Uma das equipas está nos últimos lugares e joga a vida.", "aggr": [0.06, 0.06], "crowd": 4},
 }
 const REF_NAMES := ["Rui Matos", "Carla Pinto", "Nuno Teixeira", "Sofia Ramos", "Hélder Costa", "Marta Faria", "Tiago Lobo", "Inês Barros", "Paulo Seabra", "Joana Prata", "Vasco Nunes", "Ana Lemos", "Bruno Sá", "Filipa Rocha", "Duarte Leal", "Rita Calado"]
 const COACH_F := ["Abel", "Jorge", "Carlos", "Vítor", "Leonel", "Manuel", "Sérgio", "Fernando", "Artur", "Rogério", "Beatriz", "Luísa"]
@@ -75,6 +78,9 @@ static func club_rating(name: String, tier: int) -> int:
 	var i := club_index(name, tier)
 	var r := Seeded.new(hash_s(name) + 11).next()
 	return int(round(clamp(52 + tier * 6.5 + (6 if i >= 0 and i < 2 else 0) + (r - 0.5) * 12, 40, 92)))
+# estilo de jogo do clube (fixo): posse, jogo direto, pressão alta ou bloco baixo e contra-ataque
+static func estilo_of(name: String) -> String:
+	return ["posse", "direto", "pressao", "contra"][(hash_s(name) / 3) % 4]
 static func squad_for(name: String, rating: float) -> Array:
 	var r := Seeded.new(hash_s(name) + 3)
 	var g := func() -> float: return (r.next() + r.next() + r.next() - 1.5) * 1.15
@@ -95,6 +101,12 @@ static func squad_for(name: String, rating: float) -> Array:
 		if i == sim_i and r.next() < 0.75: tr.append("simulador")
 		if i == hard_i and r.next() < 0.8: tr.append("duro")
 		out.append({"name": nm, "short": nm.split(" ")[1], "ovr": float(ovr), "tr": tr, "num": NUMS[i]})
+	# a força do clube é a média do plantel (sem contar a estrela): o sorteio dos nomes não pode fazer um clube melhor do que é
+	var soma := 0.0
+	for q in out:
+		if not "estrela" in q.tr: soma += q.ovr
+	var ajuste := rating - soma / 10.0
+	for q in out: q.ovr = clampf(round(q.ovr + ajuste), 35.0, 95.0)
 	return out
 
 static func _hex_dist(a: Color, b: Color) -> float: return Vector3(a.r - b.r, a.g - b.g, a.b - b.b).length() * 255.0
@@ -127,6 +139,7 @@ static func teams_for(h: Array, a: Array, tier: int) -> Array:
 	return [hk, ak]
 static func c_art(c: Array) -> String: return c[4] + " " + c[0]
 static func round_name(T: Dictionary, r: int) -> String: return CUP_ROUNDS[mini(r, 3)] if T.get("cup", false) else "Jornada %d de %d" % [r + 1, T.games]
+static func cap(t: String) -> String: return t.substr(0, 1).to_upper() + t.substr(1)
 static func f1(x: float) -> String: return ("%.1f" % x).replace(".", ",")
 static func gauss() -> float: return (randf() + randf() + randf() - 1.5) * 1.15
 static func sim_grade(sk: float) -> float: return round(clamp(sk + gauss() * 0.75, 3.5, 9.8) * 10) / 10.0
@@ -155,6 +168,7 @@ func load_c() -> bool:
 	if not C.has("papers"): C.papers = []
 	if not C.has("pl"): C.pl = {}
 	if not C.has("critS"): C.critS = []
+	ensure_league()
 	return true
 func save_c() -> void:
 	var f := FileAccess.open(PATH, FileAccess.WRITE)
@@ -163,6 +177,7 @@ func new_career() -> void:
 	C = {"v": 2, "tier": 0, "season": 1, "round": 0, "sg": [], "log": [], "attrs": {"fis": 3, "leit": 3, "aut": 3, "calma": 3}, "pts": 2, "grudge": {}, "finals": 0,
 		"news": "Começas nos distritais. O observador vê todos os teus jogos: com média acima do que pede, sobes de escalão no fim da época.",
 		"fixtures": make_fixtures(0), "refs": make_refs(0, 0), "papers": [], "pl": {}, "critS": []}
+	ensure_league()
 	save_c()
 
 func make_fixtures(ti: int) -> Array:
@@ -170,7 +185,8 @@ func make_fixtures(ti: int) -> Array:
 	var n: int = T.clubs.size()
 	var out: Array = []
 	var cup: bool = T.get("cup", false)
-	var dr: int = T.games - 1 if cup else randi() % int(T.games)
+	if not cup: return league_fixtures(n, int(T.games))
+	var dr: int = T.games - 1
 	for i in T.games:
 		var h := 0
 		var a := 1
@@ -180,9 +196,139 @@ func make_fixtures(ti: int) -> Array:
 			while true:
 				h = randi() % n; a = randi() % n
 				if h != a and h + a != 1: break
-		var story = "derby" if i == dr else ("" if cup else [ "", "", "subida", "expulsoes", "crise", "calmo"].pick_random())
-		out.append({"h": h, "a": a, "story": story})
+		out.append({"h": h, "a": a, "story": "derby" if i == dr else ""})
 	return out
+
+# ---------- campeonato ----------
+# calendário a uma volta pelo método do círculo (a segunda volta troca casa e fora); em cada jornada
+# jogam-se todos os jogos e o árbitro apita um deles. O dérbi (clubes 0 e 1) cai na jornada em que se encontram.
+static func round_robin(n: int, rounds: int) -> Array:
+	var others: Array = range(1, n)
+	var out: Array = []
+	for r in rounds:
+		var k := r % (n - 1)
+		var arr: Array = [0]
+		for i in others.size(): arr.append(others[(i + k) % others.size()])
+		var jg: Array = []
+		for i in n / 2:
+			var h: int = arr[i]
+			var a: int = arr[n - 1 - i]
+			if ((k + i) % 2 == 1) != (r >= n - 1): jg.append([a, h])
+			else: jg.append([h, a])
+		out.append(jg)
+	return out
+func league_fixtures(n: int, games: int) -> Array:
+	# a ordem das jornadas muda de época para época (a primeira volta antes da segunda)
+	var perm: Array = range(n - 1)
+	perm.shuffle()
+	var todas := round_robin(n, 2 * (n - 1))
+	var rr: Array = []
+	for k in games: rr.append(todas[perm[k % (n - 1)] + (n - 1) * (k / (n - 1))])
+	var out: Array = []
+	var derby_done := false
+	var vezes: Array = []
+	vezes.resize(n); vezes.fill(0)
+	for jg in rr:
+		var pick: Array = []
+		var story := ""
+		for m in jg:
+			if (m[0] + m[1] == 1) and not derby_done: pick = m; story = "derby"; derby_done = true
+		if pick.is_empty():
+			# o árbitro vai variando de clubes: escolhe o jogo com as equipas que apitou menos vezes
+			var cand: Array = jg.filter(func(m): return m[0] + m[1] != 1)
+			cand.shuffle()
+			cand.sort_custom(func(x, y): return vezes[x[0]] + vezes[x[1]] < vezes[y[0]] + vezes[y[1]])
+			pick = cand[0]
+		vezes[pick[0]] += 1; vezes[pick[1]] += 1
+		out.append({"h": pick[0], "a": pick[1], "story": story, "jogos": jg})
+	return out
+# tabela: uma linha por clube do escalão (pela ordem de TIERS.clubs)
+func new_table(n: int) -> Array:
+	var t: Array = []
+	for i in n: t.append({"j": 0, "v": 0, "e": 0, "d": 0, "gm": 0, "gs": 0})
+	return t
+static func t_pts(r: Dictionary) -> int: return int(r.v) * 3 + int(r.e)
+func league_table() -> Array:
+	if not C.has("tab"): return []
+	var T := tier()
+	var rows: Array = []
+	for i in C.tab.size():
+		var r: Dictionary = C.tab[i]
+		rows.append({"i": i, "n": T.clubs[i][0], "j": int(r.j), "v": int(r.v), "e": int(r.e), "d": int(r.d), "gm": int(r.gm), "gs": int(r.gs), "dg": int(r.gm) - int(r.gs), "pts": t_pts(r), "f": int(club_rating(T.clubs[i][0], C.tier))})
+	rows.sort_custom(func(p, q): return p.pts > q.pts or (p.pts == q.pts and (p.dg > q.dg or (p.dg == q.dg and (p.gm > q.gm or (p.gm == q.gm and p.f > q.f))))))
+	return rows
+func table_pos(ci: int) -> int:
+	var tb := league_table()
+	for k in tb.size():
+		if tb[k].i == ci: return k + 1
+	return 0
+func forma(ci: int) -> Array: return C.get("forma", {}).get(str(ci), [])
+# resultado de um jogo que não apitas: golos de Poisson com a força dos clubes (a mesma escala do motor das caricas)
+static func poisson(l: float) -> int:
+	var L := exp(-l)
+	var k := 0
+	var p := 1.0
+	while true:
+		p *= randf()
+		if p <= L or k > 8: break
+		k += 1
+	return k
+static func sim_score(rh: float, ra: float) -> Array:
+	var gap := (rh - ra) * 0.03
+	return [poisson(1.3 * exp(gap + 0.08)), poisson(1.3 * exp(-gap))]
+func table_add(h: int, a: int, gh: int, ga: int) -> void:
+	for pr in [[h, gh, ga], [a, ga, gh]]:
+		var r: Dictionary = C.tab[pr[0]]
+		r.j = int(r.j) + 1; r.gm = int(r.gm) + pr[1]; r.gs = int(r.gs) + pr[2]
+		var res := "v" if pr[1] > pr[2] else ("e" if pr[1] == pr[2] else "d")
+		r[res] = int(r[res]) + 1
+		if not C.has("forma"): C.forma = {}
+		var fm: Array = C.forma.get(str(pr[0]), [])
+		fm.append(res.to_upper()); C.forma[str(pr[0])] = fm.slice(-5)
+# fecha a jornada: o teu jogo conta com o resultado real, os outros são simulados
+func play_round(rnd: int, h: int, a: int, sc: Array) -> Array:
+	var T := tier()
+	var outros: Array = []
+	var f: Dictionary = C.fixtures[rnd]
+	for m in f.get("jogos", [[h, a]]):
+		var mh := int(m[0])
+		var ma := int(m[1])
+		var r: Array = sc if (mh == h and ma == a) else sim_score(club_rating(T.clubs[mh][0], C.tier), club_rating(T.clubs[ma][0], C.tier))
+		table_add(mh, ma, int(r[0]), int(r[1]))
+		if not (mh == h and ma == a): outros.append("%s %d–%d %s" % [T.clubs[mh][0], r[0], r[1], T.clubs[ma][0]])
+	return outros
+# carreiras antigas (sem tabela): cria o resto das jornadas e simula as que já se jogaram
+func ensure_league() -> void:
+	var T := tier()
+	if T.get("cup", false) or C.has("tab"): return
+	var n: int = T.clubs.size()
+	C.tab = new_table(n); C.forma = {}
+	for i in C.fixtures.size():
+		var f: Dictionary = C.fixtures[i]
+		if not f.has("jogos"):
+			var rest: Array = range(n).filter(func(x): return x != int(f.h) and x != int(f.a))
+			rest.shuffle()
+			var jg: Array = [[int(f.h), int(f.a)]]
+			for k in rest.size() / 2: jg.append([rest[2 * k], rest[2 * k + 1]])
+			f.jogos = jg
+		if i < C.round:
+			for m in f.jogos:
+				var r := sim_score(club_rating(T.clubs[int(m[0])][0], C.tier), club_rating(T.clubs[int(m[1])][0], C.tier))
+				table_add(int(m[0]), int(m[1]), int(r[0]), int(r[1]))
+# história do jogo a partir da tabela (quando o calendário não traz o dérbi)
+func table_story(h: int, a: int) -> String:
+	if not C.has("tab") or C.round < 2: return ""
+	var ph := table_pos(h)
+	var pa := table_pos(a)
+	var n: int = C.tab.size()
+	if ph <= 2 and pa <= 2: return "topo"
+	if ph <= 3 and pa <= 3: return "subida"
+	var fh := forma(h)
+	if fh.size() >= 3 and not ("V" in fh.slice(-3)): return "crise"
+	if ph >= n - 1 and pa >= n - 1: return "fundo"
+	if ph >= n - 1 or pa >= n - 1: return "aflito"
+	return "calmo"
+
 func make_refs(ti: int, played: int) -> Array:
 	var T: Dictionary = TIERS[ti]
 	var names := REF_NAMES.duplicate()
@@ -249,12 +395,23 @@ func match_brief() -> Dictionary:
 	var lines: Array = []
 	var aggr := [0.0, 0.0]
 	var crowd := 0.0
-	if f.story == "derby":
+	var story: String = str(f.story) if str(f.story) != "" else table_story(int(f.h), int(f.a))
+	var urg := [0.0, 0.0]
+	if story == "derby":
 		lines.append(T.derby + " entre " + c_art(h) + " e " + c_art(a) + ": estádio cheio e ninguém quer perder.")
-		aggr[0] += 0.12; aggr[1] += 0.12; crowd += 15
-	elif f.story != "":
-		var s: Dictionary = STORIES[f.story]
-		lines.append(s.txt); aggr[0] += s.aggr[0]; aggr[1] += s.aggr[1]; crowd += s.crowd
+		aggr[0] += 0.12; aggr[1] += 0.12; crowd += 15; urg = [0.1, 0.1]
+	elif STORIES.has(story):
+		var s: Dictionary = STORIES[story]
+		var txt: String = s.txt
+		if story == "aflito": txt = cap(c_art(h if table_pos(int(f.h)) >= C.tab.size() - 1 else a)) + " está nos últimos lugares e joga a vida."
+		lines.append(txt); aggr[0] += s.aggr[0]; aggr[1] += s.aggr[1]; crowd += s.crowd
+		match story:
+			"topo", "fundo": urg = [0.15, 0.15]
+			"subida": urg = [0.1, 0.1]
+			"calmo": urg = [-0.1, -0.1]
+			"crise": urg = [0.2, 0.0]
+			"aflito": urg = [0.2, 0.0] if table_pos(int(f.h)) >= C.tab.size() - 1 else [0.0, 0.2]
+	lines.append_array(table_lines(int(f.h), int(f.a)))
 	for i in 2:
 		var c: Array = [h, a][i]
 		var g: int = C.grudge.get(c[0], 0)
@@ -265,7 +422,37 @@ func match_brief() -> Dictionary:
 	lines.append_array(brief_squads(h, a, C.tier))
 	lines.append_array(brief_players(h, a))
 	if not T.var: lines.append("Não há VAR neste escalão: o que decidires fica decidido.")
-	return {"T": T, "f": f, "h": h, "a": a, "lines": lines, "aggr": aggr, "crowd": crowd, "comp": T.name + " · " + round_name(T, C.round)}
+	return {"T": T, "f": f, "h": h, "a": a, "lines": lines, "aggr": aggr, "crowd": crowd, "urg": urg, "story": story, "comp": T.name + " · " + round_name(T, C.round)}
+# lugar na tabela, forma e maneira de jogar de cada equipa
+func table_lines(h: int, a: int) -> Array:
+	var T := tier()
+	var out: Array = []
+	var bits: Array = []
+	for ci in [h, a]:
+		var c: Array = T.clubs[ci]
+		var est: String = {"posse": "joga em posse de bola", "direto": "joga direto", "pressao": "joga com pressão alta", "contra": "joga em bloco baixo e contra-ataque"}[estilo_of(c[0])]
+		if C.has("tab") and C.round > 0:
+			var r: Dictionary = C.tab[ci]
+			var fm := forma(ci)
+			bits.append("%s é %d.º com %d %s%s e %s" % [c[0], table_pos(ci), t_pts(r), "pontos" if t_pts(r) != 1 else "ponto", (" (últimos jogos: " + " ".join(fm) + ")") if fm.size() else "", est])
+		else: bits.append("%s %s" % [c[0], est])
+	out.append("; ".join(bits) + ".")
+	return out
+# a forma dos últimos jogos mexe um pouco na força da equipa
+func moral(ci: int) -> float:
+	var fm := forma(ci)
+	if fm.size() < 2: return 0.0
+	var p := 0.0
+	for x in fm: p += {"V": 3.0, "E": 1.0, "D": 0.0}[x]
+	return clampf((p / fm.size() - 1.4) * 1.5, -2.0, 2.0)
+# equipas do próximo jogo da carreira, já com moral e o que a tabela lhes pede
+func career_teams(B: Dictionary) -> Array:
+	var tm := teams_for(B.h, B.a, C.tier)
+	if not tier().get("cup", false):
+		for i in 2:
+			tm[i].rating = float(tm[i].rating) + moral(int([B.f.h, B.f.a][i]))
+			tm[i].urg = float(B.urg[i])
+	return tm
 
 # prepara a partida da carreira (depois de Partida.new(teams_for(...)))
 func setup_match(S: Partida) -> void:
@@ -277,7 +464,7 @@ func setup_match(S: Partida) -> void:
 	S.lance_k = 1.1 - 0.05 * ti; S.sim_k = 0.7 + 0.15 * ti
 	S.crowd_base = clamp(25 + 7 * ti + B.crowd, 10, 90); S.crowd = S.crowd_base
 	for i in 2: S.aggr[i] = clamp(0.06 + 0.035 * ti + B.aggr[i], 0.05, 0.8)
-	S.stress_base = clamp(12 + 5 * ti + (12 if B.f.story == "derby" else 0) - (C.attrs.calma - 3) * 1.5, 5, 60); S.stress = S.stress_base
+	S.stress_base = clamp(12 + 5 * ti + (12 if B.story == "derby" else 0) - (C.attrs.calma - 3) * 1.5, 5, 60); S.stress = S.stress_base
 	# imagem pública: estádios mais hostis e capitães desconfiados quando está em baixo
 	var img: float = float(C.get("imagem", 50))
 	S.crowd_base = clamp(S.crowd_base + (50.0 - img) * 0.2, 10, 95); S.crowd = S.crowd_base
@@ -421,7 +608,11 @@ func after(S: Partida, grade: float, kind: String) -> String:
 	if not S.paper.is_empty():
 		C.papers.push_front({"s": C.season, "t": C.tier, "r": rnd, "p": S.paper.paper, "h": S.paper.head, "st": S.paper.stars, "q": S.paper.quote})
 		C.papers = C.papers.slice(0, 8)
+	var outros: Array = []
 	if not T.get("cup", false):
+		ensure_league()
+		var fx := fixture()
+		outros = play_round(rnd, int(fx.h), int(fx.a), [int(S.score[0]), int(S.score[1])])
 		for r in C.refs: r.g.append(sim_grade(r.sk))
 		var tb := ref_table()
 		var pos := 0
@@ -458,20 +649,27 @@ func after(S: Partida, grade: float, kind: String) -> String:
 	else:
 		msg += "Média da época " + f1(avg) + " (para subir: " + f1(T.target) + ")."
 		if C.round >= T.games:
+			rank_note = champ_note() + rank_note
 			if avg >= T.target: end_season(("Média de " + f1(avg) + " na Taça Europeia: foste escolhido para o Mundial.") if C.tier == 4 else ("Média de " + f1(avg) + ": sobes para a " + TIERS[C.tier + 1].name + "."), C.tier + 1, rank_note)
 			elif avg < T.target - 1.5 and C.tier > 0: end_season("Média de " + f1(avg) + ": o observador manda-te descer para a " + TIERS[C.tier - 1].name + ".", C.tier - 1, rank_note)
 			else: end_season("Média de " + f1(avg) + ": ficas na " + T.name + " mais uma época (para subir precisavas de " + f1(T.target) + ").", C.tier, rank_note)
 	msg += crit_career_txt() + ban_note
 	if pos_note != "": msg += " " + pos_note
+	if outros.size(): msg += " Na mesma jornada: " + ", ".join(outros) + "."
 	msg += " +%d %s de atributo." % [gain, "pontos" if gain > 1 else "ponto"]
 	save_c()
 	note = msg
 	return msg
+func champ_note() -> String:
+	var tb := league_table()
+	if tb.is_empty(): return ""
+	return "%s %s campeão d%s %s com %d pontos. " % [cap(c_art(tier().clubs[tb[0].i])), "são" if tier().clubs[tb[0].i][4] == "os" else "é", "o" if tier().name.begins_with("Dis") or tier().name.begins_with("Mun") else "a", tier().name, tb[0].pts]
 func end_season(news: String, ti: int, rank_note := "") -> void:
 	C.news = news + (" " + rank_note if rank_note != "" else "")
 	C.tier = clampi(ti, 0, TIERS.size() - 1); C.season += 1; C.round = 0; C.sg = []; C.critS = []
 	season_reset_players()
 	C.fixtures = make_fixtures(C.tier); C.refs = make_refs(C.tier, 0)
+	C.erase("tab"); C.erase("forma"); ensure_league()
 func add_attr(k: String) -> void:
 	if C.pts <= 0 or C.attrs[k] >= 10: return
 	C.attrs[k] += 1; C.pts -= 1; save_c()

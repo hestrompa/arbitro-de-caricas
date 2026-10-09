@@ -402,10 +402,23 @@ func show_career(car: Carreira) -> void:
 		var f: Dictionary = C.fixtures[i]
 		var played: bool = i < C.round
 		var g: float = float(C.sg[i]) if played and i < C.sg.size() else 0.0
-		var nm: String = T.clubs[f.h][0] + " – " + T.clubs[f.a][0] + ((" · clássico" if str(T.derby).begins_with("Clássico") else " · dérbi") if f.story == "derby" else "")
+		var res := ""
+		for lg in C.log:
+			if int(lg.s) == int(C.season) and int(lg.t) == int(C.tier) and int(lg.r) == i: res = "  %d–%d" % [int(lg.sc[0]), int(lg.sc[1])]
+		var nm: String = T.clubs[f.h][0] + " – " + T.clubs[f.a][0] + res + ((" · clássico" if str(T.derby).begins_with("Clássico") else " · dérbi") if f.story == "derby" else "")
 		fr.append({"cells": [Carreira.CUP_ROUNDS[i] if T.get("cup", false) else str(i + 1), nm, Carreira.f1(g) if played else ("Próximo" if i == C.round else "")],
 			"cls": ("ok" if g >= T.target else ("half" if g >= T.target - 1.5 else "bad")) if played else ""})
 	career_v.add_child(_table(fr, 3, [140, 520, 120], 2))
+	var lt := car.league_table()
+	if lt.size():
+		career_v.add_child(_lbl("Classificação · " + T.name, 18, GOLD))
+		var lr: Array = [{"cells": ["", "Clube", "Força", "J", "V", "E", "D", "Golos", "Pts", "Forma"]}]
+		for i in lt.size():
+			var r: Dictionary = lt[i]
+			var joga: bool = r.i == int(B.f.h) or r.i == int(B.f.a)
+			lr.append({"cells": [str(i + 1), r.n, str(r.f), str(r.j), str(r.v), str(r.e), str(r.d), "%d-%d" % [r.gm, r.gs], str(r.pts), " ".join(car.forma(r.i))], "cls": "ok" if joga else ""})
+		career_v.add_child(_table(lr, 10, [30, 250, 55, 35, 35, 35, 35, 70, 45, 120], 1))
+		career_v.add_child(_lbl("A verde: as equipas do teu próximo jogo. Força = qualidade do plantel.", 13, DIM))
 	if not T.get("cup", false):
 		career_v.add_child(_lbl("Classificação dos árbitros", 18, GOLD))
 		var rr: Array = []
@@ -485,7 +498,7 @@ func show_card(S: Partida, p, extra: String) -> void:
 	var nv := VBoxContainer.new(); hb.add_child(nv)
 	nv.add_child(_lbl(p.name if p.name != "" else "Jogador %d" % p.num, 19, INK))
 	nv.add_child(_lbl(str(tm.name) + " · " + str(Partida.ROLE_PT.get(p.role, "")) + " · %d" % int(p.ovr), 14, DIM))
-	for it in [["Velocidade", p.pac], ["Passe", p.pas], ["Remate", p.fin], ["Desarme", p.tck], ["Drible", p.drb]]:
+	for it in [["Velocidade", p.pac], ["Passe", p.pas], ["Remate", p.fin], ["Desarme", p.tck], ["Drible", p.drb], ["Decisão", p.dec]]:
 		var row := HBoxContainer.new(); card_v.add_child(row)
 		var l := _lbl(it[0], 14, DIM); l.custom_minimum_size = Vector2(90, 0); row.add_child(l)
 		var pbar := ProgressBar.new(); pbar.max_value = 100; pbar.value = it[1]; pbar.show_percentage = false; pbar.custom_minimum_size = Vector2(150, 12)
