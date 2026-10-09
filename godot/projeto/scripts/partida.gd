@@ -172,6 +172,11 @@ var career: Dictionary = {}       # {tier, round, attrs, wrong, h, a} quando é 
 var no_var := false
 var lance_k := 1.0
 var sim_k := 1.0
+# os jogadores aprendem com o teu critério: fama (da carreira, -1 rigoroso .. 1 brando) e o que cada
+# equipa já percebeu neste jogo. sim = simulações, duro = entradas duras, prot = protestos
+var fama := {"sim": 0.0, "duro": 0.0, "prot": 0.0}
+var apr: Array = [{"sim": 0.0, "duro": 0.0, "prot": 0.0}, {"sim": 0.0, "duro": 0.0, "prot": 0.0}]
+var apr_log: Array = []           # o que aprenderam (para o relatório e para a carreira)
 var training: Dictionary = {}     # treino do VAR
 var tut := false                  # primeiro jogo guiado
 var tut_done := false
@@ -254,6 +259,30 @@ func emit(nm: String, d := {}) -> void:
 	if ev.is_valid(): ev.call(nm, d)
 func toast(s: String, secs := 2.0) -> void: emit("toast", {"txt": s, "secs": secs})
 func sfx(k: String, a = null) -> void: emit("sfx", {"k": k, "a": a})
+# quanto a equipa acha que deixas passar (0 = nada mudou; >0 abusa mais; <0 tem cuidado)
+func brando(team: int, k: String) -> float: return clampf(float(fama[k]) * 0.6 + float(apr[team][k]), -1.0, 1.0)
+const APR_TXT := {
+	"sim+": "Cuidado: viram que a simulação passou. Vão tentar outra vez.",
+	"sim-": "Ficaram avisados: aqui quem se atira vê amarelo.",
+	"duro+": "Perceberam que podem entrar duro sem cartão. Vai aquecer.",
+	"duro-": "O cartão acalmou-os. Estão a medir as entradas.",
+	"prot+": "Deixaste-os falar e agora protestam tudo.",
+	"prot-": "Depois do cartão, ninguém se quer chegar a protestar.",
+}
+func aprende(team: int, k: String, dv: float, aviso := true) -> void:
+	if not training.is_empty() or tut: return
+	var antes := brando(team, k)
+	apr[team][k] = clampf(float(apr[team][k]) + dv, -1.0, 1.0)
+	var depois := brando(team, k)
+	var tk := k + ("+" if dv > 0 else "-")
+	apr_log.append({"team": team, "k": k, "dv": dv, "minute": minute()})
+	# só se avisa quando muda de verdade o comportamento (e uma vez por jogo e equipa)
+	if aviso and absf(depois - antes) > 0.15 and not apr_log.any(func(a): return a.get("dito", "") == str(team) + tk):
+		apr_log[-1].dito = str(team) + tk
+		later(2.8, func(): if mode == "play": radio("4.º árbitro", APR_TXT[tk]))
+		feed("%s %s" % [cap_t(team), {"sim+": "perceberam que a simulação compensa", "sim-": "deixam de se atirar", "duro+": "começam a entrar mais duro",
+			"duro-": "medem melhor as entradas", "prot+": "protestam cada vez mais", "prot-": "deixam de protestar"}[tk]] + ".", "info")
+func cap_t(team: int) -> String: var a := art_t(team); return a.substr(0, 1).to_upper() + a.substr(1)
 func radio(w: String, txt: String, voz := "") -> void:
 	if training.is_empty(): emit("radio", {"who": w, "txt": txt, "voz": voz if voz != "" else txt})
 func later(secs: float, f: Callable) -> void: timers.append([secs, f])
@@ -272,7 +301,9 @@ func auth_k() -> float: return 1.1 - ref_attr("aut") * 0.02
 func decision_time() -> float:
 	var c := ref_attr("calma")
 	var tier: float = float(career.tier) if not career.is_empty() else 0.0
-	return maxf(7.0, round(15 - crowd / 25 * (1.4 - 0.08 * c) + (c - 5) * 0.4 - stress / 25 - tier * 0.5))
+	var tt: float = maxf(7.0, round(15 - crowd / 25 * (1.4 - 0.08 * c) + (c - 5) * 0.4 - stress / 25 - tier * 0.5))
+	# com VAR há mais calma no campo: sabes que alguém revê os erros claros
+	return round(tt * 1.4) if not no_var else tt
 func add_stress(v: float) -> void:
 	if not training.is_empty(): return
 	if v > 0: v *= 1.25 - 0.05 * ref_attr("calma")
@@ -767,7 +798,7 @@ func tackle(def: Pl, att: Pl) -> void:
 	var ag: float = aggr[def.team]
 	var won := rng.randf() < tackle_p(def, att)
 	# quem é batido no drible é quem faz falta: defesas fracos contra avançados habilidosos, e em contra-ataque
-	var risco: float = (0.12 + ag * 0.45) * def.foul_k * (1.0 + clampf((att.drb - def.tck) / 60.0, -0.5, 0.8))
+	var risco: float = (0.12 + ag * 0.45) * def.foul_k * (1.0 + clampf((att.drb - def.tck) / 60.0, -0.5, 0.8)) * (1.0 + 0.4 * brando(def.team, "duro"))
 	risco *= 0.7 if won else 1.8
 	if not won and counter_attack(att): risco *= 1.5
 	if not won:
@@ -1125,7 +1156,10 @@ func start_lance(att: Pl, def: Pl) -> void:
 	var wts: Dictionary
 	if not force_w.is_empty(): wts = force_w
 	elif def.role == "gk": wts = {"siga": 0.4, "falta": 0.22, "amarelo": 0.14, "simulacao": 0.24}
-	else: wts = {"siga": 0.24, "falta": 0.34, "amarelo": 0.2 * (1 + ag * 2) * def.hard_k, "vermelho": 0.06 * (1 + ag * 3) * def.hard_k, "simulacao": 0.16 * sim_k * att.sim_k}
+	else:
+		var bd := 1.0 + 0.6 * brando(def.team, "duro")
+		var bs := maxf(0.3, 1.0 + 0.9 * brando(att.team, "sim"))
+		wts = {"siga": 0.24, "falta": 0.34, "amarelo": 0.2 * (1 + ag * 2) * def.hard_k * bd, "vermelho": 0.06 * (1 + ag * 3) * def.hard_k * bd, "simulacao": 0.16 * sim_k * att.sim_k * bs}
 	var truth := pick_truth(wts)
 	var to_goal := (Vector2(opp_goal_x(att.team), H / 2) - att.p).normalized()
 	var mv := att.v.normalized() if att.v.length() > 0.5 else to_goal
@@ -1444,6 +1478,14 @@ func decide(d: String, timed_out := false) -> void:
 	var dc := 0.0
 	var atk_t: int = L.att.team
 	var def_t: int = L.def.team
+	if not L.get("training", false):
+		if L.truth == "simulacao":
+			if is_foul(d): aprende(atk_t, "sim", 0.45)
+			elif d == "siga": aprende(atk_t, "sim", 0.08, false)
+			elif d == "simulacao": aprende(atk_t, "sim", -0.35)
+		elif L.truth in ["amarelo", "vermelho"]:
+			if SEV.has(d) and int(SEV[d]) < int(SEV[L.truth]) and not interp_ok(L, d): aprende(def_t, "duro", 0.35)
+			elif d in ["amarelo", "vermelho"]: aprende(def_t, "duro", -0.2)
 	if L.truth == "simulacao":
 		if d == "simulacao": pts = 1; dc = 4
 		elif d == "siga": pts = 0.4; dc = -3
@@ -1875,7 +1917,7 @@ func captain_of(team: int) -> Pl:
 func protest_after(team, sev: float, wrong: bool) -> void:
 	if team == null or mode != "play" or not training.is_empty() or tut: return
 	coach_check(team, sev, wrong)
-	var I: float = clamp(sev - (ref_attr("aut") - 5) * 0.04 + (0.35 if wrong else 0.0) + aggr[team] * 0.3 + (crowd / 100 * 0.15 if team == HOME else 0.0) + rand(-0.1, 0.1), 0, 1)
+	var I: float = clamp(sev - (ref_attr("aut") - 5) * 0.04 + (0.35 if wrong else 0.0) + aggr[team] * 0.3 + (crowd / 100 * 0.15 if team == HOME else 0.0) + rand(-0.1, 0.1) + 0.2 * brando(team, "prot"), 0, 1)
 	if I < 0.3: return
 	var ps: Array = active().filter(func(p): return p.team == team and p.role != "gk")
 	ps.sort_custom(func(a, b): return a.p.distance_to(ref) < b.p.distance_to(ref))
@@ -1907,6 +1949,7 @@ func resolve_protest(choice: String, timed_out := false) -> void:
 	var m := ""
 	if choice == "ignorar":
 		dc = -8.0 if I > 0.6 else (-3.0 if I > 0.4 else 1.0); aggr[team] += I * 0.15
+		if I > 0.4: aprende(team, "prot", 0.3)
 		m = ("Deixaste-os falar: " if timed_out else "Ignoraste os protestos: ") + ("o ambiente aquece" if dc < 0 else "acalmaram")
 	elif choice == "afastar":
 		dc = -3.0 if I > 0.75 else 2.0; aggr[team] = max(0.05, aggr[team] - 0.05)
@@ -1924,6 +1967,7 @@ func resolve_protest(choice: String, timed_out := false) -> void:
 		var p: Pl = players[P.ids[0]]
 		if p == captain_of(p.team): cap_trust[p.team] = clamp(cap_trust[p.team] - 0.25, 0, 1)
 		p.yellow += 1; dc = 6.0 if I > 0.55 else -5.0
+		aprende(team, "prot", -0.4)
 		if I > 0.55: aggr[team] = max(0.05, aggr[team] - 0.2)
 		m = "Amarelo por protestos ao %d %s" % [p.num, de_t(p.team)]
 		if p.yellow >= 2:

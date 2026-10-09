@@ -117,6 +117,12 @@ def compress(x, thr=0.25, ratio=3.0):
     g = np.where(env > thr, (thr + (env - thr) / ratio) / env, 1.0)
     return x * g
 
+# os jogadores aprendem com o critério do árbitro (avisos do 4.º árbitro)
+for t in ["Cuidado: viram que a simulação passou. Vão tentar outra vez.", "Ficaram avisados: aqui quem se atira vê amarelo.",
+          "Perceberam que podem entrar duro sem cartão. Vai aquecer.", "O cartão acalmou-os. Estão a medir as entradas.",
+          "Deixaste-os falar e agora protestam tudo.", "Depois do cartão, ninguém se quer chegar a protestar."]:
+    add("4.º árbitro", t)
+
 idx = {}
 for key, (who, fala) in F.items():
     voz, tom, vel, rad, amb = PAP[who]

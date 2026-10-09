@@ -419,6 +419,7 @@ func match_brief() -> Dictionary:
 			lines.append("Os jogadores d" + c_art(c) + " lembram-se de ti: no último jogo tiveram " + ("%d decisões erradas" % g if g > 1 else "uma decisão errada") + " contra eles.")
 			aggr[i] += minf(0.3, 0.1 * g)
 			lines.append("O capitão d" + c_art(c) + " vai confiar menos em ti quando falares com ele.")
+	lines.append_array(fama_lines())
 	lines.append_array(brief_squads(h, a, C.tier))
 	lines.append_array(brief_players(h, a))
 	if not T.var: lines.append("Não há VAR neste escalão: o que decidires fica decidido.")
@@ -446,6 +447,27 @@ func moral(ci: int) -> float:
 	for x in fm: p += {"V": 3.0, "E": 1.0, "D": 0.0}[x]
 	return clampf((p / fm.size() - 1.4) * 1.5, -2.0, 2.0)
 # equipas do próximo jogo da carreira, já com moral e o que a tabela lhes pede
+# a tua fama entre os jogadores (-1 rigoroso .. 1 brando): o que eles esperam de ti
+const FAMA := {
+	"sim": ["Tens fama de castigar quem se atira: poucos se atrevem a simular contigo.", "Os jogadores sabem que te deixas enganar: atiram-se mais."],
+	"duro": ["Sabem que mostras cartão às entradas duras: medem mais as entradas.", "Tens fama de poupar cartões: as entradas duras vão aparecer."],
+	"prot": ["Ninguém gosta de te protestar: és firme com quem reclama.", "Sabem que os deixas falar: vão protestar tudo."],
+}
+func fama_lines() -> Array:
+	var out: Array = []
+	var fm: Dictionary = C.get("fama", {})
+	for k in ["sim", "duro", "prot"]:
+		var v: float = float(fm.get(k, 0.0))
+		if absf(v) >= 0.2: out.append(FAMA[k][1 if v > 0 else 0])
+	return out
+# no fim do jogo a fama mexe com o que as equipas aprenderam (e esquece-se aos poucos)
+func fama_after(S: Partida) -> String:
+	if not C.has("fama"): C.fama = {"sim": 0.0, "duro": 0.0, "prot": 0.0}
+	var antes := fama_lines()
+	for k in ["sim", "duro", "prot"]:
+		C.fama[k] = clampf(float(C.fama[k]) * 0.8 + (float(S.apr[0][k]) + float(S.apr[1][k])) * 0.35, -1.0, 1.0)
+	var novas: Array = fama_lines().filter(func(l): return not (l in antes))
+	return (" Fama nova: " + " ".join(novas)) if novas.size() else ""
 func career_teams(B: Dictionary) -> Array:
 	var tm := teams_for(B.h, B.a, C.tier)
 	if not tier().get("cup", false):
@@ -462,6 +484,8 @@ func setup_match(S: Partida) -> void:
 	career_squad(S)
 	S.no_var = not B.T.var
 	S.lance_k = 1.1 - 0.05 * ti; S.sim_k = 0.7 + 0.15 * ti
+	var fm: Dictionary = C.get("fama", {})
+	for k in S.fama: S.fama[k] = float(fm.get(k, 0.0))
 	S.crowd_base = clamp(25 + 7 * ti + B.crowd, 10, 90); S.crowd = S.crowd_base
 	for i in 2: S.aggr[i] = clamp(0.06 + 0.035 * ti + B.aggr[i], 0.05, 0.8)
 	S.stress_base = clamp(12 + 5 * ti + (12 if B.story == "derby" else 0) - (C.attrs.calma - 3) * 1.5, 5, 60); S.stress = S.stress_base
@@ -623,6 +647,7 @@ func after(S: Partida, grade: float, kind: String) -> String:
 			rank_note = "Acabaste a época em %d.º lugar entre %d árbitros" % [pos, tb.size()] + (": árbitro do ano, +2 pontos de atributo." if pos == 1 else ".")
 			if pos == 1: C.pts += 2
 	crit_career(S)
+	var fama_note := fama_after(S)
 	var ban_note := career_players(S)
 	C.log.push_front({"s": C.season, "t": C.tier, "r": rnd, "h": S.career.h, "a": S.career.a, "sc": S.score.duplicate(), "g": g})
 	C.log = C.log.slice(0, 30)
@@ -653,7 +678,7 @@ func after(S: Partida, grade: float, kind: String) -> String:
 			if avg >= T.target: end_season(("Média de " + f1(avg) + " na Taça Europeia: foste escolhido para o Mundial.") if C.tier == 4 else ("Média de " + f1(avg) + ": sobes para a " + TIERS[C.tier + 1].name + "."), C.tier + 1, rank_note)
 			elif avg < T.target - 1.5 and C.tier > 0: end_season("Média de " + f1(avg) + ": o observador manda-te descer para a " + TIERS[C.tier - 1].name + ".", C.tier - 1, rank_note)
 			else: end_season("Média de " + f1(avg) + ": ficas na " + T.name + " mais uma época (para subir precisavas de " + f1(T.target) + ").", C.tier, rank_note)
-	msg += crit_career_txt() + ban_note
+	msg += crit_career_txt() + ban_note + fama_note
 	if pos_note != "": msg += " " + pos_note
 	if outros.size(): msg += " Na mesma jornada: " + ", ".join(outros) + "."
 	msg += " +%d %s de atributo." % [gain, "pontos" if gain > 1 else "ponto"]

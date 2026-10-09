@@ -13,6 +13,8 @@ func _initialize():
 	var res := [0, 0, 0]
 	var golos := [0, 0]
 	var t0 := Time.get_ticks_msec()
+	var truths := {}
+	var brando_ref := OS.get_environment("BRANDO") == "1"
 	for j in n:
 		var tm: Array = Carreira.default_teams()
 		tm[0].rating = ra; tm[1].rating = rb
@@ -26,7 +28,11 @@ func _initialize():
 			guard += 1
 			if sem: S.lance_cd = 99.0
 			match S.mode:
-				"lance": S.decide(str(S.lance.truth))
+				"lance":
+					var tr := str(S.lance.truth)
+					if tr in ["simulacao", "amarelo", "vermelho"]: truths[tr] = truths.get(tr, 0) + 1
+					# BRANDO=1: árbitro que deixa passar (simulações dão falta, entradas duras só falta)
+					S.decide("falta" if brando_ref and tr in ["simulacao", "amarelo", "vermelho"] else tr)
 				"gesto": S.finish_after()
 				"pergunta": S.ask_pick(int(S.ask.get("def", 0)))
 				"protesto": S.resolve_protest("afastar")
@@ -46,6 +52,7 @@ func _initialize():
 			tot[k][0] += float(S.est[k][0]); tot[k][1] += float(S.est[k][1])
 		if OS.get_environment("V") != "": print("jogo %d: %d-%d  %s" % [j, S.score[0], S.score[1], str(S.est)])
 		print("R %d %d" % [S.score[0], S.score[1]])
+		if OS.get_environment("V") != "": print("   aprendeu: ", S.apr, "  ", S.apr_log.filter(func(a): return a.has("dito")))
 	var pos: float = tot.posse[0] / maxf(tot.posse[0] + tot.posse[1], 0.01) * 100
 	print("== %d jogos  força %.0f vs %.0f  (%.1f s)" % [n, ra, rb, (Time.get_ticks_msec() - t0) / 1000.0])
 	print("vitórias A %d  empates %d  vitórias B %d   golos/jogo %.2f - %.2f" % [res[0], res[1], res[2], golos[0] / float(n), golos[1] / float(n)])
@@ -55,6 +62,7 @@ func _initialize():
 	var sdb := ""
 	for k in dbgt: sdb += "%s %.1f  " % [k, dbgt[k] / n]
 	print("escolhas/jogo: ", sdb)
+	print("lances duros/simulações (verdade): ", truths)
 	if OS.get_environment("AMOSTRAS") != "":
 		var f := FileAccess.open(OS.get_environment("AMOSTRAS"), FileAccess.WRITE)
 		f.store_string(JSON.stringify(todas))

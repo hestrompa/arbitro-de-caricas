@@ -419,6 +419,10 @@ func show_career(car: Carreira) -> void:
 			lr.append({"cells": [str(i + 1), r.n, str(r.f), str(r.j), str(r.v), str(r.e), str(r.d), "%d-%d" % [r.gm, r.gs], str(r.pts), " ".join(car.forma(r.i))], "cls": "ok" if joga else ""})
 		career_v.add_child(_table(lr, 10, [30, 250, 55, 35, 35, 35, 35, 70, 45, 120], 1))
 		career_v.add_child(_lbl("A verde: as equipas do teu próximo jogo. Força = qualidade do plantel.", 13, DIM))
+	var fl := car.fama_lines()
+	career_v.add_child(_lbl("A tua fama entre os jogadores", 18, GOLD))
+	if fl.is_empty(): career_v.add_child(_wrap("Ainda não te conhecem: vão testar o teu critério. O que deixares passar, eles aprendem.", 15, DIM, 900))
+	for l in fl: career_v.add_child(_wrap("• " + l, 15, INK, 900))
 	if not T.get("cup", false):
 		career_v.add_child(_lbl("Classificação dos árbitros", 18, GOLD))
 		var rr: Array = []

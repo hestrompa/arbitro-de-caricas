@@ -1792,6 +1792,10 @@ func _lance_ui(delta: float) -> void:
 			sub = "Linhas: Tab troca (vermelha = atacante, azul = penúltimo defesa) · setas mexem · C câmara · atacante %s %d cm %s" % ["", int(round(absf(gap) * 100)), "à frente" if gap > 0 else "atrás"]
 		ui.info("MONITOR DO VAR · %d'" % L.minute, sub)
 	if dec_shown:
+		# no monitor do VAR não há relógio: vês o lance as vezes que precisares
+		if modo == "var":
+			ui.dec_text("Decide: teclas 1–%d   (sem limite de tempo)" % jogo.choices_for(L).size())
+			return
 		if not paused: dec_left -= delta
 		ui.dec_text("Decide: teclas 1–%d   (%d s)" % [jogo.choices_for(L).size(), int(ceil(maxf(dec_left, 0.0)))])
 		if dec_left <= 0: _decide(_dflt(), true)
