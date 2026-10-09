@@ -123,6 +123,12 @@ for t in ["Cuidado: viram que a simulação passou. Vão tentar outra vez.", "Fi
           "Deixaste-os falar e agora protestam tudo.", "Depois do cartão, ninguém se quer chegar a protestar."]:
     add("4.º árbitro", t)
 
+add("Árbitro", "Fui ver as imagens. Mudo a decisão.")
+for t in ["Atenção: o guarda-redes saiu da linha antes do pontapé.", "Guarda-redes na linha, da minha parte está tudo bem."]:
+    add("Assistente", t)
+
+import os
+if os.environ.get("SO"): F = {k: v for k, v in F.items() if os.environ["SO"] in k}   # gerar só algumas
 idx = {}
 for key, (who, fala) in F.items():
     voz, tom, vel, rad, amb = PAP[who]

@@ -184,6 +184,10 @@ var fumo: Dictionary = {}         # nuvem das tochas: {c, r, a}
 var luz := 1.0                    # 1 = projetores todos; menos no apagão
 var invasor: Dictionary = {}      # {p, v, alvo, seg: [posições dos seguranças]}
 var noite := false
+# modo VAR: és o videoárbitro; o árbitro de campo é o computador e tu só verificas os lances que se podem rever
+var var_mode := false
+var var_checks: Array = []        # verificações feitas: {L, campo, final, tempo, pts}
+var ia_n := 0                     # lances que o árbitro decidiu sozinho (não se reveem)
 var training: Dictionary = {}     # treino do VAR
 var tut := false                  # primeiro jogo guiado
 var tut_done := false
@@ -1055,6 +1059,7 @@ func start_offside(oi: Dictionary) -> void:
 
 # ---------- árbitro ----------
 func ref_step(dt: float) -> void:
+	if var_mode: move_in = Vector2.ZERO; sprint = ref.distance_to(ia_ref_alvo()) > 14.0; ref_target = ia_ref_alvo()
 	var d := move_in
 	if d != Vector2.ZERO: ref_target = null
 	elif ref_target != null:
@@ -1386,13 +1391,13 @@ func grab_check(att: Pl, def: Pl) -> bool:
 func goal_check(team: int) -> bool:
 	var lo := last_off
 	last_off = {}
-	if mode != "play" or not training.is_empty() or tut or bpen or lance_cd > 9: return false
+	if mode != "play" or not training.is_empty() or tut or bpen or (lance_cd > 9 and not var_mode): return false
 	var k: Pl = kicker if kicker and kicker.team == team and not kicker.off else null
 	if k == null: return false
 	if not lo.is_empty() and t - lo.t < 6 and lo.oi.team == team and lo.n == incidents.size() and lo.o == offsides and rng.randf() < 0.85:
 		start_goal_offside(lo.oi, team); return true
 	var r := rng.randf()
-	if r < 0.3 and shot_from != null and start_goal_foul(team, k): return true
+	if r < (0.5 if var_mode else 0.3) and shot_from != null and start_goal_foul(team, k): return true      # no modo VAR verificam-se mais golos
 	if r > 0.85 and start_line(team, k, "entrou", false): return true
 	return false
 
@@ -1485,6 +1490,66 @@ func start_var(L: Dictionary, d: String) -> void:
 
 # ---------- decisões ----------
 func decide(d: String, timed_out := false) -> void:
+	var L := lance
+	var vm: bool = var_mode and L.has("var_campo") and mode == "lance" and not L.has("decided")
+	if vm and not L.get("ia", false): var_avalia(L, d)
+	_decide_core(d, timed_out)
+	if vm and not L.get("ia", false): L.pts = L.var_pts
+	if vm and L.get("ia", false): incidents.erase(L); ia_n += 1
+
+# ---------- modo VAR ----------
+# o árbitro de campo (computador) decide: acerta mais quando vê bem o lance
+func ai_campo(L: Dictionary) -> String:
+	var k := kind_of(L)
+	if k == "offside": return "fora" if L.get("flag", false) else "emjogo"
+	var opts: Array = choices_for(L).filter(func(x): return x != "vantagem")
+	var T: String = L.truth
+	var p_ok := clampf(0.45 + 0.45 * float(L.get("clarity", 0.6)), 0.45, 0.9)
+	if rng.randf() < p_ok:
+		var it := interp_of(L)
+		return T if it.is_empty() or rng.randf() < 0.6 else str(it[0])
+	if k == "foul" or k in ["aereo", "agarrao", "pisao"]:
+		var viz: Array = []
+		var sv: int = int(SEV.get(T, 1))
+		for x in opts:
+			if SEV.has(x) and absi(int(SEV[x]) - sv) == 1: viz.append(x)
+		if T == "simulacao": viz = ["falta", "siga"]
+		elif T in ["falta", "siga"] and "simulacao" in opts and L.get("fall", false): viz.append("simulacao")
+		if viz.size(): return str(viz[rng.randi() % viz.size()])
+	var outros: Array = opts.filter(func(x): return x != T)
+	return str(outros[rng.randi() % outros.size()]) if outros.size() else T
+func lance_certo(L: Dictionary, d: String) -> bool:
+	if kind_of(L) == "offside": return (d == "fora") == (L.truth == "fora")
+	return d == L.truth or interp_ok(L, d)
+# protocolo do VAR: só se intervém em erros claros e óbvios (golos, penáltis, vermelhos diretos, fora de jogo)
+func var_avalia(L: Dictionary, d: String) -> void:
+	var d0: String = L.var_campo
+	var erro: bool = not lance_certo(L, d0) and needs_var(L, d0)
+	var mudou: bool = d != d0
+	var pts := 0.0
+	var why := ""
+	if not erro and not mudou: pts = 1.0; why = "Certo · verificação completa, a decisão de campo estava bem"
+	elif not erro and mudou:
+		if lance_certo(L, d0) and interp_of(L).size() > 0 and lance_certo(L, d): pts = 0.5; why = "Lance no limite: as duas decisões servem, mas o VAR não volta a arbitrar lances no limite"
+		elif lance_certo(L, d0): pts = 0.0; why = "Intervenção desnecessária: a decisão de campo estava certa"
+		else: pts = 0.4; why = "Não era erro claro e óbvio: o VAR não devia intervir"
+	elif erro and mudou:
+		if lance_certo(L, d): pts = 1.0; why = "Certo · corrigiste um erro claro do árbitro"
+		else: pts = 0.3; why = "Interviste bem, mas a decisão final continua errada"
+	else: pts = 0.0; why = "Deixaste passar um erro claro e óbvio"
+	L.var_pts = pts; L.var_why = why
+	var_checks.append({"minute": L.minute, "campo": d0, "final": d, "pts": pts, "tempo": float(L.get("var_t", 0.0)), "mudou": mudou})
+	if mudou:
+		feed("O VAR recomendou revisão: o árbitro foi ao monitor e mudou para %s." % str(DEC_LABEL.get(d, d)).to_lower(), "var")
+		radio("Árbitro", "Fui ver as imagens. Mudo a decisão.")
+	else: feed("Verificação completa: decisão de campo (%s) confirmada." % str(DEC_LABEL.get(d0, d0)).to_lower(), "var")
+# para o árbitro do jogo (computador) no modo VAR: corre na diagonal, a uns 15 m da bola
+func ia_ref_alvo() -> Vector2:
+	var at: int = owner.team if owner else last
+	var dx: float = -float(dirs(at)) * 10.0
+	var dy: float = 9.0 if bp.y < H / 2 else -9.0
+	return Vector2(clampf(bp.x + dx, 6, W - 6), clampf(bp.y + dy, 4, H - 4))
+func _decide_core(d: String, timed_out := false) -> void:
 	var L := lance
 	if mode != "lance" or L.is_empty() or L.has("decided"): return
 	if L.get("training", false) and not L.get("var_done", false): return      # no treino decide-se no monitor
@@ -2637,7 +2702,8 @@ func obs_acc() -> float:
 	for l in incidents:
 		var k := 2.0 if big_inc(l) else 1.0
 		w += k; p += k * float(l.pts)
-	for m in manage: w += 0.6; p += 0.6 * float(m.pts)
+	if not var_mode:
+		for m in manage: w += 0.6; p += 0.6 * float(m.pts)
 	return p / w if w > 0 else 0.7
 
 var grade := 0.0
@@ -2648,6 +2714,7 @@ func end_match(kind: String) -> void:
 	over = kind
 	grade = clamp(obs_acc() * 10 * (0.75 + 0.25 * control / 100), 0, 10)
 	grade = clamp(grade - crit_penalty(), 0, 10)
+	if var_mode: grade = clamp(obs_acc() * 10, 0, 10)
 	if kind == "abandonado": grade = minf(grade, 3)
 	var right := incidents.filter(func(l): return l.pts == 1).size()
 	var verdict: String
@@ -2659,6 +2726,13 @@ func end_match(kind: String) -> void:
 	else: verdict = "O observador não ficou convencido."
 	var pr_good := protests.filter(func(q): return q.dc > 0).size()
 	var txt := "%d de %d decisões certas. " % [right, incidents.size()]
+	if var_mode:
+		var tm := 0.0
+		var mud := 0
+		for c in var_checks: tm += float(c.tempo); mud += 1 if c.mudou else 0
+		txt = "Sala do VAR: %d %s, %d %s ao monitor. " % [var_checks.size(), "verificação" if var_checks.size() == 1 else "verificações", mud, "chamada" if mud == 1 else "chamadas"]
+		if var_checks.size(): txt += "Tempo médio de verificação: %d s%s. " % [int(round(tm / var_checks.size())), " (no futebol a sério o ideal é ficar abaixo de um minuto)" if tm / var_checks.size() > 60 else ""]
+		txt += "O árbitro decidiu sozinho %d %s que não se podem rever. " % [ia_n, "lance" if ia_n == 1 else "lances"]
 	if protests.size(): txt += "Protestos: %d de %d bem geridos. " % [pr_good, protests.size()]
 	if var_n: txt += "Foste ao monitor %d %s. " % [var_n, "vezes" if var_n > 1 else "vez"]
 	txt += verdict + crit_txt()
@@ -2672,6 +2746,7 @@ func verdict_txt(l: Dictionary) -> String:
 	var pts: float = l.pts
 	var dec: String = l.get("decided", "")
 	var why: String
+	if l.has("var_why"): return str(l.var_why)
 	if l.get("interp_good", false) and pts == 1: why = "Certo · no limite: " + interp_txt(l) + " serviam" + (" (mas aos %d' foste por outro critério)" % l.crit_flip if l.has("crit_flip") else "")
 	elif l.get("miss_adv", false) and pts == 1: why = "Certo (podias ter dado vantagem)"
 	elif dec == "vantagem" and l.get("adv", false) and pts < 1: why = "Vantagem certa, cartão errado"

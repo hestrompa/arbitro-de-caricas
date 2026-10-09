@@ -133,7 +133,8 @@ var sun: DirectionalLight3D
 var sky_mat: ProceduralSkyMaterial
 var floods: Array = []
 var night := false
-var video_carreira := false      # sessão de vídeo do treino da carreira a decorrer
+var video_carreira := false
+var var_pend := false            # modo VAR: entrar logo no monitor depois do aviso      # sessão de vídeo do treino da carreira a decorrer
 var chuva_p: CPUParticles3D      # chuva à volta da câmara
 var fumo_p: CPUParticles3D       # fumo das tochas
 var slp := {}              # plano do carrinho capturado
@@ -746,10 +747,16 @@ func _match_process(delta: float) -> void:
 	get_tree().paused = false; Engine.time_scale = 1.0
 	if modo == "flash":
 		flash_t -= delta
-		if flash_t <= 0: _enter_lance()
+		if flash_t <= 0:
+			_enter_lance()
+			if var_pend: var_pend = false; _enter_var()
 		return
 	# caricas a 1,5x: o jogo corre mais depressa; perguntas, protestos e o tutorial ficam ao ritmo normal
-	if modo == "jogo" and not match_paused and jogo: jogo.tick(delta * (RITMO if jogo.mode == "play" and not jogo.tut else 1.0))
+	if modo == "jogo" and not match_paused and jogo:
+		if jogo.var_mode:
+			if jogo.mode == "protesto": jogo.resolve_protest("capitao" if randf() < 0.5 else "afastar")
+			elif jogo.mode == "pergunta": jogo.ask_pick(int(jogo.ask.get("def", 0)))
+		jogo.tick(delta * ((RITMO * 1.4 if jogo.var_mode else RITMO) if jogo.mode == "play" and not jogo.tut else 1.0))
 
 func _menu_cam(delta: float) -> void:
 	t += delta
@@ -1755,10 +1762,14 @@ func _ev(n: String, d: Dictionary) -> void:
 		"sfx": _sfx(d.k, d.a)
 		"lance":
 			L = d.L
+			if jogo.var_mode:
+				_var_sala(); return
 			ui.flash(L.get("flash", "Lance!")); som.alerta()
 			flash_t = 0.7; modo = "flash"
 		"var": _enter_var()
-		"decided": _start_gesture(d)
+		"decided":
+			if jogo.var_mode and d.L.get("ia", false): jogo.call_deferred("finish_after")
+			else: _start_gesture(d)
 		"ask": ui.show_ask(d.msg, d.tag, d.opts)
 		"ask_end", "protest_end": ui.hide_ask()
 		"protest":
@@ -1855,11 +1866,14 @@ func _lance_ui(delta: float) -> void:
 			dec_shown = true; dec_left = float(L.decide_t)
 			ui.show_dec(jogo.choices_for(L), "")
 	elif modo == "var":
-		var sub := "Decisão de campo: " + str(Partida.DEC_LABEL.get(L.get("var_first", ""), "")) + " · C câmara · R repetir · S lento"
+		var sub := "Decisão de campo: " + str(Partida.DEC_LABEL.get(L.get("var_campo", L.get("var_first", "")), "")) + " · C câmara · R repetir · S lento · Espaço pausa"
+		if jogo.var_mode:
+			if not paused: L.var_t = float(L.get("var_t", 0.0)) + delta / maxf(Engine.time_scale, 0.01)
+			sub += " · a verificar há %d s" % int(L.get("var_t", 0.0))
 		if lance == 9 and sc.has("lines"):
 			var gap: float = (var_line[0] - var_line[1]) * float(sc.dir)
 			sub = "Linhas: Tab troca (vermelha = atacante, azul = penúltimo defesa) · setas mexem · C câmara · atacante %s %d cm %s" % ["", int(round(absf(gap) * 100)), "à frente" if gap > 0 else "atrás"]
-		ui.info("MONITOR DO VAR · %d'" % L.minute, sub)
+		ui.info(("SALA DO VAR · %d' · confirma a decisão de campo ou escolhe outra (só erros claros e óbvios)" if jogo.var_mode else "MONITOR DO VAR · %d'") % L.minute, sub)
 	if dec_shown:
 		# no monitor do VAR não há relógio: vês o lance as vezes que precisares
 		if modo == "var":
@@ -1869,6 +1883,18 @@ func _lance_ui(delta: float) -> void:
 		ui.dec_text("Decide: teclas 1–%d   (%d s)" % [jogo.choices_for(L).size(), int(ceil(maxf(dec_left, 0.0)))])
 		if dec_left <= 0: _decide(_dflt(), true)
 
+# modo VAR: cada lance passa pela sala; os que não se podem rever (faltas no meio-campo, amarelos) o árbitro decide sozinho
+func _var_sala() -> void:
+	var d0 := jogo.ai_campo(L)
+	L.var_campo = d0; L.var_done = true
+	if not jogo.var_eligible(L, d0) and not jogo.var_eligible(L, str(L.truth)):
+		L.ia = true
+		jogo.call_deferred("decide", d0)
+		return
+	ui.flash("VAR: a verificar"); som.beep()
+	jogo.feed("Lance aos %d': o árbitro deu %s. O VAR está a verificar." % [L.minute, str(Partida.DEC_LABEL.get(d0, d0)).to_lower()], "var")
+	flash_t = 0.9; modo = "flash"
+	var_pend = true
 func _decide(d: String, timed_out := false) -> void:
 	if not (modo in ["lance", "var"]) or not dec_shown: return
 	dec_shown = false
@@ -2173,6 +2199,10 @@ func on_ui(a: String, v) -> void:
 		"treino_var": _new_match(Carreira.default_teams()); jogo.start_training()
 		"tutorial": _new_match(Carreira.default_teams()); jogo.start_tutorial()
 		"treino3d": _start_training()
+		"modo_var":
+			_new_match(Carreira.default_teams()); jogo.var_mode = true; jogo.no_var = false; jogo.lance_k = 0.75
+			jogo.sorteia_ambiente(night); jogo.anuncia_clima()
+			ui.toast("Sala do VAR: o árbitro decide em campo; tu verificas os lances que se podem rever", 4.0)
 		"treino_fisico":
 			ui.hide_all()
 			var tf := TesteFisico.new(); tf.som = som; ui.root.add_child(tf)

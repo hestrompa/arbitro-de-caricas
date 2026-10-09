@@ -232,7 +232,8 @@ func show_dec(choices: Array, extra: String) -> void:
 	for c in choices:
 		i += 1
 		var d: String = c
-		dec_row.add_child(_btn("%d  %s" % [i, Partida.DEC_LABEL[d]], func(): main.on_ui("decide", d), DEC_COL.get(d, Color(0.25, 0.3, 0.35)), 130, 18))
+		var campo: bool = main.modo == "var" and str(main.L.get("var_campo", "")) == d
+		dec_row.add_child(_btn("%d  %s%s" % [i, Partida.DEC_LABEL[d], "  (campo)" if campo else ""], func(): main.on_ui("decide", d), DEC_COL.get(d, Color(0.25, 0.3, 0.35)), 130, 18))
 	dec_row.add_child(_btn("R  Rever", func(): main.on_ui("replay", null), Color(0.2, 0.24, 0.3), 0, 16))
 	dec_row.add_child(_btn("C  Câmara", func(): main.on_ui("camera", null), Color(0.2, 0.24, 0.3), 0, 16))
 	if main.modo != "lance" and main.lance != 9:
@@ -359,7 +360,7 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 	_clear(menu_v)
 	menu_v.add_child(_lbl("ÁRBITRO DE CARICAS", 34, GOLD))
 	menu_v.add_child(_wrap("És o árbitro. Acompanha o jogo de caricas de perto: os lances aparecem em 3D, vistos de onde estás, e tens poucos segundos para decidir.", 16, DIM, 500))
-	for it in [["Jogar partida", "partida", Color("2f8a4a")], ["Continuar carreira" if has_career else "Carreira", "carreira", Color("3a5fa8")], ["Treinar o VAR", "treino_var", Color()],
+	for it in [["Jogar partida", "partida", Color("2f8a4a")], ["Continuar carreira" if has_career else "Carreira", "carreira", Color("3a5fa8")], ["Sala do VAR (és o videoárbitro)", "modo_var", Color("12305e")], ["Treinar o VAR", "treino_var", Color()],
 			["Primeiro jogo guiado", "tutorial", Color()], ["Treino de lances 3D", "treino3d", Color()]]:
 		var k: String = it[1]
 		menu_v.add_child(_btn(it[0], func(): main.on_ui(k, null), it[2], 500, 20))
