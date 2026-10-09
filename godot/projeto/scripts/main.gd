@@ -133,6 +133,7 @@ var sun: DirectionalLight3D
 var sky_mat: ProceduralSkyMaterial
 var floods: Array = []
 var night := false
+var video_carreira := false      # sessão de vídeo do treino da carreira a decorrer
 var chuva_p: CPUParticles3D      # chuva à volta da câmara
 var fumo_p: CPUParticles3D       # fumo das tochas
 var slp := {}              # plano do carrinho capturado
@@ -1845,7 +1846,7 @@ func _lance_ui(delta: float) -> void:
 		ui.info("Revisão · %d' · %s" % [L.minute, Partida.LABEL.get(L.truth, L.truth)], (outcome + "  ·  " if outcome != "" else "") + "C câmara · R repetir · Espaço pausa · S lento · Esc voltar")
 		return
 	if modo == "lance":
-		if L.get("training", false):
+		if L.get("training", false) and not L.get("var_done", false):
 			ui.info("Treino do VAR · lance %d de %d" % [jogo.training.get("n", 1), jogo.training.get("total", 6)], "Vê o lance: a decisão de campo vai ao monitor")
 			return
 		var seen := t > _seen_t() or replays > 0
@@ -2031,6 +2032,12 @@ func _end(d: Dictionary) -> void:
 	entrevista = Redes.entrevista(jogo, social.big, d.grade) if not social.is_empty() else {}
 	var note := ""
 	if is_career: note = car.after(jogo, d.grade, d.kind)
+	if video_carreira and d.kind == "treino":
+		video_carreira = false
+		var certos := jogo.incidents.filter(func(l): return float(l.get("pts", 0.0)) >= 1.0).size()
+		note = car.treino_video(certos, int(jogo.training.get("total", 5)))
+		ui.show_report(jogo, d, note, true)
+		return
 	if is_career and not social.is_empty():
 		car.C.trend = social.trend
 		car.C.imagem = clampi(int(car.C.get("imagem", 50)) + (3 if d.grade >= 8.0 else (-4 if d.grade < 5.0 else 0)), 0, 100)
@@ -2136,6 +2143,7 @@ func _obs_camera(look: Vector3) -> void:
 # ---------- menu e botões ----------
 func _show_menu() -> void:
 	_set_night(false)
+	video_carreira = false
 	if chuva_p: _clima_3d(true)
 	modo = "menu"; paused = false; speed = 1.0
 	get_tree().paused = false; Engine.time_scale = 1.0
@@ -2165,6 +2173,15 @@ func on_ui(a: String, v) -> void:
 		"treino_var": _new_match(Carreira.default_teams()); jogo.start_training()
 		"tutorial": _new_match(Carreira.default_teams()); jogo.start_tutorial()
 		"treino3d": _start_training()
+		"treino_fisico":
+			ui.hide_all()
+			var tf := TesteFisico.new(); tf.som = som; ui.root.add_child(tf)
+			tf.fim.connect(func(n, nv):
+				var txt := car.treino_fisico(n, nv)
+				tf.queue_free(); ui.show_career(car); ui.toast(txt, 4.0))
+		"treino_video":
+			video_carreira = true
+			_new_match(Carreira.default_teams()); jogo.start_training(true)
 		"voz":
 			var on := som.toggle_voice()
 			if on: som.say("Rádio ligado.", "VAR")

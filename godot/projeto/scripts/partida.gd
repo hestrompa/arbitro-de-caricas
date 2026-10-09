@@ -2651,7 +2651,7 @@ func end_match(kind: String) -> void:
 	if kind == "abandonado": grade = minf(grade, 3)
 	var right := incidents.filter(func(l): return l.pts == 1).size()
 	var verdict: String
-	if kind == "treino": verdict = "Treino do VAR terminado."
+	if kind == "treino": verdict = "Sessão de vídeo terminada." if training.get("video", false) else "Treino do VAR terminado."
 	elif kind == "abandonado": verdict = "Jogo interrompido: perdeste o controlo aos %d'." % int(t / MATCH_SECONDS * 90)
 	elif grade >= 8.5: verdict = "Pronto para jogos grandes."
 	elif grade >= 7: verdict = "Boa exibição, com lances a rever."
@@ -2676,6 +2676,7 @@ func verdict_txt(l: Dictionary) -> String:
 	elif l.get("miss_adv", false) and pts == 1: why = "Certo (podias ter dado vantagem)"
 	elif dec == "vantagem" and l.get("adv", false) and pts < 1: why = "Vantagem certa, cartão errado"
 	elif dec == "vantagem" and not l.get("adv", false) and pts < 1: why = "Não havia vantagem: a bola era do adversário"
+	elif l.get("training", false) and not l.has("var_first"): why = "Certo" if pts == 1 else "Errado: era " + str(LABEL.get(l.truth, l.truth)).to_lower()
 	elif l.get("training", false): why = (("Certo · confirmaste a decisão de campo" if dec == l.var_first else "Certo · corrigiste a decisão de campo") if pts == 1 else "Errado · decisão de campo era " + str(DEC_LABEL[l.var_first]).to_lower())
 	elif l.has("var_first"): why = ("Certo só depois do VAR (no campo: %s)" % str(DEC_LABEL.get(l.var_first, l.var_first)).to_lower()) if pts > 0 else "Errado, mesmo depois do VAR"
 	elif pts == 1: why = "Certo"
@@ -2715,14 +2716,14 @@ func report_rows() -> Array:
 	return out
 
 # ---------- treino do VAR: seis lances em que a decisão de campo vai ao monitor ----------
-func start_training() -> void:
-	training = {"n": 0, "next": 1.2, "total": 6}
-	toast("Treino do VAR: seis lances para rever no monitor", 2.5)
+func start_training(video := false) -> void:
+	training = {"n": 0, "next": 1.2, "total": 5 if video else 6, "video": video}
+	toast("Sessão de vídeo: cinco lances, decides tu em campo" if video else "Treino do VAR: seis lances para rever no monitor", 2.5)
 func train_next() -> void:
 	training.n += 1
 	if training.n > training.total: end_match("treino"); return
 	training.next = 2.5
-	if int(training.n) % 2 == 0: train_offside()
+	if int(training.n) % 2 == 0 and not (training.get("video", false) and int(training.n) == 4): train_offside()
 	else: train_foul()
 func _by_role(ti: int, r: String) -> Pl:
 	for p in players:
@@ -2744,6 +2745,7 @@ func train_foul() -> void:
 	L.fall = L.truth != "siga" or rng.randf() < 0.6; L.training = true; L.adv = false; L.why = ""
 	var wrong: Array = ["siga", "falta", "amarelo", "vermelho", "simulacao"].filter(func(x): return x != L.truth)
 	var d0: String = pick(wrong) if rng.randf() < 0.65 else L.truth
+	if training.get("video", false): L.var_done = true; return     # sessão de vídeo: decides tu, sem monitor
 	later(1.5, func(): if mode == "lance" and is_same(lance, L): start_var(L, d0))
 func train_offside() -> void:
 	var ti := 0 if dirs(0) > 0 else 1        # quem ataca para a direita
@@ -2772,6 +2774,10 @@ func train_offside() -> void:
 	start_offside(oi)
 	var L := lance
 	L.training = true
+	if training.get("video", false):
+		# sessão de vídeo: a bandeira do assistente é só uma pista (acerta 3 em 4) e decides tu
+		L.var_done = true; L.flag = (L.truth == "fora") == (rng.randf() < 0.75)
+		return
 	later(1.6, func():
 		if mode != "lance" or not is_same(lance, L): return
 		var right: String = L.truth

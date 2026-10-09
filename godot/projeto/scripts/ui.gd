@@ -390,6 +390,15 @@ func show_career(car: Carreira) -> void:
 	var bb := HBoxContainer.new(); bb.add_theme_constant_override("separation", 10); pv.add_child(bb)
 	bb.add_child(_btn("Apitar o jogo", func(): main.on_ui("career_play", null), Color("2f8a4a"), 220, 20))
 	bb.add_child(_btn("Menu", func(): main.on_ui("menu", null)))
+	# treino antes do jogo: uma sessão por jornada
+	var tr_p := _panel(Color(0.1, 0.14, 0.22, 0.95)); var tr_v := VBoxContainer.new(); tr_p.add_child(tr_v); career_v.add_child(tr_p)
+	var tr_pode := car.pode_treinar()
+	tr_v.add_child(_lbl("Treino antes do jogo" + ("  ·  escolhe uma sessão" if tr_pode else "  ·  já treinaste esta semana"), 17, GOLD))
+	if str(C.get("treino_txt", "")) != "": tr_v.add_child(_wrap(str(C.treino_txt), 14, INK, 900))
+	var tr_b := HBoxContainer.new(); tr_b.add_theme_constant_override("separation", 10); tr_v.add_child(tr_b)
+	var tr_b1 := _btn("Teste físico (yo-yo)", func(): main.on_ui("treino_fisico", null), Color(0.2, 0.3, 0.45), 0, 16); tr_b1.disabled = not tr_pode; tr_b.add_child(tr_b1)
+	var tr_b2 := _btn("Sessão de vídeo (5 lances)", func(): main.on_ui("treino_video", null), Color(0.2, 0.3, 0.45), 0, 16); tr_b2.disabled = not tr_pode; tr_b.add_child(tr_b2)
+	tr_v.add_child(_lbl("O teste físico dá experiência no Físico; a sessão de vídeo em Leitura de jogo (e Calma se acertares todos).", 13, DIM))
 	# escada
 	var ld := HBoxContainer.new(); ld.add_theme_constant_override("separation", 6); career_v.add_child(ld)
 	for i in Carreira.TIERS.size():
@@ -447,6 +456,9 @@ func show_career(car: Carreira) -> void:
 			bar.add_child(seg)
 		row.add_child(bar)
 		row.add_child(_lbl("%d/10" % v, 16, GOLD))
+		var xp: int = int(C.get("xp", {}).get(a.k, 0))
+		var xb := ProgressBar.new(); xb.max_value = 100; xb.value = xp; xb.show_percentage = false; xb.custom_minimum_size = Vector2(70, 8)
+		xb.size_flags_vertical = Control.SIZE_SHRINK_CENTER; xb.tooltip_text = "Experiência: %d/100" % xp; row.add_child(xb)
 		var k: String = a.k
 		var b := _btn("+1", func(): main.on_ui("attr", k), Color(), 0, 16); b.disabled = C.pts <= 0 or v >= 10; row.add_child(b)
 	var img: int = int(C.get("imagem", 50))

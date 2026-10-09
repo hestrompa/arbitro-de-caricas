@@ -695,6 +695,32 @@ func end_season(news: String, ti: int, rank_note := "") -> void:
 	season_reset_players()
 	C.fixtures = make_fixtures(C.tier); C.refs = make_refs(C.tier, 0)
 	C.erase("tab"); C.erase("forma"); ensure_league()
+# ---------- treino entre jogos: uma sessão antes de cada jogo; a experiência (0-100) sobe os atributos ----------
+func treino_chave() -> String: return "%d-%d-%d" % [C.season, C.tier, C.round]
+func pode_treinar() -> bool: return str(C.get("treino_k", "")) != treino_chave()
+func xp_add(k: String, v: int) -> String:
+	if not C.has("xp"): C.xp = {"fis": 0, "leit": 0, "aut": 0, "calma": 0}
+	C.xp[k] = int(C.xp.get(k, 0)) + v
+	var subiu := 0
+	while int(C.xp[k]) >= 100 and int(C.attrs[k]) < 10:
+		C.xp[k] = int(C.xp[k]) - 100; C.attrs[k] = int(C.attrs[k]) + 1; subiu += 1
+	if int(C.attrs[k]) >= 10: C.xp[k] = mini(int(C.xp[k]), 100)
+	var nome: String = ATTRS.filter(func(a): return a.k == k)[0].name
+	return "+%d de experiência em %s" % [v, nome] + (" e subiste para %d!" % int(C.attrs[k]) if subiu else ".")
+func treino_fisico(percursos: int, nivel: String) -> String:
+	C.treino_k = treino_chave()
+	var v := clampi(percursos * 5, 5, 90)
+	var txt := "Teste físico: nível %s (%d percursos). " % [nivel, percursos] + xp_add("fis", v)
+	if percursos < 6: txt += " O observador anotou um teste fraco."
+	C.treino_txt = txt; save_c()
+	return txt
+func treino_video(certos: int, total: int) -> String:
+	C.treino_k = treino_chave()
+	var v := 8 + certos * 14
+	var txt := "Sessão de vídeo: %d em %d certos. " % [certos, total] + xp_add("leit", v)
+	if certos == total: txt += " " + xp_add("calma", 15)
+	C.treino_txt = txt; save_c()
+	return txt
 func add_attr(k: String) -> void:
 	if C.pts <= 0 or C.attrs[k] >= 10: return
 	C.attrs[k] += 1; C.pts -= 1; save_c()
