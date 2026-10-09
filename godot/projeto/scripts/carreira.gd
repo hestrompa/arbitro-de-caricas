@@ -61,6 +61,24 @@ class Seeded:
 		s = (s * 1664525 + 1013904223) % 4294967296
 		return s / 4294967296.0
 
+# suplentes: 7 no banco (sem guarda-redes, que no jogo não se troca), um pouco piores do que o onze
+static func bench_for(name: String, rating: float) -> Array:
+	var used := {}
+	for q in squad_for(name, rating): used[q.name] = 1
+	var r := Seeded.new(hash_s(name) + 11)
+	var out: Array = []
+	var nums := [13, 14, 16, 17, 18, 20, 21]
+	var lines := ["d", "d", "m", "m", "m", "f", "f"]
+	for i in 7:
+		var nm := ""
+		while true:
+			nm = FIRST[int(r.next() * FIRST.size())] + " " + LAST[int(r.next() * LAST.size())]
+			if not used.has(nm): break
+		used[nm] = 1
+		var ovr := clampf(round(rating - 3 + (r.next() + r.next() - 1.0) * 8), 35.0, 92.0)
+		out.append({"name": nm, "short": nm.split(" ")[1], "ovr": ovr, "num": nums[i], "line": lines[i]})
+	return out
+
 static func hash_s(t: String) -> int:
 	var h := 7
 	for i in t.length(): h = (h * 31 + t.unicode_at(i)) % 100003

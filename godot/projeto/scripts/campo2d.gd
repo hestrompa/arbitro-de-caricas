@@ -222,6 +222,18 @@ func _draw() -> void:
 	draw_string(font, rp + Vector2(-sc * 2, sc * 0.45), "Á", HORIZONTAL_ALIGNMENT_CENTER, sc * 4, int(max(8.0, sc * 1.2)), Color("111111"))
 	if jogo.ref_target != null: draw_arc(w2s(jogo.ref_target), sc * 0.8, 0, TAU, 16, Color(1, 1, 0.4, 0.6), 2)
 	_ambiente(rp)
+	# placa do 4.º árbitro nas substituições: número que sai a vermelho, o que entra a verde
+	if not jogo.placa.is_empty():
+		var tr: Array = jogo.placa.trocas
+		var bw := 92.0; var bh := 26.0 * tr.size() + 8.0
+		var c0 := w2s(Vector2(W / 2, 0)) + Vector2(-bw / 2, -bh - 6)
+		c0.y = maxf(c0.y, TOP + 2)
+		draw_rect(Rect2(c0, Vector2(bw, bh)), Color(0.05, 0.05, 0.06, 0.92))
+		draw_rect(Rect2(c0, Vector2(bw, bh)), Color(1, 1, 1, 0.5), false, 1.5)
+		for i in tr.size():
+			var y := c0.y + 26.0 + 26.0 * i
+			draw_string(font, Vector2(c0.x + 6, y), "%d" % tr[i][0], HORIZONTAL_ALIGNMENT_CENTER, 36, 22, Color("ff4a3d"))
+			draw_string(font, Vector2(c0.x + 50, y), "%d" % tr[i][1], HORIZONTAL_ALIGNMENT_CENTER, 36, 22, Color("4dff6a"))
 	# lance: o mesmo anel vermelho que aparece no mini-campo do 3D, no sítio exato do lance
 	if main and main.modo == "flash" and main.L.has("P"):
 		var lp: Vector2 = w2s(main.L.P)

@@ -90,6 +90,7 @@ class Pl:
 	var reserve := false
 	var banned := ""
 	var grudge := false
+	var entrou := false            # entrou como suplente
 
 var ev: Callable                  # ev.call(nome, dados)
 var teams: Array = []             # [{name, art, color, dark, sock, shorts, gk, dir, rating, text, pat, shirt2}]
@@ -123,6 +124,16 @@ var target: Pl = null
 var bpen := false
 var pen_forca := ""           # testes: força o tipo de penálti
 var pen_3d := false           # o próximo penálti é visto em 3D (o árbitro julga a execução)
+var banco: Array = [[], []]        # suplentes (Lei 3: 5 substituições em 3 paragens, mais o intervalo)
+var sub_base := [70.0, 70.0]
+var subs: Array = [{"n": 0, "paragens": 0, "lento": false}, {"n": 0, "paragens": 0, "lento": false}]
+var placa := {}                    # placa do 4.º árbitro no 2D
+var pb_baliza := -1                # pontapé de baliza desta equipa: os adversários ficam fora da área até a bola entrar em jogo
+var gk_intruso: Pl = null          # adversário que ficou dentro da área no pontapé de baliza
+var gk_intruso_p := Vector2.ZERO
+var sub_cd := 0.0
+var intrusos := 0
+var _pd_prev: Pl = null
 var parado_dono: Pl = null   # reinício (livre, canto, penálti, lançamento, pontapé de saída): a bola fica parada até ser batida
 var off_info := {}
 var trail: Array = []
@@ -352,17 +363,22 @@ func squad_setup() -> void:
 			# atributos absolutos: um distrital passa e remata pior do que a Primeira Liga, e um clube grande
 			# tem jogadores claramente melhores do que um pequeno
 			# (dentro do jogo a diferença conta a CONTRASTE: um favorito ganha mais vezes, mas não sempre)
-			var ef: float = base + (float(q.ovr) - base) * CONTRASTE
-			p.name = q.name; p.short = q.short; p.ovr = q.ovr; p.rel = ef; p.tr = q.tr
-			var vf := func(k: float) -> float: return clamp(ef + (r.next() - 0.5) * 14 + k, 30, 99)
-			p.pac = vf.call(5.0 if p.line == "f" else 0.0); p.pas = vf.call(5.0 if p.line == "m" else 0.0)
-			p.fin = vf.call(6.0 if p.line == "f" else -8.0); p.tck = vf.call(6.0 if p.line == "d" else -6.0); p.drb = vf.call(4.0 if p.line == "f" else 0.0)
-			p.dec = vf.call(4.0 if p.line == "m" else 0.0)
-			if "estrela" in p.tr: p.dec += 4; p.drb += 4; p.fin += 3
-			p.spd = 5.7 + p.pac / 100.0 * 2.1
-			p.foul_k = 1.6 if "duro" in p.tr else 1.0
-			p.hard_k = 1.7 if "duro" in p.tr else 1.0
-			p.sim_k = 2.6 if "simulador" in p.tr else 1.0
+			p.name = q.name; p.short = q.short; p.ovr = q.ovr; p.tr = q.tr
+			atributos(p, base, r)
+		banco[ti] = Carreira.bench_for(tm.name, float(tm.get("rating", 70)))
+		sub_base[ti] = base
+func atributos(p: Pl, base: float, r) -> void:
+	var ef: float = base + (float(p.ovr) - base) * CONTRASTE
+	p.rel = ef
+	var vf := func(k: float) -> float: return clamp(ef + (r.next() - 0.5) * 14 + k, 30, 99)
+	p.pac = vf.call(5.0 if p.line == "f" else 0.0); p.pas = vf.call(5.0 if p.line == "m" else 0.0)
+	p.fin = vf.call(6.0 if p.line == "f" else -8.0); p.tck = vf.call(6.0 if p.line == "d" else -6.0); p.drb = vf.call(4.0 if p.line == "f" else 0.0)
+	p.dec = vf.call(4.0 if p.line == "m" else 0.0)
+	if "estrela" in p.tr: p.dec += 4; p.drb += 4; p.fin += 3
+	p.spd = 5.7 + p.pac / 100.0 * 2.1
+	p.foul_k = 1.6 if "duro" in p.tr else 1.0
+	p.hard_k = 1.7 if "duro" in p.tr else 1.0
+	p.sim_k = 2.6 if "simulador" in p.tr else 1.0
 func pass_err(p: Pl, d: float) -> Vector2:
 	var e := (100 - p.pas) / 100.0 * d * 0.11
 	return Vector2(rand(-1, 1), rand(-1, 1)) * e
@@ -853,6 +869,13 @@ func physics(dt: float) -> void:
 			if dl < dmin:
 				var away: Vector2 = dq / dl if dl > 0.01 else Vector2(0, 1)
 				q.p += away * minf(dmin - dl, (q.spd + 2.0) * maxf(dt, 0.016))
+		if pb_baliza >= 0 and owner.team == pb_baliza:
+			var fx: float = abs_x(pb_baliza, BOX_D + 0.8)
+			for q in act:
+				if q.team == pb_baliza or q == gk_intruso or not in_own_box(pb_baliza, q.p): continue
+				var st: float = (q.spd + 1.0) * maxf(dt, 0.016)
+				q.p.x += clampf(fx - q.p.x, -st, st)
+			if gk_intruso: gk_intruso.p = gk_intruso_p; gk_intruso.v = Vector2.ZERO
 		return
 	parado_dono = null
 	if owner:
@@ -943,7 +966,7 @@ func throw_in() -> void:
 		p.p = at; p.v = Vector2.ZERO; owner = p; p.cd = 0.7; p.set_piece = true; last = team; parado_dono = p
 	pause = 0.7
 
-func goal_kick(side: int) -> void:
+func goal_kick(side: int, sem_intruso := false) -> void:
 	var gk: Pl = null
 	for p in active():
 		if p.team == side and p.role == "gk": gk = p
@@ -952,6 +975,14 @@ func goal_kick(side: int) -> void:
 		gk.p = Vector2(own_goal_x(side) + dirs(side) * 3.0, H / 2); owner = gk; gk.cd = 1.2; gk.set_piece = true; last = side; parado_dono = gk
 		stall_check(gk)
 	pause = 0.9
+	pb_baliza = side; gk_intruso = null
+	# Lei 16: os adversários saem da área; às vezes um fica lá dentro à espera de roubar a bola
+	if gk and not sem_intruso and training.is_empty() and not tut and mode == "play" and intrusos < 2 and rng.randf() < 0.07:
+		var fw: Array = active().filter(func(q): return q.team != side and q.line == "f")
+		if fw.size():
+			gk_intruso = pick(fw); intrusos += 1
+			gk_intruso.p = Vector2(abs_x(side, rand(12.5, 15.0)), H / 2 + rand(-9, 9)); gk_intruso.v = Vector2.ZERO; gk_intruso_p = gk_intruso.p
+			gk.cd = 1.8
 
 func corner(team: int, y: float) -> void:
 	var x := W - 0.5 if dirs(team) > 0 else 0.5
@@ -997,8 +1028,11 @@ func goal_award(team: int) -> void:
 	sfx("cheer", 1.0 if team == HOME else 0.4); sfx("whistle", "short")
 	feed_goal(team)
 	crowd = clamp(crowd + (-18 if team == HOME else 8), 0, 100)
+	var k := kicker
 	kickoff(1 - team)
 	pause = 2.2
+	if k and k.team == team and not k.off and training.is_empty() and not tut and rng.randf() < 0.14:
+		later(1.2, func(): if mode == "play" and not k.off: _festejo(k))
 
 # ---------- fora de jogo ----------
 func offside_snap(p: Pl, m: Pl) -> void:
@@ -1114,6 +1148,8 @@ func _play_step(dt: float) -> void:
 	half_check(dt); added_time_check(); pend_step(dt); stall_step(dt); fk_step(dt); coach_step(dt)
 	if mode != "play": return
 	ambiente_step(dt)
+	if mode != "play": return
+	regras_step(dt)
 	if mode != "play": return
 	if not training.is_empty():
 		lance_cd = 1e9; training.next -= dt
@@ -2308,6 +2344,147 @@ func coach_step(dt: float) -> void:
 			feed(m + ".", "card" if c == "amarelo" or c == "vermelho" else "info")
 			toast(m, 2.2), 0)
 
+# ---------- reinícios: substituições (Lei 3), pontapé de baliza (Lei 16), festejos (Lei 12) ----------
+func regras_step(dt: float) -> void:
+	sub_cd -= dt
+	if not placa.is_empty():
+		placa.t -= dt
+		if placa.t <= 0: placa = {}
+	if parado_dono == _pd_prev: return
+	var antes := _pd_prev
+	_pd_prev = parado_dono
+	if antes != null: _fim_parado(antes)
+	if parado_dono != null and mode == "play": _inicio_parado(parado_dono)
+func _fim_parado(p: Pl) -> void:
+	var side := pb_baliza
+	pb_baliza = -1
+	if side < 0 or gk_intruso == null or p.team != side: gk_intruso = null; return
+	var q := gk_intruso
+	gk_intruso = null
+	if q.off or owner != null: return
+	# o guarda-redes bate curto e o avançado que ficou na área rouba-lhe a bola
+	target = q
+	bv = (q.p - bp).normalized() * maxf(10.0, bv.length() * 0.8); bvz = 0.0
+	later(0.9, func(): if mode == "play": _intruso_ask(side, q))
+func _intruso_ask(side: int, q: Pl) -> void:
+	ask_open("Pontapé de baliza %s: o %d %s ficou dentro da área e roubou a bola logo a seguir ao pontapé." % [de_t(side), q.num, de_t(q.team)], "Pontapé de baliza",
+		[{"d": "siga", "label": "Siga", "small": "a bola já estava em jogo"}, {"d": "repetir", "label": "Repetir", "small": "pontapé de baliza outra vez"},
+		 {"d": "livreind", "label": "Livre indireto", "small": "contra quem estava na área"}],
+		func(c): _intruso_res(c, side, q), 0)
+func livre_em(team: int, at: Vector2) -> void:
+	at = Vector2(clampf(at.x, 1, W - 1), clampf(at.y, 1, H - 1))
+	var p: Pl = nearest(active().filter(func(q): return q.team == team and q.role != "gk"), at)[0]
+	reset_ball(at)
+	if p:
+		p.p = at - Vector2(dirs(team) * 0.8, 0); p.v = Vector2.ZERO; owner = p; last = team; p.cd = 0.9; p.set_piece = true; parado_dono = p
+	pause = 0.8
+
+func _intruso_res(c: String, side: int, q: Pl) -> void:
+	var pts := 1.0 if c == "repetir" else (0.3 if c == "livreind" else 0.0)
+	ctrl(2.0 if pts == 1 else (-1.0 if pts > 0 else -4.0))
+	manage.append({"minute": minute(), "what": "Adversário dentro da área no pontapé de baliza", "dec": {"siga": "Siga", "repetir": "Repetir", "livreind": "Livre indireto"}[c], "pts": pts,
+		"why": "Certo: com um adversário na área, o pontapé de baliza repete-se" if pts == 1 else ("A lei manda repetir o pontapé de baliza, não dar livre" if c == "livreind" else "Ele não podia estar na área: era repetir")})
+	if c == "siga":
+		toast("Siga: a bola fica com %s" % art_t(q.team), 1.8); protest_after_soon(side)
+	else:
+		toast("Pontapé de baliza repetido" if c == "repetir" else "Livre indireto %s" % de_t(side), 1.8); sfx("whistle", "short")
+		if c == "repetir": goal_kick(side, true)
+		else: livre_em(side, q.p)
+func _inicio_parado(p: Pl) -> void:
+	if p.penalty or not training.is_empty() or tut or t < MATCH_SECONDS * 0.5: return
+	if not fk.is_empty() or bp.distance_to(Vector2(W / 2, H / 2)) < 0.5: return
+	# a partir da hora de jogo, os treinadores aproveitam as paragens para mexer
+	var f: float = clampf((t / MATCH_SECONDS - 0.55) / 0.35, 0.0, 1.0)
+	for ti in 2:
+		var S: Dictionary = subs[ti]
+		if S.n >= 5 or S.paragens >= 3 or banco[ti].is_empty() or sub_cd > 0: continue
+		var urg: float = 0.18 + 0.35 * f + (0.15 if score[ti] < score[1 - ti] else 0.0)
+		if t < MATCH_SECONDS * 0.6 or rng.randf() > urg: continue
+		var quantos: int = mini(5 - int(S.n), 1 + (1 if rng.randf() < 0.55 else 0) + (1 if S.paragens == 2 and rng.randf() < 0.6 else 0))
+		_substitui(ti, quantos)
+		return
+func _substitui(ti: int, quantos: int) -> void:
+	var S: Dictionary = subs[ti]
+	var trocas: Array = []
+	for i in quantos:
+		var cand: Array = active().filter(func(q): return q.team == ti and q.role != "gk" and not q.entrou and q != parado_dono)
+		if cand.is_empty() or banco[ti].is_empty(): break
+		# sai quem tem amarelo, os avançados cansados e os piores
+		var p: Pl = null
+		var best := -1e9
+		for q in cand:
+			var v: float = q.yellow * 12 + (6 if q.line == "f" else 0) - q.rel + rand(0, 10)
+			if v > best: best = v; p = q
+		var bq: Array = banco[ti]
+		var j := 0
+		for k in bq.size():
+			if bq[k].line == p.line: j = k; break
+		var s: Dictionary = bq[j]
+		bq.remove_at(j)
+		trocas.append([p.num, int(s.num)])
+		p.name = s.name; p.short = s.short; p.num = int(s.num); p.ovr = float(s.ovr); p.tr = []
+		p.yellow = 0; p.fouls = 0; p.grudge = false; p.reserve = false; p.banned = ""; p.entrou = true
+		atributos(p, sub_base[ti], Carreira.Seeded.new(Carreira.hash_s(str(teams[ti].name)) + p.num * 97))
+	if trocas.is_empty(): return
+	S.n += trocas.size(); S.paragens += 1; sub_cd = 8.0
+	added += 0.25 * trocas.size()
+	pause = maxf(pause, 1.6)
+	var txt := ", ".join(trocas.map(func(x): return "sai o %d, entra o %d" % x))
+	placa = {"t": 3.0, "team": ti, "trocas": trocas}
+	feed("Substituição %s: %s." % [de_t(ti), txt], "info")
+	toast("Substituição %s" % de_t(ti), 1.8)
+	radio("4.º árbitro", "Substituição %s: %s." % [de_t(ti), txt])
+	# quem ganha nos últimos minutos sai devagar para queimar tempo (Lei 3: sai pela linha mais próxima)
+	if not S.lento and score[ti] > score[1 - ti] and t > MATCH_SECONDS * 0.8 and rng.randf() < 0.6:
+		S.lento = true
+		var n0: int = trocas[0][0]
+		later(0.6, func(): if mode == "play": _sai_devagar(ti, n0))
+func _sai_devagar(ti: int, n0: int) -> void:
+	ask_open("%s ganha e o %d que vai sair atravessa o campo todo, a passo, até ao banco." % [cap_t(ti), n0], "Substituição",
+		[{"d": "esperar", "label": "Esperar", "small": "é o tempo dele"}, {"d": "linha", "label": "Linha mais próxima", "small": "sai por onde está"},
+		 {"d": "amarelo", "label": "Amarelo", "small": "antijogo", "sw": "amarelo"}],
+		func(c): _sai_devagar_res(c, ti, n0), 0)
+# intervalo: cada equipa pode mexer sem gastar uma das 3 paragens
+func _sai_devagar_res(c: String, ti: int, n0: int) -> void:
+	var pts := 1.0 if c == "linha" else (0.4 if c == "amarelo" else 0.0)
+	ctrl(2.0 if pts == 1 else (-1.0 if pts > 0 else -3.0))
+	if c == "esperar": added += 0.3; protest_after_soon(1 - ti)
+	manage.append({"minute": minute(), "what": "Jogador substituído a sair devagar", "dec": {"esperar": "Esperar", "linha": "Linha mais próxima", "amarelo": "Amarelo"}[c], "pts": pts,
+		"why": "Certo: quem é substituído sai pela linha mais próxima" if pts == 1 else ("Primeiro manda-o sair pela linha mais próxima; o amarelo é para quem recusa" if c == "amarelo" else "Deixaste queimar tempo: sai pela linha mais próxima")})
+	toast({"esperar": "Esperaste que ele chegasse ao banco", "linha": "Sai pela linha lateral, ali mesmo", "amarelo": "Amarelo ao %d %s por atrasar o jogo" % [n0, de_t(ti)]}[c], 2.0)
+	if c == "amarelo": feed("Amarelo ao %d %s, já substituído, por atrasar a saída." % [n0, de_t(ti)], "card"); sfx("whistle", "short")
+func subs_intervalo() -> void:
+	for ti in 2:
+		if rng.randf() < 0.45 and subs[ti].n < 5:
+			var S: Dictionary = subs[ti]
+			var par: int = S.paragens
+			_substitui(ti, 1)
+			S.paragens = par
+			placa = {}
+
+func _festejo(k: Pl) -> void:
+	var camisola := rng.randf() < 0.65
+	var msg := "O %d %s marcou e tirou a camisola nos festejos%s." % [k.num, de_t(k.team), " (já tem amarelo)" if k.yellow else ""] if camisola else \
+		"O %d %s marcou e subiu à vedação para festejar com os adeptos%s." % [k.num, de_t(k.team), " (já tem amarelo)" if k.yellow else ""]
+	ask_open(msg, "Festejos",
+		[{"d": "nada", "label": "Nada", "small": "é a alegria do golo"}, {"d": "amarelo", "label": "Amarelo", "small": "obrigatório (Lei 12)", "sw": "amarelo"},
+		 {"d": "vermelho", "label": "Vermelho", "small": "", "sw": "vermelho"}],
+		func(c): _festejo_res(c, k, camisola), 0)
+
+func _festejo_res(c: String, k: Pl, camisola: bool) -> void:
+	var pts := 1.0 if c == "amarelo" else 0.0
+	ctrl(1.0 if pts == 1 else -3.0)
+	var m := ""
+	if c == "amarelo":
+		k.yellow += 1; m = "Amarelo ao %d %s pelos festejos" % [k.num, de_t(k.team)]
+		if k.yellow >= 2: k.off = true; m = "Segundo amarelo pelos festejos: %d %s expulso" % [k.num, de_t(k.team)]
+		feed(m + ".", "card"); sfx("whistle", "short")
+	elif c == "vermelho":
+		k.off = true; m = "Vermelho ao %d %s pelos festejos" % [k.num, de_t(k.team)]; feed(m + ".", "card"); sfx("whistle", "long")
+	else: m = "Deixaste passar os festejos"
+	toast(m, 2.2)
+	manage.append({"minute": minute(), "what": "Festejos: " + ("tirou a camisola" if camisola else "subiu à vedação"), "dec": {"nada": "Nada", "amarelo": "Amarelo", "vermelho": "Vermelho"}[c], "pts": pts,
+		"why": "Certo: é amarelo obrigatório, mesmo que custe a expulsão" if pts == 1 else ("Exagero: é amarelo, não vermelho" if c == "vermelho" else "Tirar a camisola ou subir à vedação é sempre amarelo")})
 # ---------- livres diretos: barreira a 9,15 m ----------
 func fk_check(tk: Pl) -> void:
 	if not training.is_empty() or tk == null or tk.off or mode == "fim": return
@@ -2327,7 +2504,14 @@ func fk_check(tk: Pl) -> void:
 	var wall: Array = []
 	for p in defs.slice(0, n): wall.append(p.id)
 	fk = {"team": team, "tk": tk.id, "spot": spot, "to_g": to_g, "perp": perp, "d": d, "wd": wd, "d0": wd, "tgt": wd, "wall": wall, "t": 0.0, "phase": "set",
-		"short": short, "creep": short and rng.randf() < 0.45, "creep_id": -1, "creep_d": 0.0, "sprayed": false}
+		"short": short, "creep": short and rng.randf() < 0.45, "creep_id": -1, "creep_d": 0.0, "sprayed": false,
+		"enc": false, "enc_id": -1, "enc_d": 0.45, "enc_tgt": 0.45, "enc_s": 1.0 if rng.randf() < 0.5 else -1.0, "enc_done": false}
+	# Lei 13 (desde 2019): com uma barreira de 3 ou mais, os atacantes ficam a pelo menos 1 m dela
+	if rng.randf() < 0.4:
+		var ponta: Vector2 = C0 + perp * fk.enc_s * ((n - 1) / 2.0 * 0.85 + 0.5)
+		var mates: Array = active().filter(func(p): return p.team == team and p.role != "gk" and p != tk)
+		var a: Pl = nearest(mates, ponta)[0]
+		if a: fk.enc = true; fk.enc_id = a.id
 	tk.p = spot - to_g * 1.0; tk.v = Vector2.ZERO; tk.cd = 99
 	fk_place()
 func fk_place() -> void:
@@ -2337,6 +2521,9 @@ func fk_place() -> void:
 		if p.off: continue
 		var dd: float = fk.wd - (fk.creep_d if fk.creep_id == p.id else 0.0)
 		p.p = fk.spot + fk.to_g * dd + fk.perp * (i - (n - 1) / 2.0) * 0.85; p.v = Vector2.ZERO
+	if fk.enc_id >= 0:
+		var a: Pl = players[fk.enc_id]
+		if not a.off: a.p = fk.spot + fk.to_g * fk.wd + fk.perp * fk.enc_s * ((n - 1) / 2.0 * 0.85 + fk.enc_d); a.v = Vector2.ZERO
 func fk_step(dt: float) -> void:
 	if fk.is_empty(): return
 	var F := fk
@@ -2346,6 +2533,7 @@ func fk_step(dt: float) -> void:
 	F.t += dt; pause = max(pause, 0.05)
 	F.wd += clamp(F.tgt - F.wd, -2.5 * dt, 2.5 * dt)
 	if F.creep_id >= 0 and F.creep_d < 1.2: F.creep_d += dt * 0.8
+	F.enc_d += clampf(F.enc_tgt - F.enc_d, -1.2 * dt, 1.2 * dt)
 	fk_place()
 	if F.phase == "set" and F.t > 1.6:
 		F.phase = "ask"
@@ -2358,7 +2546,35 @@ func fk_step(dt: float) -> void:
 		ask_open("Já com o spray no chão, o %d %s volta a adiantar-se na barreira." % [p.num, de_t(p.team)], "Livre direto",
 			[{"d": "deixar", "label": "Deixar", "small": "é só um passo"}, {"d": "afastar", "label": "Afastar outra vez", "small": "mais um aviso"}, {"d": "amarelo", "label": "Amarelo", "small": "não respeita a distância", "sw": "amarelo"}],
 			func(c): _fk_second(c, p), 0)
+	elif F.phase == "enc" and F.t > F.enc_at:
+		F.phase = "ask3"
+		var a: Pl = players[F.enc_id]
+		ask_open("O %d %s, da equipa que vai bater, encostou-se à ponta da barreira, a meio metro." % [a.num, de_t(a.team)], "Livre direto",
+			[{"d": "deixar", "label": "Deixar", "small": "é só posicionamento"}, {"d": "afastar", "label": "Afastar a 1 m", "small": "regra da barreira"},
+			 {"d": "amarelo", "label": "Amarelo", "small": "ao atacante", "sw": "amarelo"}],
+			func(c): _fk_enc(c, a), 0)
 	elif F.phase == "kick" and F.t > F.kick_at: _fk_kick(F, tk)
+func _fk_next(F: Dictionary, dl: float) -> void:
+	if F.enc and not F.enc_done and F.enc_id >= 0 and not players[F.enc_id].off:
+		F.enc_done = true; F.phase = "enc"; F.enc_at = F.t + dl
+	else:
+		F.phase = "kick"; F.kick_at = F.t + dl
+func _fk_enc(c: String, a: Pl) -> void:
+	if fk.is_empty(): return
+	var F := fk
+	var pts := 1.0 if c == "afastar" else (0.3 if c == "amarelo" else 0.0)
+	ctrl(1.5 if pts == 1 else (-1.0 if pts > 0 else -3.0))
+	var m := ""
+	if c == "afastar": F.enc_tgt = 1.15; m = "O %d afasta-se a 1 m da barreira" % a.num
+	elif c == "amarelo":
+		F.enc_tgt = 1.15; a.yellow += 1; m = "Amarelo ao %d %s" % [a.num, de_t(a.team)]
+		if a.yellow >= 2: a.off = true; m = "Segundo amarelo: %d %s expulso" % [a.num, de_t(a.team)]; F.enc_id = -1
+		sfx("whistle", "long"); feed(m + ".", "card")
+	else: m = "Deixaste o %d colado à barreira" % a.num; protest_after_soon(1 - int(F.team))
+	toast(m, 2)
+	manage.append({"minute": minute(), "what": "Atacante encostado à barreira", "dec": {"deixar": "Deixar", "afastar": "Afastar a 1 m", "amarelo": "Amarelo"}[c], "pts": pts,
+		"why": "Certo: com barreira de 3 ou mais, os atacantes ficam a 1 m" if pts == 1 else ("Bastava afastá-lo: ainda não tinha desobedecido" if c == "amarelo" else "A lei obriga os atacantes a ficar a 1 m da barreira; se o livre fosse batido assim, era livre indireto para a defesa")})
+	_fk_next(F, 1.2)
 func _fk_first(c: String) -> void:
 	if fk.is_empty(): return
 	var F := fk
@@ -2385,8 +2601,7 @@ func _fk_first(c: String) -> void:
 	toast(m, 2)
 	if c == "medir" and F.creep:
 		F.phase = "creep"; F.creep_at = F.t + 2.2; F.creep_id = pick(F.wall); F.creep_d = 0.0
-	else:
-		F.phase = "kick"; F.kick_at = F.t + (0.8 if c == "bater" else 1.8)
+	else: _fk_next(F, 0.8 if c == "bater" else 1.8)
 func _fk_second(c: String, p: Pl) -> void:
 	if fk.is_empty(): return
 	var F := fk
@@ -2402,7 +2617,7 @@ func _fk_second(c: String, p: Pl) -> void:
 	manage.append({"minute": minute(), "what": "Jogador volta a adiantar-se na barreira", "dec": {"deixar": "Deixar", "afastar": "Afastar outra vez", "amarelo": "Amarelo"}[c], "pts": pts,
 		"why": "Certo: depois do spray, quem avança leva amarelo" if pts == 1 else ("Já tinha sido avisado: era amarelo" if c == "afastar" else "Deixaste a barreira encurtar")})
 	toast(m, 2)
-	F.phase = "kick"; F.kick_at = F.t + 1.2
+	_fk_next(F, 1.2)
 func protest_after_soon(team: int) -> void:
 	pause = max(pause, 0.3)
 	later(2.6, func(): if mode == "play" and fk.is_empty(): protest_after(team, 0.3, true))
@@ -2561,6 +2776,7 @@ func second_half(talk := "descanso") -> void:
 			msg = "Descansaste no balneário: energia cheia e menos nervos."
 	for tm in teams: tm.dir = -int(tm.dir)
 	half = 2; lance = {}
+	if training.is_empty() and not tut: subs_intervalo()
 	kickoff(1)
 	pause = 0.8
 	mode = "play"; sfx("whistle", "long")
