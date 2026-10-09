@@ -177,6 +177,13 @@ var sim_k := 1.0
 var fama := {"sim": 0.0, "duro": 0.0, "prot": 0.0}
 var apr: Array = [{"sim": 0.0, "duro": 0.0, "prot": 0.0}, {"sim": 0.0, "duro": 0.0, "prot": 0.0}]
 var apr_log: Array = []           # o que aprenderam (para o relatório e para a carreira)
+# noites difíceis: tempo do jogo (chuva, nevoeiro) e um acontecimento (tochas, apagão, invasão de campo)
+var clima := ""
+var evento: Dictionary = {}       # {k, min, estado: espera|ativo|fim}
+var fumo: Dictionary = {}         # nuvem das tochas: {c, r, a}
+var luz := 1.0                    # 1 = projetores todos; menos no apagão
+var invasor: Dictionary = {}      # {p, v, alvo, seg: [posições dos seguranças]}
+var noite := false
 var training: Dictionary = {}     # treino do VAR
 var tut := false                  # primeiro jogo guiado
 var tut_done := false
@@ -800,6 +807,7 @@ func tackle(def: Pl, att: Pl) -> void:
 	# quem é batido no drible é quem faz falta: defesas fracos contra avançados habilidosos, e em contra-ataque
 	var risco: float = (0.12 + ag * 0.45) * def.foul_k * (1.0 + clampf((att.drb - def.tck) / 60.0, -0.5, 0.8)) * (1.0 + 0.4 * brando(def.team, "duro"))
 	risco *= 0.7 if won else 1.8
+	if clima == "chuva": risco *= 1.2
 	if not won and counter_attack(att): risco *= 1.5
 	if not won:
 		if lance_cd <= 0 and rng.randf() < risco: start_lance(att, def)
@@ -854,7 +862,7 @@ func physics(dt: float) -> void:
 		bz += bvz * dt; bvz -= G * dt
 		if bz <= 0:
 			bz = 0; bvz = -bvz * 0.45 if absf(bvz) > 1.5 else 0.0
-	bv *= exp((-0.15 if bz > 0.05 else -0.7) * dt)
+	bv *= exp((-0.15 if bz > 0.05 else (-0.56 if clima == "chuva" else -0.7)) * dt)
 	var sp := bv.length()
 	if sp > 6:
 		trail.append(bp)
@@ -1100,6 +1108,8 @@ func _play_step(dt: float) -> void:
 	if tut: tut_step()
 	half_check(dt); added_time_check(); pend_step(dt); stall_step(dt); fk_step(dt); coach_step(dt)
 	if mode != "play": return
+	ambiente_step(dt)
+	if mode != "play": return
 	if not training.is_empty():
 		lance_cd = 1e9; training.next -= dt
 		if training.next <= 0 and pause <= 0: train_next()
@@ -1133,7 +1143,19 @@ func sight_of(r: Vector2, P: Vector2, dir_act: Vector2, others: Array) -> Dictio
 		var proj := rp.dot(view)
 		if proj <= 0.6 or proj >= dist - 1: continue
 		if absf(rp.cross(view)) < 0.85: blockers += 1
-	return {"dist": dist, "dist_score": dist_score, "blockers": blockers, "clarity": clamp(dist_score * angle_score * (1 - 0.3 * blockers), 0.05, 1)}
+	var vis := visibilidade(r, P)
+	return {"dist": dist, "dist_score": dist_score, "blockers": blockers, "vis": vis, "clarity": clamp(dist_score * angle_score * (1 - 0.3 * blockers) * vis, 0.05, 1)}
+# o que o tempo e os acontecimentos deixam ver (1 = tudo)
+func visibilidade(r: Vector2, P: Vector2) -> float:
+	var v := 1.0
+	var d := r.distance_to(P)
+	if clima == "nevoeiro": v *= clampf(1.0 - (d - 12.0) / 45.0, 0.25, 1.0)
+	elif clima == "chuva": v *= 0.9
+	if not fumo.is_empty() and float(fumo.a) > 0.2:
+		var sd := seg_dist(r, P, fumo.c)
+		if sd.x < float(fumo.r): v *= 1.0 - 0.6 * float(fumo.a)
+	v *= 0.45 + 0.55 * luz
+	return v
 
 # leitura de jogo: o árbitro antecipa e chega uns metros mais perto (ou mais longe, se ainda for fraco)
 func ref_spot(P: Vector2) -> Vector2:
@@ -1983,6 +2005,121 @@ func resolve_protest(choice: String, timed_out := false) -> void:
 	mode = "play"; pause = max(pause, 0.8)
 	emit("protest_end")
 	if control <= 10: end_match("abandonado")
+
+# ---------- noites difíceis ----------
+# sorteio do tempo e do acontecimento do jogo (nas divisões de baixo há mais apagões; nos dérbis, tochas)
+func sorteia_ambiente(night: bool, derby := false, tier := -1) -> void:
+	noite = night
+	var r := rng.randf()
+	clima = "chuva" if r < 0.2 else ("nevoeiro" if r < 0.3 else "")
+	var pc := 0.35 + (0.25 if derby else 0.0)
+	if rng.randf() >= pc: return
+	var w := {"tochas": 0.4 + (0.6 if derby else 0.0), "invasao": 0.35, "apagao": (0.4 if tier >= 0 and tier <= 2 else 0.2) if night else 0.0}
+	var tot := 0.0
+	for k in w: tot += w[k]
+	var x := rng.randf() * tot
+	for k in w:
+		x -= w[k]
+		if x <= 0: evento = {"k": k, "min": rng.randi_range(12, 80), "estado": "espera"}; break
+func anuncia_clima() -> void:
+	if clima != "": feed(clima_txt(), "info"); later(2.2, func(): if mode == "play" and clima != "": toast(clima_txt(), 3.0))
+func clima_txt() -> String:
+	return {"chuva": "Chuva forte: relvado molhado, a bola corre mais e há mais escorregadelas.", "nevoeiro": "Nevoeiro: ao longe quase não se vê. Fica perto dos lances.", "": ""}[clima]
+func ambiente_step(dt: float) -> void:
+	if not training.is_empty() or tut:
+		clima = ""; evento = {}; return
+	if not fumo.is_empty():
+		fumo.a = maxf(0.0, float(fumo.a) - dt * (0.03 if not fumo.get("parado", false) else 0.12))
+		fumo.c += Vector2(0.4, 0.15) * dt
+		if fumo.a <= 0.0: fumo = {}
+	if not invasor.is_empty(): _invasor_step(dt)
+	if luz < 1.0 and evento.get("k", "") == "apagao" and evento.get("volta", 0.0) > 0.0:
+		evento.volta -= dt
+		if evento.volta <= 0.0:
+			luz = 1.0; toast("A luz voltou", 1.8); feed("Os projetores voltaram a acender.", "info"); evento.estado = "fim"
+	if evento.is_empty() or evento.estado != "espera" or minute() < int(evento.min) or pause > 0 or not lance.is_empty() or owner == null: return
+	evento.estado = "ativo"
+	match str(evento.k):
+		"tochas": _tochas()
+		"apagao": _apagao()
+		"invasao": _invasao()
+func _tochas() -> void:
+	# tochas atrás de uma baliza: o fumo entra pela área
+	var lado := 0.0 if rng.randf() < 0.5 else W
+	fumo = {"c": Vector2(lado + (8.0 if lado == 0.0 else -8.0), H / 2 + rand(-12, 12)), "r": 15.0, "a": 1.0}
+	sfx("boo", 0.5); crowd = minf(100.0, crowd + 10)
+	feed("Tochas na bancada: o fumo entra no relvado.", "info")
+	pause = 0.6
+	later(0.6, func():
+		if mode != "play": return
+		ask_open("Tochas atrás da baliza: o fumo tapa a área e quase não se vê o guarda-redes.", "Fumo no relvado",
+			[{"d": "parar", "label": "Parar até o fumo sair", "small": "segurança e visibilidade"}, {"d": "seguir", "label": "Deixar jogar", "small": "o fumo vai passar"}],
+			func(c):
+				var ok: bool = c == "parar"
+				if ok:
+					fumo.parado = true; pause = 3.0; added += 1.0
+					toast("Jogo interrompido: os jogadores afastam-se do fumo", 2.4)
+				else: toast("O jogo continua no meio do fumo", 2.0)
+				ctrl(3.0 if ok else -6.0)
+				manage.append({"minute": minute(), "what": "Tochas e fumo no relvado", "dec": "Parar" if ok else "Deixar jogar", "pts": 1.0 if ok else 0.0,
+					"why": "Certo: sem visibilidade e com risco, para-se o jogo" if ok else "Com fumo denso o jogo para-se até haver visibilidade"}), 0))
+func _apagao() -> void:
+	luz = 0.35
+	sfx("boo", 0.6)
+	feed("Apagão: metade dos projetores apagou.", "info")
+	pause = 0.6
+	later(0.6, func():
+		if mode != "play": return
+		ask_open("Falha de luz: metade dos projetores apagou e o campo está às escuras.", "Apagão",
+			[{"d": "suspender", "label": "Suspender até a luz voltar", "small": "Lei 5: segurança"}, {"d": "seguir", "label": "Continuar a jogar", "small": "ainda se vê alguma coisa"}],
+			func(c):
+				var ok: bool = c == "suspender"
+				if ok:
+					pause = 4.5; added += 1.5; evento.volta = 4.5
+					toast("Jogo suspenso: à espera da luz", 2.4)
+				else:
+					evento.volta = 40.0
+					toast("Continuas às escuras: vais ver muito pior", 2.4)
+				ctrl(3.0 if ok else -7.0)
+				manage.append({"minute": minute(), "what": "Apagão nos projetores", "dec": "Suspender" if ok else "Continuar", "pts": 1.0 if ok else 0.0,
+					"why": "Certo: sem luz suficiente suspende-se o jogo" if ok else "Sem luz suficiente não há condições: suspende-se até voltar"}), 0))
+func _invasao() -> void:
+	# um adepto salta da bancada e corre para o jogador mais famoso
+	var alvo: Pl = owner
+	for p in active():
+		if "estrela" in p.tr: alvo = p; break
+	var y0 := -1.0 if alvo.p.y < H / 2 else H + 1.0
+	invasor = {"p": Vector2(clampf(alvo.p.x + rand(-15, 15), 5, W - 5), y0), "alvo": alvo.id, "seg": [], "t": 0.0, "parou": false}
+	feed("Um adepto invadiu o relvado!", "info"); sfx("ooh"); crowd = minf(100.0, crowd + 6)
+	later(0.9, func():
+		if mode != "play" or invasor.is_empty(): return
+		pause = 0.4
+		ask_open("Um adepto saltou para o relvado e corre na direção do %d %s." % [players[invasor.alvo].num, de_t(players[invasor.alvo].team)], "Invasão de campo",
+			[{"d": "parar", "label": "Parar o jogo", "small": "e chamar os seguranças"}, {"d": "seguir", "label": "Deixar seguir", "small": "os seguranças tratam"}, {"d": "agarrar", "label": "Ir tu agarrá-lo", "small": "resolver depressa"}],
+			func(c):
+				var ok: bool = c == "parar"
+				invasor.parou = ok or c == "agarrar"
+				if invasor.parou: pause = 3.5; added += 0.8
+				var m: String = {"parar": "Jogo parado: os seguranças levam o adepto", "seguir": "O jogo seguiu com o adepto no relvado", "agarrar": "Foste atrás do adepto: os jogadores riram-se e os seguranças trataram do resto"}[c]
+				toast(m, 2.4); feed(m + ".", "info")
+				ctrl(3.0 if ok else (-6.0 if c == "seguir" else -3.0))
+				if c == "seguir": add_stress(8)
+				manage.append({"minute": minute(), "what": "Invasão de campo", "dec": {"parar": "Parar o jogo", "seguir": "Deixar seguir", "agarrar": "Agarrá-lo"}[c], "pts": 1.0 if ok else 0.0,
+					"why": "Certo: para-se o jogo e quem trata do adepto são os seguranças" if ok else ("Com um adepto em campo o jogo tem de parar" if c == "seguir" else "Paraste bem, mas agarrar adeptos é trabalho dos seguranças")})
+				# dois seguranças entram pela linha
+				for k in 2: invasor.seg.append(Vector2(invasor.p.x + (-6.0 if k == 0 else 6.0), -1.0 if invasor.p.y < H / 2 else H + 1.0)), 0))
+func _invasor_step(dt: float) -> void:
+	invasor.t += dt
+	var alvo: Pl = players[invasor.alvo]
+	var vai: Vector2 = alvo.p if invasor.seg.is_empty() else Vector2(invasor.p.x + 10.0, -3.0 if invasor.p.y < H / 2 else H + 3.0)
+	if invasor.seg.size() and invasor.seg.any(func(q): return q.distance_to(invasor.p) < 1.6): vai = Vector2(invasor.p.x, -3.0 if invasor.p.y < H / 2 else H + 3.0)
+	invasor.p += (vai - invasor.p).limit_length(6.5 * dt) if invasor.p.distance_to(vai) > 1.4 else Vector2.ZERO
+	for k in invasor.seg.size():
+		invasor.seg[k] = invasor.seg[k] + (invasor.p - invasor.seg[k]).limit_length(7.5 * dt)
+	# sem parar o jogo, o adepto atrapalha quem tem a bola
+	if not invasor.parou and owner == alvo and invasor.p.distance_to(alvo.p) < 1.5 and rng.randf() < dt * 2.0: owner = null; bv = Vector2(rand(-3, 3), rand(-3, 3))
+	if invasor.t > 14.0 or (invasor.seg.size() and (invasor.p.y < -2.0 or invasor.p.y > H + 2.0)):
+		invasor = {}; evento.estado = "fim"
 
 # ---------- perguntas curtas a meio do jogo ----------
 func ask_open(msg_: String, tag: String, opts: Array, cb: Callable, def := 0) -> void:

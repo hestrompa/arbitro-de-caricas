@@ -12,6 +12,7 @@ var font: Font
 const TOP := 64.0
 var relva: ImageTexture          # relvado pintado uma vez: faixas de corte, variação e zonas gastas
 var rasto: Array = []            # últimas posições da bola (rasto quando vai rápida)
+var nevoa: GradientTexture2D      # degradê do nevoeiro à volta do árbitro
 var dentes := PackedVector2Array()   # contorno serrilhado de uma carica (raio 1)
 
 func _ready() -> void:
@@ -220,6 +221,7 @@ func _draw() -> void:
 	_carica(rp, sc * 1.3, Color("f4e04d"), Color("111111"), false, false)
 	draw_string(font, rp + Vector2(-sc * 2, sc * 0.45), "Á", HORIZONTAL_ALIGNMENT_CENTER, sc * 4, int(max(8.0, sc * 1.2)), Color("111111"))
 	if jogo.ref_target != null: draw_arc(w2s(jogo.ref_target), sc * 0.8, 0, TAU, 16, Color(1, 1, 0.4, 0.6), 2)
+	_ambiente(rp)
 	# lance: o mesmo anel vermelho que aparece no mini-campo do 3D, no sítio exato do lance
 	if main and main.modo == "flash" and main.L.has("P"):
 		var lp: Vector2 = w2s(main.L.P)
@@ -244,3 +246,57 @@ func _draw() -> void:
 	draw_string(font, Vector2(bx, 50), "WASD/setas ou clicar: mover · Shift: correr · clicar numa carica: ficha · Espaço: pausa", HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.75, 0.8, 0.76))
 	if not jogo.career.is_empty():
 		draw_string(font, Vector2(310, 54), str(Carreira.TIERS[jogo.career.tier].name), HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.75, 0.8, 0.76))
+
+# noites difíceis: invasor e seguranças, fumo das tochas, nevoeiro à volta do árbitro, apagão e chuva
+func _ambiente(rp: Vector2) -> void:
+	var W := Partida.W
+	var H := Partida.H
+	var tm := Time.get_ticks_msec() / 1000.0
+	if not jogo.invasor.is_empty():
+		var ip := w2s(jogo.invasor.p)
+		_carica(ip, sc * 1.3, Color("f2f2f2"), Color("444444"), false, false)
+		draw_string(font, ip + Vector2(-sc * 2, sc * 0.45), "!", HORIZONTAL_ALIGNMENT_CENTER, sc * 4, int(max(8.0, sc * 1.3)), Color("c0392b"))
+		for q in jogo.invasor.seg:
+			var sp := w2s(q)
+			_carica(sp, sc * 1.3, Color("ff8a1e"), Color("7a3c06"), false, false)
+			draw_string(font, sp + Vector2(-sc * 2, sc * 0.45), "S", HORIZONTAL_ALIGNMENT_CENTER, sc * 4, int(max(8.0, sc * 1.1)), Color("2a1400"))
+	if not jogo.fumo.is_empty():
+		var a: float = float(jogo.fumo.a)
+		var c: Vector2 = jogo.fumo.c
+		var r: float = float(jogo.fumo.r)
+		for k in 9:
+			var o := Vector2(cos(k * 2.4 + tm * 0.3), sin(k * 1.7 + tm * 0.25)) * r * (0.25 + 0.5 * fmod(k * 0.37, 1.0))
+			draw_circle(w2s(c + o), sc * r * (0.45 + 0.25 * sin(k + tm * 0.5)), Color(0.82, 0.8, 0.78, 0.16 * a))
+		draw_circle(w2s(c), sc * r * 0.5, Color(0.9, 0.88, 0.86, 0.25 * a))
+	if jogo.clima == "nevoeiro":
+		# o nevoeiro só deixa ver bem à volta do árbitro: um degradê redondo e, mais longe, tudo branco
+		if nevoa == null:
+			var g := Gradient.new()
+			g.set_color(0, Color(0.78, 0.8, 0.82, 0.0)); g.set_color(1, Color(0.78, 0.8, 0.82, 0.88))
+			g.add_point(0.27, Color(0.78, 0.8, 0.82, 0.0))
+			nevoa = GradientTexture2D.new(); nevoa.gradient = g; nevoa.fill = GradientTexture2D.FILL_RADIAL
+			nevoa.fill_from = Vector2(0.5, 0.5); nevoa.fill_to = Vector2(1.0, 0.5); nevoa.width = 256; nevoa.height = 256
+		var R := 44.0 * sc
+		var c := w2s(jogo.ref)
+		var fc := Color(0.78, 0.8, 0.82, 0.88)
+		var r0 := Rect2(c - Vector2(R, R), Vector2(R, R) * 2.0)
+		draw_texture_rect(nevoa, r0, false)
+		var full := Rect2(w2s(Vector2(-4, -4)), Vector2(W + 8, H + 8) * sc)
+		# o resto do campo, à volta do círculo
+		draw_rect(Rect2(full.position, Vector2(full.size.x, maxf(0.0, r0.position.y - full.position.y))), fc)
+		draw_rect(Rect2(Vector2(full.position.x, r0.end.y), Vector2(full.size.x, maxf(0.0, full.end.y - r0.end.y))), fc)
+		var y0 := maxf(r0.position.y, full.position.y)
+		var y1 := minf(r0.end.y, full.end.y)
+		draw_rect(Rect2(Vector2(full.position.x, y0), Vector2(maxf(0.0, r0.position.x - full.position.x), y1 - y0)), fc)
+		draw_rect(Rect2(Vector2(r0.end.x, y0), Vector2(maxf(0.0, full.end.x - r0.end.x), y1 - y0)), fc)
+	if jogo.luz < 1.0:
+		draw_rect(Rect2(w2s(Vector2(-4, -4)), Vector2(W + 8, H + 8) * sc), Color(0.0, 0.01, 0.04, (1.0 - jogo.luz) * 0.85))
+	if jogo.clima == "chuva":
+		draw_rect(Rect2(w2s(Vector2(-4, -4)), Vector2(W + 8, H + 8) * sc), Color(0.05, 0.08, 0.14, 0.18))
+		var rng := RandomNumberGenerator.new(); rng.seed = 11
+		for k in 160:
+			var x := rng.randf() * size.x
+			var y0 := rng.randf() * size.y
+			var y := fmod(y0 + tm * 520.0 * (0.8 + rng.randf() * 0.4), size.y)
+			var xx := fmod(x + y * 0.25, size.x)
+			draw_line(Vector2(xx, y), Vector2(xx + 4, y + 16), Color(0.8, 0.86, 0.95, 0.35), 1.0)

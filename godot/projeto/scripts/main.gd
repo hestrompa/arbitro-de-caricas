@@ -133,6 +133,8 @@ var sun: DirectionalLight3D
 var sky_mat: ProceduralSkyMaterial
 var floods: Array = []
 var night := false
+var chuva_p: CPUParticles3D      # chuva à volta da câmara
+var fumo_p: CPUParticles3D       # fumo das tochas
 var slp := {}              # plano do carrinho capturado
 var fan_mesh: ArrayMesh
 var nets: Array = []              # materiais das duas redes (abanam com golo)
@@ -151,6 +153,7 @@ func _ready() -> void:
 	hi_q = RenderingServer.get_current_rendering_method() != "gl_compatibility"
 	rng.randomize()
 	_world()
+	_clima_nodes()
 	var corretor := Corretor.new(); corretor.main = self; corretor.process_priority = 1000; add_child(corretor)
 	_stadium()
 	_fans_colors(AZUL.color, LARANJA.color)
@@ -1456,6 +1459,7 @@ func _focus() -> Vector3:
 
 func _camera() -> void:
 	var look := _focus()
+	if chuva_p.visible: chuva_p.global_position = cam.global_position + Vector3(0, 9, 0)
 	refj.node.visible = modo != "treino" and cam_mode != 0 and lance != 9
 	_fp_vinheta(cam_mode == 0 and modo in ["lance", "treino"] and lance != 9)
 	if cam_mode != 5:
@@ -1577,6 +1581,69 @@ func _var_lines() -> void:
 		elif on:
 			var_mesh[i].position = Vector3(var_line[i], 0.02, H / 2)
 			var_mesh[i].scale = Vector3(2.2 if i == var_sel else 1.0, 1, 1)
+
+# ---------- noites difíceis em 3D: chuva, nevoeiro, fumo das tochas e apagão ----------
+func _clima_nodes() -> void:
+	chuva_p = CPUParticles3D.new()
+	var gm := QuadMesh.new(); gm.size = Vector2(0.007, 0.4)
+	var rm := StandardMaterial3D.new(); rm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; rm.albedo_color = Color(0.82, 0.88, 0.96, 0.28); rm.billboard_mode = BaseMaterial3D.BILLBOARD_FIXED_Y
+	gm.material = rm
+	chuva_p.mesh = gm; chuva_p.amount = 2600; chuva_p.lifetime = 0.75; chuva_p.preprocess = 0.75
+	chuva_p.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX; chuva_p.emission_box_extents = Vector3(14, 0.5, 14)
+	chuva_p.direction = Vector3(0.12, -1, 0.05); chuva_p.spread = 3.0; chuva_p.initial_velocity_min = 16.0; chuva_p.initial_velocity_max = 20.0
+	chuva_p.gravity = Vector3(0, -12, 0); chuva_p.local_coords = false; chuva_p.emitting = false; chuva_p.visible = false
+	add_child(chuva_p)
+	fumo_p = CPUParticles3D.new()
+	var fm := QuadMesh.new(); fm.size = Vector2(7, 7)
+	var sm := StandardMaterial3D.new(); sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA; sm.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	sm.albedo_texture = _fumo_tex(); sm.albedo_color = Color(0.86, 0.84, 0.82, 0.55); sm.vertex_color_use_as_albedo = true
+	fm.material = sm
+	fumo_p.mesh = fm; fumo_p.amount = 70; fumo_p.lifetime = 7.0; fumo_p.preprocess = 7.0
+	fumo_p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE; fumo_p.emission_sphere_radius = 8.0
+	fumo_p.direction = Vector3(0.3, 1, 0.1); fumo_p.spread = 40.0; fumo_p.initial_velocity_min = 0.3; fumo_p.initial_velocity_max = 0.9
+	fumo_p.gravity = Vector3(0.25, 0.12, 0.08); fumo_p.scale_amount_min = 0.7; fumo_p.scale_amount_max = 1.6
+	fumo_p.local_coords = false; fumo_p.emitting = false; fumo_p.visible = false
+	add_child(fumo_p)
+# nuvem redonda e suave (sem ficheiro)
+func _fumo_tex() -> ImageTexture:
+	var n := 64
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for y in n:
+		for x in n:
+			var d := Vector2(x - n / 2.0 + 0.5, y - n / 2.0 + 0.5).length() / (n / 2.0)
+			var a := clampf(1.0 - d, 0.0, 1.0)
+			img.set_pixel(x, y, Color(1, 1, 1, a * a * (3.0 - 2.0 * a)))
+	return ImageTexture.create_from_image(img)
+# aplica o tempo do jogo ao lance 3D (sem jogo, tudo limpo)
+func _clima_3d(limpo := false) -> void:
+	var ativo: bool = jogo != null and not limpo and modo in ["lance", "var", "rever", "gesto", "flash"]
+	var c: String = jogo.clima if ativo else ""
+	env.fog_enabled = c != ""
+	env.fog_density = 0.04 if c == "nevoeiro" else 0.009
+	env.fog_light_color = (Color(0.3, 0.32, 0.36) if night else Color(0.74, 0.77, 0.8)) if c == "nevoeiro" else (Color(0.2, 0.22, 0.26) if night else Color(0.5, 0.55, 0.62))
+	env.fog_sky_affect = 0.9 if c == "nevoeiro" else 0.4
+	chuva_p.visible = c == "chuva"; chuva_p.emitting = c == "chuva"
+	var fz: Dictionary = jogo.fumo if ativo else {}
+	var com_fumo: bool = not fz.is_empty() and float(fz.a) > 0.15
+	fumo_p.visible = com_fumo; fumo_p.emitting = com_fumo
+	if com_fumo:
+		fumo_p.global_position = Vector3(fz.c.x, 2.5, fz.c.y); fumo_p.emission_sphere_radius = float(fz.r) * 0.6
+		(fumo_p.mesh.material as StandardMaterial3D).albedo_color.a = 0.55 * float(fz.a)
+	# apagão: metade dos projetores apagados (só faz sentido à noite)
+	var lz: float = jogo.luz if ativo else 1.0
+	if night:
+		sun.light_energy = 1.05 * (0.35 + 0.65 * lz)
+		env.ambient_light_energy = 0.3 * (0.4 + 0.6 * lz)
+		for i in floods.size():
+			var on: bool = lz >= 1.0 or i % 2 == 0
+			(floods[i][0] as StandardMaterial3D).emission_energy_multiplier = 6.0 if on else 0.0
+			(floods[i][1] as OmniLight3D).light_energy = 0.9 if on else 0.0
+	elif c == "chuva" or c == "nevoeiro":
+		sun.light_energy = 0.9; env.ambient_light_energy = 0.5
+	else:
+		sun.light_energy = 1.45; env.ambient_light_energy = 0.55
 
 # ---------- noite: céu escuro, projetores acesos ----------
 func _set_night(on: bool) -> void:
@@ -1748,6 +1815,7 @@ func _to_3d() -> void:
 func _enter_lance() -> void:
 	modo = "lance"
 	_setup_scene(L)
+	_clima_3d()
 	replays = 0; dec_shown = false; cam_mode = 0; paused = false; speed = 1.0
 	_to_3d()
 	_restart()
@@ -2068,6 +2136,7 @@ func _obs_camera(look: Vector3) -> void:
 # ---------- menu e botões ----------
 func _show_menu() -> void:
 	_set_night(false)
+	if chuva_p: _clima_3d(true)
 	modo = "menu"; paused = false; speed = 1.0
 	get_tree().paused = false; Engine.time_scale = 1.0
 	_to_3d()
@@ -2082,7 +2151,7 @@ func _show_menu() -> void:
 
 func on_ui(a: String, v) -> void:
 	match a:
-		"partida": _new_match(Carreira.default_teams())
+		"partida": _new_match(Carreira.default_teams()); jogo.sorteia_ambiente(night); jogo.anuncia_clima()
 		"carreira", "career":
 			if not car.load_c(): car.new_career()
 			modo = "carreira"; _show_menu_bg(); ui.show_career(car)
@@ -2090,6 +2159,7 @@ func on_ui(a: String, v) -> void:
 			var B := car.match_brief()
 			_new_match(car.career_teams(B), true)
 			car.setup_match(jogo)
+			jogo.sorteia_ambiente(night, str(B.story) == "derby", int(car.C.tier)); jogo.anuncia_clima()
 		"career_reset": car.new_career(); ui.show_career(car)
 		"attr": car.add_attr(v); ui.show_career(car)
 		"treino_var": _new_match(Carreira.default_teams()); jogo.start_training()
@@ -2113,7 +2183,7 @@ func on_ui(a: String, v) -> void:
 		"ver_lance": _review(v)
 		"obs_video": _obs_start(v)
 		"entrevista": _entrevista(int(v))
-		"again": _new_match(Carreira.default_teams())
+		"again": _new_match(Carreira.default_teams()); jogo.sorteia_ambiente(night); jogo.anuncia_clima()
 		"menu": _show_menu()
 		"tut_click": if jogo: jogo.tut_click()
 		"cap": if jogo: ui.show_card(jogo, v, "")
@@ -2125,6 +2195,7 @@ func _show_menu_bg() -> void:
 
 func _start_training() -> void:
 	_set_night(false)
+	_clima_3d(true)
 	ui.hide_all()
 	modo = "treino"
 	_to_3d()
