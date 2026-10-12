@@ -520,6 +520,13 @@ func _setup_scene(l: Dictionary) -> void:
 					# toque leve na área, sempre de pé (nunca carrinho): na falta o pé apanha o tornozelo;
 					# no siga o defesa toca primeiro na bola e o atacante cai com facilidade
 					c = {"lance": 0, "force": 0.8 if T == "falta" else 0.6, "side": l.side, "sim": T == "simulacao", "clean": T == "siga", "de_pe": true, "phi": rng.randf_range(55, 75), "vD": 7.2}
+				elif l.has("grav"):
+					# a entrada mostra exatamente os fatores do critério: velocidade, direção e carrinho
+					var g: Dictionary = l.grav
+					var vel: float = float(g.vel)
+					var f: float = clampf(0.7 + (vel - 22.0) * 0.065, 0.7, 1.65)
+					if g.slide: f = maxf(f, 0.9)
+					c = {"lance": 0, "force": f, "side": l.side, "sim": false, "clean": false, "de_pe": not g.slide, "phi": clampf(float(g.phi), 18.0, 85.0), "vD": vel / 3.6}
 				else:
 					c = _params_for(T, l.side)
 					if c.lance == 0 and T in ["falta", "amarelo", "vermelho"]: c.phi = clamp(float(l.phi), 18.0, 85.0)
@@ -1870,6 +1877,9 @@ func _lance_ui(delta: float) -> void:
 		if jogo.var_mode:
 			if not paused: L.var_t = float(L.get("var_t", 0.0)) + delta / maxf(Engine.time_scale, 0.01)
 			sub = "Campo: %s · %s · check há %d s · C câmara · R repetir · S lento" % [campo_txt(), "o árbitro aguarda" if L.get("goal_ctx", false) or str(L.var_campo) != "siga" else "o jogo seguiu (check silencioso)", int(L.get("var_t", 0.0))]
+			if L.has("grav") and (replays > 0 or t > TC + 0.6):
+				var g: Dictionary = L.grav
+				sub = "Medido: %s · %s · %d km/h · Campo: %s · check há %d s" % ["carrinho" if g.slide else "de pé", jogo.grav_dir(float(g.phi)), int(round(float(g.vel))), campo_txt(), int(L.get("var_t", 0.0))]
 		if lance == 9 and sc.has("lines"):
 			var gap: float = (var_line[0] - var_line[1]) * float(sc.dir)
 			sub = "Linhas: Tab troca (vermelha = atacante, azul = penúltimo defesa) · setas mexem · C câmara · atacante %s %d cm %s" % ["", int(round(absf(gap) * 100)), "à frente" if gap > 0 else "atrás"]

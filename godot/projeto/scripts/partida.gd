@@ -1250,6 +1250,11 @@ func start_lance(att: Pl, def: Pl) -> void:
 	var A := (mv * 0.7 + to_goal * 0.3).normalized()
 	var phi: float = {"siga": rand(115, 160), "falta": rand(75, 115), "amarelo": rand(40, 75), "vermelho": rand(5, 30), "simulacao": rand(85, 135)}[truth]
 	if def.role == "gk": phi = rand(140, 170)
+	# entradas: a gravidade sai sempre das mesmas regras (velocidade, direção, carrinho)
+	var grav := {}
+	if def.role != "gk" and (truth in ["amarelo", "vermelho"] or (truth == "falta" and rng.randf() < 0.6)):
+		grav = entrada_params(truth)
+		phi = float(grav.phi)
 	var side := 1.0 if A.cross(def.p - att.p) > 0 else -1.0
 	var D := A.rotated(-side * deg_to_rad(phi))
 	var P := att.p
@@ -1258,6 +1263,7 @@ func start_lance(att: Pl, def: Pl) -> void:
 	var L := {"kind": "foul", "truth": truth, "P": P, "A": A, "D": D, "phi": phi, "side": side, "ref": r, "others": others, "minute": minute(),
 		"fall": truth != "siga" or rng.randf() < 0.6, "in_box": in_own_box(def.team, P), "att": pinfo(att), "def": pinfo(def),
 		"decide_t": decision_time(), "stress": stress, "flash": "Lance!"}
+	if not grav.is_empty(): L.grav = grav
 	L.merge(sight_of(r, P, D, others), true)
 	L.merge(foul_extras(att, def, truth, P, A, L.in_box), true)
 	lance = L
@@ -1265,6 +1271,55 @@ func start_lance(att: Pl, def: Pl) -> void:
 	att.v = Vector2.ZERO; def.v = Vector2.ZERO
 	sfx("ooh")
 	emit("lance", {"L": L})
+
+# ---------- critério das entradas (Lei 12): o mesmo lance dá sempre o mesmo cartão ----------
+# Pontos: velocidade (até 25 km/h: 0, de 26 a 31: 1, 32 ou mais: 2), direção (pela frente ou de lado: 0,
+# na diagonal por trás: 1, por trás: 2) e carrinho com as pernas no adversário (+1).
+# 0-1: falta (descuidada) · 2-3: amarelo (temerária) · 4-5: vermelho (força excessiva).
+# Quando um fator está mesmo na fronteira, os dois níveis servem (lance no limite).
+const GRAV_VEL := [25.5, 31.5]
+const GRAV_ANG := [72.0, 40.0]
+func grav_pts(vel: float, phi: float, slide: bool) -> int:
+	var p := 0
+	if vel > GRAV_VEL[0]: p += 1
+	if vel > GRAV_VEL[1]: p += 1
+	if phi < GRAV_ANG[0]: p += 1
+	if phi < GRAV_ANG[1]: p += 1
+	if slide: p += 1
+	return p
+func grav_nivel(p: int) -> String: return "falta" if p <= 1 else ("amarelo" if p <= 3 else "vermelho")
+func entrada_params(truth: String) -> Dictionary:
+	var quer_lim := truth != "falta" and rng.randf() < 0.25 or (truth == "falta" and rng.randf() < 0.15)
+	var best := {}
+	for i in 200:
+		var vel := rand(22.0, 36.0)
+		var phi := rand(15.0, 112.0)
+		var slide := rng.randf() < 0.5
+		var pts := grav_pts(vel, phi, slide)
+		if grav_nivel(pts) != truth: continue
+		# fatores perto de uma fronteira: o nível muda se o fator passar para o outro lado?
+		var lim := ""
+		for th in GRAV_VEL:
+			if absf(vel - th) < 1.2:
+				var n2 := grav_nivel(grav_pts(th + (1.5 if vel < th else -1.5), phi, slide))
+				if n2 != truth: lim = "up" if SEV[n2] > SEV[truth] else "dn"
+		for th in GRAV_ANG:
+			if absf(phi - th) < 5.0:
+				var n3 := grav_nivel(grav_pts(vel, th + (6.0 if phi < th else -6.0), slide))
+				if n3 != truth: lim = "up" if SEV[n3] > SEV[truth] else "dn"
+		var perto := false
+		for th in GRAV_VEL: perto = perto or absf(vel - th) < 2.0
+		for th in GRAV_ANG: perto = perto or absf(phi - th) < 8.0
+		var g := {"vel": vel, "phi": phi, "slide": slide, "pts": pts, "lim": lim}
+		if quer_lim and lim != "": return g
+		if not quer_lim and not perto: return g
+		if best.is_empty() and not quer_lim and lim == "": best = g
+	return best if not best.is_empty() else {"vel": 28.0, "phi": 55.0, "slide": truth == "vermelho", "pts": 3 if truth == "vermelho" else 2, "lim": ""}
+func grav_dir(phi: float) -> String: return "pela frente ou de lado" if phi >= GRAV_ANG[0] else ("na diagonal, por trás" if phi >= GRAV_ANG[1] else "por trás")
+func grav_txt(L: Dictionary) -> String:
+	if not L.has("grav"): return ""
+	var g: Dictionary = L.grav
+	return "%s %s a %d km/h (%d %s)" % ["carrinho" if g.slide else "entrada de pé", grav_dir(float(g.phi)), int(round(float(g.vel))), int(g.pts), "ponto" if int(g.pts) == 1 else "pontos"]
 
 func counter_attack(att: Pl) -> bool:
 	var ti := att.team
@@ -1617,13 +1672,24 @@ func var_final(L: Dictionary, d: String) -> String:
 		feed("Revisão só do VAR (decisão de facto): %s." % str(DEC_LABEL.get(d, d)).to_lower(), "var")
 		radio("VAR", "Decisão de facto: muda para " + str(DEC_LABEL.get(d, d)).to_lower() + ".")
 		return d
-	var aceita: bool = rng.randf() < (0.92 if lance_certo(L, d) else 0.55)
+	# a decisão final é do árbitro: muda quando vê um erro claro, e mantém muitas vezes quando a diferença é pequena
+	var pa := 0.3
+	if lance_certo(L, d):
+		if lance_certo(L, d0): pa = 0.3                                   # lance no limite: a decisão dele também servia
+		elif SEV.has(d) and SEV.has(d0) and absi(int(SEV[d]) - int(SEV[d0])) == 1: pa = 0.6
+		elif SEV.has(d) and SEV.has(d0): pa = 0.85
+		else: pa = 0.75
+		if L.has("grav") and str(L.grav.lim) != "": pa -= 0.2
+	var aceita: bool = rng.randf() < pa
 	L.ofr = true
 	if not aceita:
 		L.ofr_mantem = true
 		feed("Revisão no monitor: o árbitro viu as imagens e manteve %s." % str(DEC_LABEL.get(d0, d0)).to_lower(), "var")
 		radio("Árbitro", "Vi as imagens. Mantenho a decisão.")
+		toast("O árbitro foi ao monitor e MANTEVE a decisão: " + str(DEC_LABEL.get(d0, d0)).to_lower(), 3.0)
+		if L.has("var_why"): L.var_why = str(L.var_why) + " (o árbitro viu e manteve a decisão dele)"
 		return d0
+	toast("O árbitro foi ao monitor e MUDOU para " + str(DEC_LABEL.get(d, d)).to_lower(), 3.0)
 	feed("Anúncio do árbitro: após revisão no monitor, a decisão final é %s." % str(DEC_LABEL.get(d, d)).to_lower(), "var")
 	radio("Árbitro", "Fui ver as imagens. Mudo a decisão.")
 	return d
@@ -2966,7 +3032,11 @@ func interp_of(L: Dictionary) -> Array:
 	var dn := false
 	var why := ""
 	var k := kind_of(L)
-	if k == "foul" and not L.get("gk_out", false) and L.def.role != "gk":
+	if k == "foul" and L.has("grav") and L.get("why", "") == "":
+		up = L.grav.lim == "up"; dn = L.grav.lim == "dn"
+	elif k == "foul" and L.has("grav"):
+		pass
+	elif k == "foul" and not L.get("gk_out", false) and L.def.role != "gk":
 		# o ângulo da entrada decide a gravidade: perto da fronteira entre dois níveis, os dois servem
 		var phi := rad_to_deg(acos(clamp(L.A.dot(L.D), -1.0, 1.0)))
 		if T == "falta" and phi < 86: up = true
@@ -3323,6 +3393,7 @@ func report_rows() -> Array:
 		if off: what = str(LABEL[l.truth]) + " por " + f1(absf(l.oi.margin)) + " m" + (" · no golo" if l.has("goal") else "")
 		else:
 			what = str(LABEL[l.truth]) + (" (" + WHY[l.why] + ")" if WHY.has(l.get("why", "")) else "")
+			if l.has("grav"): what += " · " + grav_txt(l)
 			if kind_of(l) == "linha": what += " · %d cm %s" % [absi(int(round((l.m - LINE_IN) * 100))), "para lá" if l.m >= LINE_IN else "a faltar"]
 			if interp_of(l).size(): what += " · no limite" + (", " + l.interp_why if l.get("interp_why", "") != "" else "")
 		var seen: String

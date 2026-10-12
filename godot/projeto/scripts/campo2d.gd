@@ -124,7 +124,10 @@ func _regras2d(rp: Vector2) -> void:
 		if f >= 0:
 			# mão levantada do árbitro com os segundos que faltam
 			draw_rect(Rect2(rp + Vector2(-sc * 0.35, -sc * 4.6), Vector2(sc * 0.7, sc * 2.6)), Color(0.98, 0.85, 0.7))
-			draw_string(font, rp + Vector2(-40, -sc * 5.2), str(f), HORIZONTAL_ALIGNMENT_CENTER, 80, int(maxf(18.0, sc * 2.6)), Color(1.0, 0.86, 0.35))
+			var nc := rp + Vector2(0, -sc * 4.6 - 26)
+			draw_circle(nc, 22, Color(0.05, 0.05, 0.08, 0.85))
+			draw_arc(nc, 22, 0, TAU, 28, Color(1.0, 0.86, 0.35), 2.5)
+			draw_string(font, nc + Vector2(-30, 11), str(f), HORIZONTAL_ALIGNMENT_CENTER, 60, 32, Color(1.0, 0.86, 0.35))
 		elif jogo.mode == "play":
 			var bw := 250.0
 			btn_mao = Rect2(Vector2(size.x / 2 - bw / 2, size.y - 64), Vector2(bw, 38))
