@@ -239,7 +239,8 @@ func show_dec(choices: Array, extra: String) -> void:
 			if campo: txt = "%d  Confirmar: %s" % [i, Partida.DEC_LABEL[d]]
 			elif d == "identidade": txt = "%d  Jogador errado" % i
 			else: txt = "%d  %s %s" % [i, "Só VAR:" if main.jogo.var_factual(main.L) else "Monitor:", Partida.DEC_LABEL[d]]
-			dec_row.add_child(_btn(txt, func(): main.on_ui("decide", d), Color("2f8a4a") if campo else DEC_COL.get(d, Color(0.25, 0.3, 0.35)), 0, 15))
+			var cor := Color("2f8a4a") if campo else (Color("3a5f8a") if d == "identidade" or main.jogo.var_factual(main.L) else Color("b5651d"))
+			dec_row.add_child(_btn(txt, func(): main.on_ui("decide", d), cor, 0, 15))
 			continue
 		dec_row.add_child(_btn(txt, func(): main.on_ui("decide", d), DEC_COL.get(d, Color(0.25, 0.3, 0.35)), 130, 18))
 	dec_row.add_child(_btn("R  Rever", func(): main.on_ui("replay", null), Color(0.2, 0.24, 0.3), 0, 16))

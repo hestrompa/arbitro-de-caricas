@@ -3208,7 +3208,7 @@ func radio_lance(L: Dictionary) -> void:
 	if L.get("training", false) or L.get("tut_l", false): return
 	if var_mode:
 		# na sala do VAR fala o árbitro de campo: espera pelo check antes de recomeçar
-		if L.get("goal_ctx", false): radio("Árbitro", "Golo. Fico à espera do check.")
+		if L.get("goal_ctx", false): radio("Árbitro", "Golo. Fico à espera do check." if str(L.get("var_campo", "")) in ["valido", "emjogo", "entrou"] else "Não dei o golo. Fico à espera do check.")
 		elif str(L.get("var_campo", "")) == "siga": radio("Árbitro", "Deixei seguir. Vê se há alguma coisa.")
 		else: radio("Árbitro", "Dei " + str(DEC_LABEL.get(str(L.var_campo), "")).to_lower() + ". Fico à espera do check.")
 		return

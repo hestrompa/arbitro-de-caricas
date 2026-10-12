@@ -151,7 +151,7 @@ func _sala_var() -> void:
 		draw_string(font, ap + Vector2(-90, -sc * 3.6), "bandeira em espera", HORIZONTAL_ALIGNMENT_CENTER, 180, 13, Color(1.0, 0.9, 0.4))
 	var x0 := 40.0
 	var w := size.x - 80.0
-	var y := size.y - 22.0
+	var y := size.y - 44.0
 	draw_rect(Rect2(x0 - 8, y - 26, w + 16, 40), Color(0.02, 0.05, 0.12, 0.85))
 	draw_line(Vector2(x0, y), Vector2(x0 + w, y), Color(0.6, 0.7, 0.9, 0.6), 2.0)
 	for m in [0, 45, 90]:
@@ -168,7 +168,7 @@ func _sala_var() -> void:
 		draw_circle(Vector2(cx, y), 6.0, col)
 		draw_string(font, Vector2(cx - 20, y - 9), "%d'" % int(c.minute), HORIZONTAL_ALIGNMENT_CENTER, 40, 11, col)
 	draw_string(font, Vector2(x0, y - 12), "SALA DO VAR  ·  checks %d  ·  revisões %d" % [jogo.var_checks.size(), rev], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.75, 0.85, 1.0))
-	draw_string(font, Vector2(x0 + w - 330, y - 12), "verde: check completo  laranja: monitor  azul: só VAR", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.6, 0.7, 0.85))
+	draw_string(font, Vector2(x0 + w - 330, y - 12), "verde: check completo  laranja: revisão no monitor  azul: só VAR", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.6, 0.7, 0.85))
 
 func _star(c: Vector2, r: float) -> void:
 	var pts := PackedVector2Array()
