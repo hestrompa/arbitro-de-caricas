@@ -268,7 +268,9 @@ func _init(tms: Array) -> void:
 		if not teams[ti].has("estilo"): teams[ti].estilo = Carreira.estilo_of(str(teams[ti].name))
 	tat_update()
 	kickoff(0)
-	later(0.4, func(): if rng.randf() < 0.65: vistoria())
+	later(0.4, func():
+		if rng.randf() < 0.6: vistoria()
+		elif rng.randf() < 0.6: moeda())
 
 # ---------- utilitários ----------
 func rand(a: float, b: float) -> float: return rng.randf_range(a, b)
@@ -3131,6 +3133,20 @@ func _vistoria_res(it: Array, what: String, c: String) -> void:
 	manage.append({"minute": 0, "what": "Vistoria: " + what.substr(0, 1).to_lower() + what.substr(1), "dec": {"deixar": "Pode jogar", "corrigir": "Corrigir", "amarelo": "Corrigir + amarelo"}[c], "pts": pts, "why": why})
 	feed("Vistoria no túnel: " + ("tudo em ordem." if c == "deixar" else "um jogador teve de corrigir o equipamento."), "info")
 	toast("Certo: " + str(it[2]) if pts == 1 else str(it[2]), 3.2)
+
+# Lei 8: sorteio com a moeda; quem ganha escolhe a baliza da 1.ª parte ou o pontapé de saída
+func moeda() -> void:
+	if not training.is_empty() or tut or var_mode or mode != "play" or not ask.is_empty(): return
+	var ti := rng.randi() % 2
+	var opts := [{"d": "baliza", "label": "Só a baliza para onde ataca"}, {"d": "ambos", "label": "A baliza ou o pontapé de saída"}, {"d": "saida", "label": "Só quem dá o pontapé de saída"}]
+	opts.shuffle()
+	ask_open("Sorteio no meio-campo: o capitão %s ganhou a moeda e pergunta-te o que pode escolher." % de_t(ti), "Sorteio inicial", opts, func(c): _moeda_res(c), 0)
+func _moeda_res(c: String) -> void:
+	var pts := 1.0 if c == "ambos" else 0.0
+	var why := "Certo: quem ganha o sorteio escolhe a baliza da 1.ª parte ou o pontapé de saída" if pts == 1 else "Lei 8: quem ganha o sorteio escolhe a baliza da 1.ª parte ou o pontapé de saída; a outra equipa fica com o resto"
+	ctrl(1.0 if pts == 1 else -1.5)
+	manage.append({"minute": 0, "what": "Sorteio inicial: o que escolhe quem ganha a moeda", "dec": {"baliza": "Só a baliza", "ambos": "Baliza ou pontapé de saída", "saida": "Só o pontapé de saída"}[c], "pts": pts, "why": why})
+	toast(why, 3.0)
 
 # Lei 7: o árbitro decide o tempo perdido (golos, substituições, lesões, VAR, interrupções) e o 4.º árbitro mostra a placa
 var desc_ask := false
