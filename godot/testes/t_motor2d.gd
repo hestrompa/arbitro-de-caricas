@@ -18,7 +18,7 @@ func _initialize():
 				prox += 40.0
 				await process_frame
 				root.get_viewport().get_texture().get_image().save_png(OUT + "j%d.png" % n); n += 1
-		if m.modo == "jogo" and m.jogo.mode == "pergunta": m.jogo.ask_pick(int(m.jogo.ask.get("def", 0)))
+		if m.modo == "jogo" and m.jogo.mode == "pergunta": m.on_ui("ask", int(m.jogo.ask.get("def", 0)))
 		if m.modo == "gesto": m._end_gesture()
 		if m.modo == "intervalo": m.on_ui("second_half", "descanso")
 		if (m.modo == "lance" or m.modo == "var") and m.dec_shown:

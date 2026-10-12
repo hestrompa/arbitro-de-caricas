@@ -365,6 +365,9 @@ func show_report(S: Partida, d: Dictionary, career_note: String, is_career: bool
 		var mr: Array = []
 		for m in S.manage: mr.append({"cells": ["%d'" % m.minute, m.what, m.dec, m.why], "cls": "ok" if m.pts == 1 else ("half" if m.pts > 0 else "bad")})
 		report_v.add_child(_table(mr, 4, [80, 330, 160, 330], 3))
+	if S.training.is_empty() and not S.var_mode:
+		report_v.add_child(_lbl("Estatísticas do jogo", 18, GOLD))
+		report_v.add_child(_estatisticas(S))
 	var key: Array = S.feed_list.filter(func(f): return f.kind != "info")
 	report_v.add_child(_lbl("Momentos do jogo", 18, GOLD))
 	if key.is_empty(): report_v.add_child(_lbl("Jogo sem golos, cartões nem VAR.", 16, DIM))
@@ -375,6 +378,43 @@ func show_report(S: Partida, d: Dictionary, career_note: String, is_career: bool
 	else: bb.add_child(_btn("Jogar outra vez", func(): main.on_ui("again", null), Color("2f8a4a")))
 	bb.add_child(_btn("Menu", func(): main.on_ui("menu", null)))
 	report.visible = true
+
+# estatísticas das duas equipas, em barras frente a frente
+func _estatisticas(S: Partida) -> Control:
+	var E: Dictionary = S.est
+	var pt: float = maxf(0.001, float(E.posse[0]) + float(E.posse[1]))
+	var p0 := int(round(100.0 * float(E.posse[0]) / pt))
+	var linhas := [["Posse de bola", [p0, 100 - p0], "%"], ["Remates", E.remates, ""], ["Remates à baliza", E.alvo, ""],
+		["Ocasiões flagrantes", E.ocasioes, ""], ["Remates na área", E.rem_area, ""], ["Cruzamentos", E.cruz, ""], ["Cantos", E.cantos, ""], ["Faltas", E.faltas, ""]]
+	var v := VBoxContainer.new(); v.add_theme_constant_override("separation", 3)
+	var cab := HBoxContainer.new(); v.add_child(cab)
+	for i in 2:
+		var l := _lbl(str(S.teams[i].name), 15, Color(S.teams[i].color).lightened(0.25))
+		l.custom_minimum_size = Vector2(270, 0)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if i == 0 else HORIZONTAL_ALIGNMENT_LEFT
+		cab.add_child(l)
+		if i == 0:
+			var sp := Control.new(); sp.custom_minimum_size = Vector2(190, 0); cab.add_child(sp)
+	for ln in linhas:
+		var a := float(ln[1][0]); var b := float(ln[1][1])
+		var tot := maxf(1.0, a + b)
+		var h := HBoxContainer.new(); h.add_theme_constant_override("separation", 6); v.add_child(h)
+		for i in 2:
+			var val := a if i == 0 else b
+			var num := _lbl(str(int(val)) + str(ln[2]), 15, INK); num.custom_minimum_size = Vector2(52, 0)
+			num.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT if i == 0 else HORIZONTAL_ALIGNMENT_LEFT
+			var caixa := HBoxContainer.new(); caixa.custom_minimum_size = Vector2(206, 14)
+			caixa.alignment = BoxContainer.ALIGNMENT_END if i == 0 else BoxContainer.ALIGNMENT_BEGIN
+			var barra := ColorRect.new(); barra.color = Color(S.teams[i].color)
+			barra.custom_minimum_size = Vector2(maxf(2.0, 200.0 * val / tot), 12); barra.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			caixa.add_child(barra)
+			if i == 0:
+				h.add_child(num); h.add_child(caixa)
+				var nome := _lbl(str(ln[0]), 15, DIM); nome.custom_minimum_size = Vector2(178, 0); nome.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				h.add_child(nome)
+			else:
+				h.add_child(caixa); h.add_child(num)
+	return v
 
 # mapa de calor do árbitro: onde andou durante o jogo e onde foram os lances (verde certo, vermelho errado)
 func _mapa_calor(S: Partida) -> Control:
