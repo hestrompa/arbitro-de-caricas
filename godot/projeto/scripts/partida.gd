@@ -1244,6 +1244,36 @@ func throw_in() -> void:
 	if p:
 		p.p = at; p.v = Vector2.ZERO; owner = p; p.cd = 0.7; p.set_piece = true; last = team; parado_dono = p
 	pause = 0.7
+	if p and mode == "play" and training.is_empty() and not tut and not var_mode and lanc_n < 1 and rng.randf() < 0.35:
+		lanc_n += 1
+		later(1.9, func(): _lanc_check(p, at, team))
+
+# Lei 15: lançamento mal executado passa para o adversário (não se repete)
+var lanc_n := 0
+const LANC := [["levantou um pé do chão no momento de lançar", "adversario"], ["lançou a bola só com uma mão", "adversario"],
+	["lançou uns 8 metros à frente do sítio onde a bola saiu", "adversario"], ["lançou com os calcanhares em cima da linha lateral", "siga"],
+	["lançou com os dois pés atrás da linha e a bola por cima da cabeça", "siga"]]
+func _lanc_check(p: Pl, at: Vector2, team: int) -> void:
+	if mode != "play" or not ask.is_empty() or parado_dono != null or p.off or not lance.is_empty(): return
+	var it: Array = LANC[rng.randi() % LANC.size()]
+	ask_open("Lançamento: o %d %s %s." % [p.num, de_t(team), it[0]], "Lançamento lateral",
+		[{"d": "siga", "label": "Siga", "small": "lançamento bem feito"}, {"d": "adversario", "label": "Lançamento para o adversário", "small": "mal executado"},
+		 {"d": "repetir", "label": "Repetir o lançamento", "small": "a mesma equipa lança outra vez"}], func(c): _lanc_res(p, at, team, it, c), 0)
+func _lanc_res(p: Pl, at: Vector2, team: int, it: Array, c: String) -> void:
+	var certo: String = it[1]
+	var pts := 1.0 if c == certo else 0.0
+	var why := ""
+	if certo == "siga": why = "Certo: os pés podem estar em cima da linha ou atrás dela" if pts == 1 else "O lançamento estava bem feito: pés em cima ou atrás da linha, duas mãos, bola por cima da cabeça"
+	else: why = "Certo: lançamento mal executado passa para o adversário" if pts == 1 else ("Mal executado não se repete: o lançamento passa para o adversário" if c == "repetir" else "Lei 15: o lançamento estava mal executado e era do adversário")
+	ctrl(1.0 if pts == 1 else -2.0)
+	manage.append({"minute": minute(), "what": "Lançamento: o %d %s" % [p.num, de_t(team)] + " " + str(it[0]), "dec": {"siga": "Siga", "adversario": "Para o adversário", "repetir": "Repetir"}[c], "pts": pts, "why": why})
+	toast(why, 2.4)
+	if c == "siga": return
+	sfx("whistle", "short")
+	bp = at
+	last = team if c == "adversario" else 1 - team
+	throw_in()
+	if c == "adversario" and team == HOME: sfx("boo", 0.3)
 
 func goal_kick(side: int, sem_intruso := false) -> void:
 	if not desempate.is_empty(): pen_registo(false); return
