@@ -1486,9 +1486,23 @@ func inicia_desempate() -> void:
 		ordem[ti] = ps
 	var first := 0 if rng.randf() < 0.5 else 1
 	desempate = {"vez": first, "primeiro": first, "n": [0, 0], "g": [0, 0], "ordem": ordem, "res": [[], []], "a_bater": false, "tk": -1, "gk": -1, "acabou": false}
-	feed("Sorteio: começa%s %s." % ["m" if str(teams[first].get("art", "o")).ends_with("s") else "", art_t(first)], "info")
 	lance_cd = 1e9
 	pause = 2.0
+	if training.is_empty() and not tut and ask.is_empty():
+		var opts := [{"d": "dois", "label": "Dois sorteios", "small": "primeiro a baliza, depois quem começa"}, {"d": "um", "label": "Um só sorteio", "small": "quem ganha escolhe a baliza e a ordem"},
+			{"d": "casa", "label": "Sem sorteio", "small": "começa a equipa da casa"}]
+		opts.shuffle()
+		ask_open("Fim do prolongamento. Antes dos penáltis, como fazes o sorteio?", "Sorteio dos penáltis", opts, func(c): _sorteio_pen(c), 0)
+	else: _sorteio_pen("")
+func _sorteio_pen(c: String) -> void:
+	var first: int = desempate.primeiro
+	if c != "":
+		var pts := 1.0 if c == "dois" else 0.0
+		var why := "Certo: um sorteio para a baliza e outro para quem bate primeiro" if pts == 1 else "Lei 10: primeiro sorteia-se a baliza e depois há outro sorteio; quem o ganha decide se bate primeiro ou em segundo"
+		ctrl(1.0 if pts == 1 else -2.0)
+		manage.append({"minute": minute(), "what": "Sorteio antes dos penáltis", "dec": {"dois": "Dois sorteios", "um": "Um só sorteio", "casa": "Sem sorteio"}[c], "pts": pts, "why": why})
+		toast(why, 2.8)
+	feed("Sorteio: começa%s %s." % ["m" if str(teams[first].get("art", "o")).ends_with("s") else "", art_t(first)], "info")
 	later(2.0, pen_seguinte)
 func pen_seguinte() -> void:
 	var D := desempate
