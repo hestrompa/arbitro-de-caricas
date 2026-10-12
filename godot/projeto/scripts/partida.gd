@@ -927,6 +927,11 @@ func ai_step(dt: float) -> void:
 			var dist := absf(bp.x - own)
 			var gy: float = clamp(H / 2 + (bp.y - H / 2) * 0.35, H / 2 - GOAL_W / 2 + 0.4, H / 2 + GOAL_W / 2 - 0.4)
 			var out := 1.2 + (16 - dist) * 0.08 if dist < 16 else 3.5
+			# cruzamento para perto da baliza: o guarda-redes sai a ele se lá chega antes da bola
+			if owner == null and cruz_q.x >= 0 and bz > 0.3 and last != p.team and rel(p.team, cruz_q.x) < 7.0 and absf(cruz_q.y - H / 2) < 9.0:
+				var tb: float = bp.distance_to(cruz_q) / maxf(bv.length(), 1.0)
+				if (p.p.distance_to(cruz_q) - 1.9) / 6.0 < tb + 0.15 * (p.rel - 60.0) / 20.0:
+					move_to(p, cruz_q, 6.5, dt); continue
 			move_to(p, Vector2(own + dirs(p.team) * out, gy), 5.5, dt)
 			continue
 		var poss: bool = poss_team == p.team
@@ -1127,6 +1132,19 @@ func physics(dt: float) -> void:
 			flag_offside(oi); return
 	if hand_check(best, sp): return
 	if line_check(best, sp): return
+	if best.role == "gk" and cruz_q.x >= 0 and last != best.team:
+		# o guarda-redes sai ao cruzamento: agarra, ou soca para longe (às vezes para canto)
+		cruz_q = Vector2(-1, -1)
+		if rng.randf() < 0.3 + (best.rel - 60.0) / 100.0:
+			if mode == "play": toast("O guarda-redes sai e agarra", 1.2)
+		else:
+			var lado := -1.0 if rng.randf() < 0.5 else 1.0
+			var fora := rng.randf() < 0.35
+			bv = Vector2(dirs(best.team) * (2.0 if fora else 9.0), lado * (10.0 if fora else 5.0)).normalized() * rand(11, 15)
+			if fora: bv = Vector2(-dirs(best.team) * 3.0, lado * 12.0).normalized() * 12.0
+			bvz = 3.0; no_pick = best; no_pick_t = 0.4; last = best.team; target = null
+			if mode == "play": toast("O guarda-redes sai aos socos", 1.2)
+			return
 	if best.role == "gk" and sp > 12 and last != best.team:
 		var save_p: float = 0.28 if bpen else (shot_save if shot_save >= 0.0 else clamp(0.95 - (sp - 12) * 0.03 + gk_bonus(best), 0.5, 0.93))
 		if rng.randf() > save_p:
@@ -1325,6 +1343,46 @@ func start_offside(oi: Dictionary) -> void:
 	emit("lance", {"L": lance})
 
 # ---------- árbitro ----------
+# ---------- posicionamento do árbitro (relatório): mapa de calor, distância à bola e diagonal ----------
+var pos_ref: Array = []           # onde estava o árbitro, a cada 0,5 s de jogo
+var pos_cd := 0.0
+var pos_n := 0
+var pos_dist := 0.0
+var pos_bom := 0
+var pos_diag := 0
+var pos_longe := 0
+var pos_perto := 0
+func pos_step(dt: float) -> void:
+	pos_cd -= dt
+	if pos_cd > 0: return
+	pos_cd = 0.5
+	pos_ref.append(ref)
+	var d := ref.distance_to(bp)
+	pos_n += 1; pos_dist += d
+	# diagonal da esquerda: o assistente de cima cobre a metade esquerda e o de baixo a direita;
+	# o árbitro fica do outro lado da bola, para ter o lance entre ele e o assistente
+	var diag := (bp.x < W / 2 and ref.y > bp.y - 3.0) or (bp.x >= W / 2 and ref.y < bp.y + 3.0)
+	if diag: pos_diag += 1
+	if d > 28.0: pos_longe += 1
+	elif d < 9.0: pos_perto += 1
+	if diag and d >= 9.0 and d <= 28.0: pos_bom += 1
+func pos_resumo() -> Dictionary:
+	if pos_n == 0: return {}
+	var nl := 0
+	var sl := 0.0
+	for l in incidents:
+		if l.has("dist") and kind_of(l) != "offside": nl += 1; sl += float(l.dist)
+	var o := {"n": pos_n, "dist": pos_dist / pos_n, "diag": 100.0 * pos_diag / pos_n, "bom": 100.0 * pos_bom / pos_n,
+		"longe": 100.0 * pos_longe / pos_n, "perto": 100.0 * pos_perto / pos_n, "lances": sl / nl if nl else -1.0}
+	var dicas: Array = []
+	if o.diag < 60: dicas.append("Corre mais na diagonal: com a bola na metade esquerda fica abaixo dela, na direita fica acima. Assim o lance fica entre ti e o assistente.")
+	if o.longe > 30: dicas.append("Andaste muitas vezes a mais de 28 m da bola. De longe, os lances veem-se pior.")
+	if o.perto > 25: dicas.append("Andaste muitas vezes em cima da bola. Dá espaço ao jogo para não tapares passes nem levares com a bola.")
+	if o.lances > 22: dicas.append("Nos lances estavas em média a %d m. O ideal é entre 10 e 20 m." % int(round(o.lances)))
+	if dicas.is_empty(): dicas.append("Bom posicionamento: perto do jogo, sem o atrapalhar, e do lado certo da diagonal.")
+	o.dicas = dicas
+	return o
+
 func ref_step(dt: float) -> void:
 	if var_mode: move_in = Vector2.ZERO; sprint = ref.distance_to(ia_ref_alvo()) > 14.0; ref_target = ia_ref_alvo()
 	var d := move_in
@@ -1374,6 +1432,7 @@ func _play_step(dt: float) -> void:
 	for k in 2: aggr[k] = max(0.05, aggr[k] - 0.012 * dt)
 	control = min(100.0, control + 0.05 * dt)
 	ref_step(dt)
+	if not var_mode and training.is_empty(): pos_step(dt)
 	ast_step(dt)
 	crowd += (crowd_base - crowd) * 0.02 * dt
 	stress_step(dt)

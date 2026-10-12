@@ -347,6 +347,17 @@ func show_report(S: Partida, d: Dictionary, career_note: String, is_career: bool
 	else:
 		report_v.add_child(_table([{"cells": ["Min.", "O que foi", "Decidiste", "Como viste", "Observador"]}], 5, [80, 250, 140, 200, 220]))
 		report_v.add_child(_table(rows, 5, [80, 250, 140, 200, 220], 4, true))
+	var pr: Dictionary = S.pos_resumo()
+	if not pr.is_empty():
+		report_v.add_child(_lbl("Posicionamento", 18, GOLD))
+		var ph := HBoxContainer.new(); ph.add_theme_constant_override("separation", 16); report_v.add_child(ph)
+		ph.add_child(_mapa_calor(S))
+		var pv := VBoxContainer.new(); ph.add_child(pv)
+		pv.add_child(_lbl("Do lado certo da diagonal: %d%% do tempo" % int(round(pr.diag)), 16, INK))
+		pv.add_child(_lbl("Na zona ideal (diagonal, 9 a 28 m da bola): %d%%" % int(round(pr.bom)), 16, INK))
+		pv.add_child(_lbl("Distância média à bola: %d m" % int(round(pr.dist)), 16, INK))
+		if pr.lances >= 0: pv.add_child(_lbl("Distância média nos lances: %d m" % int(round(pr.lances)), 16, INK))
+		for dc in pr.dicas: pv.add_child(_wrap(str(dc), 14, DIM, 440))
 	if S.manage.size():
 		report_v.add_child(_lbl("Gestão do jogo", 18, GOLD))
 		var mr: Array = []
@@ -362,6 +373,49 @@ func show_report(S: Partida, d: Dictionary, career_note: String, is_career: bool
 	else: bb.add_child(_btn("Jogar outra vez", func(): main.on_ui("again", null), Color("2f8a4a")))
 	bb.add_child(_btn("Menu", func(): main.on_ui("menu", null)))
 	report.visible = true
+
+# mapa de calor do árbitro: onde andou durante o jogo e onde foram os lances (verde certo, vermelho errado)
+func _mapa_calor(S: Partida) -> Control:
+	var c := Control.new()
+	var K := 4.0
+	c.custom_minimum_size = Vector2(Partida.W * K + 8, Partida.H * K + 8)
+	var cel := 5.0
+	var nx := int(ceil(Partida.W / cel))
+	var ny := int(ceil(Partida.H / cel))
+	var grid: Array = []
+	grid.resize(nx * ny); grid.fill(0)
+	var mx := 1
+	for q in S.pos_ref:
+		var ix := clampi(int(q.x / cel), 0, nx - 1)
+		var iy := clampi(int(q.y / cel), 0, ny - 1)
+		grid[iy * nx + ix] += 1
+		mx = maxi(mx, grid[iy * nx + ix])
+	var lances: Array = []
+	for l in S.incidents:
+		if l.has("P"): lances.append([l.P, float(l.get("pts", 0.0))])
+	c.draw.connect(func():
+		var o := Vector2(4, 4)
+		c.draw_rect(Rect2(o, Vector2(Partida.W, Partida.H) * K), Color(0.16, 0.42, 0.2))
+		for iy in ny:
+			for ix in nx:
+				var v: int = grid[iy * nx + ix]
+				if v == 0: continue
+				var a := sqrt(float(v) / mx)
+				c.draw_rect(Rect2(o + Vector2(ix, iy) * cel * K, Vector2(cel, cel) * K), Color(1.0, 0.85 - 0.6 * a, 0.1, 0.15 + 0.7 * a))
+		var lc := Color(1, 1, 1, 0.75)
+		c.draw_rect(Rect2(o, Vector2(Partida.W, Partida.H) * K), lc, false, 1.5)
+		c.draw_line(o + Vector2(Partida.W / 2, 0) * K, o + Vector2(Partida.W / 2, Partida.H) * K, lc, 1.5)
+		c.draw_arc(o + Vector2(Partida.W / 2, Partida.H / 2) * K, 9.15 * K, 0, TAU, 32, lc, 1.5)
+		for gx in [0.0, Partida.W - Partida.BOX_D]:
+			c.draw_rect(Rect2(o + Vector2(gx, Partida.H / 2 - Partida.BOX_W / 2) * K, Vector2(Partida.BOX_D, Partida.BOX_W) * K), lc, false, 1.5)
+		# a diagonal que o árbitro deve percorrer
+		c.draw_dashed_line(o + Vector2(Partida.BOX_D, Partida.H - 8) * K, o + Vector2(Partida.W - Partida.BOX_D, 8) * K, Color(1, 1, 1, 0.5), 1.5, 8.0)
+		for lp in lances:
+			var col := Color("2fbf5a") if lp[1] >= 1.0 else (Color("e0b030") if lp[1] > 0 else Color("e04040"))
+			c.draw_circle(o + lp[0] * K, 5.0, col)
+			c.draw_arc(o + lp[0] * K, 5.0, 0, TAU, 16, Color(0, 0, 0, 0.8), 1.0)
+	)
+	return c
 
 # ---------- menu ----------
 func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := true) -> void:
