@@ -1679,6 +1679,10 @@ func _play_step(dt: float) -> void:
 		ref_step(dt); ast_step(dt); stress_step(dt)
 		if mode == "play": _festa_step(dt)
 		return
+	if not molho.is_empty():
+		ref_step(dt); stress_step(dt)
+		if mode == "play": _molho_step(dt)
+		return
 	lance_cd -= dt
 	for k in 2: aggr[k] = max(0.05, aggr[k] - 0.012 * dt)
 	control = min(100.0, control + 0.05 * dt)
@@ -2736,6 +2740,7 @@ func captain_of(team: int) -> Pl:
 # ---------- protestos: os jogadores prejudicados vão ter com o árbitro ----------
 func protest_after(team, sev: float, wrong: bool) -> void:
 	if team == null or mode != "play" or not training.is_empty() or tut: return
+	if sev >= 0.35 and molho_n < 1 and not var_mode and rng.randf() < 0.3: _molho_inicio(team); return
 	coach_check(team, sev, wrong)
 	var I: float = clamp(sev - (ref_attr("aut") - 5) * 0.04 + (0.35 if wrong else 0.0) + aggr[team] * 0.3 + (crowd / 100 * 0.15 if team == HOME else 0.0) + rand(-0.1, 0.1) + 0.2 * brando(team, "prot"), 0, 1)
 	if I < 0.3: return
@@ -2794,6 +2799,7 @@ func resolve_protest(choice: String, timed_out := false) -> void:
 			p.off = true; m = "Segundo amarelo por protestos: %d expulso" % p.num
 			if owner == p: owner = null
 		if dc < 0: m += " · pareceu exagerado"
+		_novo_marcador()
 		sfx("whistle", "short")
 	ctrl(dc)
 	feed(m + ".", "info")
@@ -2803,6 +2809,81 @@ func resolve_protest(choice: String, timed_out := false) -> void:
 	mode = "play"; pause = max(pause, 0.8)
 	emit("protest_end")
 	if control <= 10: end_match("abandonado")
+
+# confronto depois de uma entrada dura: jogadores juntam-se e um deles passa das marcas (Lei 12)
+var molho := {}
+var molho_n := 0
+const MOLHO := [["empurrou %s com as duas mãos no peito", "amarelo"], ["agarrou %s pela camisola e gritou-lhe na cara", "amarelo"],
+	["deu uma cabeçada a%s", "vermelho"], ["deu um soco nas costas d%s", "vermelho"]]
+func _molho_inicio(team: int) -> void:
+	molho_n += 1
+	var spot := bp
+	var vit: Array = active().filter(func(q): return q.team == team and q.role != "gk")
+	var agr: Array = active().filter(func(q): return q.team != team and q.role != "gk")
+	if vit.is_empty() or agr.is_empty(): return
+	vit.sort_custom(func(x, y): return x.p.distance_to(spot) < y.p.distance_to(spot))
+	agr.sort_custom(func(x, y): return x.p.distance_to(spot) < y.p.distance_to(spot))
+	var ids: Array = []
+	for q in vit.slice(0, 3) + agr.slice(0, 3): ids.append(q.id)
+	molho = {"spot": spot, "ids": ids, "t": 0.0, "agr": agr[0].id, "vit": vit[0].id, "it": MOLHO[rng.randi() % MOLHO.size()]}
+	sfx("boo", 0.5); add_stress(8)
+	feed("Confusão: jogadores das duas equipas juntam-se e empurram-se.", "info")
+func _molho_step(dt: float) -> void:
+	molho.t += dt
+	var n: int = molho.ids.size()
+	for i in n:
+		var p: Pl = players[molho.ids[i]]
+		var a: float = float(i) / n * TAU + float(molho.t) * 0.6
+		var r := 0.9 if molho.ids[i] == molho.agr or molho.ids[i] == molho.vit else 1.8
+		move_to(p, molho.spot + Vector2(cos(a), sin(a)) * r, 6.5, dt)
+		p.p += p.v * dt
+	if molho.t < 1.4 or not ask.is_empty(): return
+	var ag: Pl = players[molho.agr]
+	var vi: Pl = players[molho.vit]
+	var it: Array = molho.it
+	molho.t = -99.0
+	ask_open("Confusão depois da entrada: o %d %s %s." % [ag.num, de_t(ag.team), str(it[0]) % ("o %d %s" % [vi.num, de_t(vi.team)])], "Confronto entre jogadores",
+		[{"d": "amarelo", "label": "Amarelo ao %d" % ag.num, "sw": "amarelo"}, {"d": "vermelho", "label": "Vermelho ao %d" % ag.num, "sw": "vermelho"},
+		 {"d": "dois", "label": "Amarelo aos dois", "small": "%d e %d %s" % [ag.num, vi.num, de_t(vi.team)]}, {"d": "nada", "label": "Separar e acalmar", "small": "sem cartões"}],
+		func(c): _molho_res(c), 3)
+func _molho_res(c: String) -> void:
+	var ag: Pl = players[molho.agr]
+	var vi: Pl = players[molho.vit]
+	var certo: String = molho.it[1]
+	molho = {}
+	var pts := 1.0 if c == certo else (0.4 if (c == "dois" and certo == "amarelo") or (c == "amarelo" and certo == "vermelho") else 0.0)
+	var why := ""
+	if certo == "vermelho": why = "Certo: agressão é conduta violenta, vermelho direto" if pts == 1 else "Cabeçada ou soco a um adversário é conduta violenta: vermelho direto ao agressor"
+	else: why = "Certo: empurrar ou agarrar assim é conduta antidesportiva, amarelo a quem o fez" if pts == 1 else ("O %d %s não fez nada: só leva cartão quem passou das marcas" % [vi.num, de_t(vi.team)] if c == "dois" else "Empurrar ou agarrar no confronto é conduta antidesportiva: amarelo ao %d" % ag.num)
+	var m := ""
+	if c in ["amarelo", "dois", "vermelho"]:
+		sfx("whistle", "short")
+		var lista := [ag, vi] if c == "dois" else [ag]
+		for p in lista:
+			if c == "vermelho": p.off = true
+			else:
+				p.yellow += 1
+				if p.yellow >= 2: p.off = true
+			if p.off and owner == p: owner = null
+		m = ("Vermelho direto ao %d %s" % [ag.num, de_t(ag.team)]) if c == "vermelho" else ("Amarelo aos dois: %d %s e %d %s" % [ag.num, de_t(ag.team), vi.num, de_t(vi.team)] if c == "dois" else "Amarelo ao %d %s" % [ag.num, de_t(ag.team)])
+		if ag.off and c != "vermelho": m = "Segundo amarelo: %d %s expulso" % [ag.num, de_t(ag.team)]
+		feed(m + " depois da confusão.", "card")
+	else: m = "Separaste os jogadores sem cartões"
+	ctrl(3.0 if pts == 1 else (-2.0 if pts > 0 else -6.0))
+	_novo_marcador()
+	for k in 2: aggr[k] = maxf(0.05, aggr[k] + (-0.08 if pts == 1 else 0.1))
+	manage.append({"minute": minute(), "what": "Confronto: o %d %s %s" % [ag.num, de_t(ag.team), str(molho_txt_it(certo))], "dec": {"amarelo": "Amarelo ao agressor", "vermelho": "Vermelho ao agressor", "dois": "Amarelo aos dois", "nada": "Sem cartões"}[c], "pts": pts, "why": why})
+	toast(m, 2.4)
+# se quem ia marcar a bola parada foi expulso, outro colega vai bater
+func _novo_marcador() -> void:
+	if parado_dono == null or not parado_dono.off: return
+	var tm: int = parado_dono.team
+	var c: Array = active().filter(func(q): return q.team == tm and q.role != "gk")
+	if c.is_empty(): parado_dono = null; return
+	var p: Pl = nearest(c, bp)[0]
+	p.p = bp - (Vector2(opp_goal_x(tm), H / 2) - bp).normalized() * 0.8; p.v = Vector2.ZERO
+	owner = p; p.set_piece = true; p.cd = 0.9; parado_dono = p; last = tm
+func molho_txt_it(certo: String) -> String: return "agrediu um adversário" if certo == "vermelho" else "empurrou/agarrou um adversário"
 
 # ---------- calor: pausas de hidratação (protocolo FIFA: acima de 32 °C, a meio de cada parte, na primeira bola parada) ----------
 var temp := 0
@@ -3861,7 +3942,7 @@ func half_check(dt := 0.0) -> void:
 const FOLGA_MAX := 3.0
 var fim_folga := 0.0
 func pode_acabar(dt: float) -> bool:
-	if not festa.is_empty(): return false
+	if not festa.is_empty() or not molho.is_empty(): return false
 	if bpen or not ask.is_empty() or not fk.is_empty() or not pend_card.is_empty(): return false
 	if parado_dono != null and parado_dono.penalty: return false
 	if pen_3d: return false
