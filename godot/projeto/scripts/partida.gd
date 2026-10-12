@@ -2283,6 +2283,7 @@ func _finish(L: Dictionary, d: String, m: String, then: Callable) -> void:
 	pending_after = func():
 		toast(m, 2.6)
 		mode = "play"; pause = max(pause, 1.2); lance = {}
+		if anuncio_vale(L): anuncio_ask(L, d, then); return
 		then.call()
 		if control <= 10: end_match("abandonado")
 	mode = "gesto"
@@ -2836,6 +2837,69 @@ func ask_pick(i: int) -> void:
 	emit("ask_end")
 	var cb: Callable = A.cb
 	cb.call(A.opts[i].d)
+	if control <= 10: end_match("abandonado")
+
+# ---- anúncio ao estádio depois de uma revisão do VAR (protocolo IFAB): curto, factual e é o árbitro que decide
+func anuncio_vale(L: Dictionary) -> bool:
+	return L.has("var_first") and not L.get("training", false) and not var_mode and not tut and L.has("decided")
+func anuncio_motivo(L: Dictionary, d: String) -> String:
+	var k := kind_of(L)
+	var an: int = int(L.att.num) if L.has("att") else 0
+	var dn: int = int(L.def.num) if L.has("def") else 0
+	var at: int = int(L.att.team) if L.has("att") else 0
+	var dt_: int = int(L.def.team) if L.has("def") else 1
+	if k == "offside":
+		var rc: Pl = players[int(L.oi.receiver)]
+		return ("o %d %s estava em fora de jogo no momento do passe" if d == "fora" else "o %d %s estava em jogo no momento do passe") % [rc.num, de_t(rc.team)]
+	if k == "linha": return "a bola entrou toda na baliza" if d == "entrou" else "a bola não entrou toda na baliza"
+	if k == "golo": return "não houve falta antes do golo" if d == "valido" else "o %d %s fez falta antes do remate" % [an, de_t(at)]
+	if k == "canto": return {"siga": "não houve falta na área", "penalti": "o %d %s fez falta dentro da área" % [dn, de_t(dt_)], "ataque": "o atacante %d fez falta primeiro" % an}.get(d, "")
+	if k == "mao": return "a bola bateu no braço do %d %s, que aumentou o volume do corpo" % [dn, de_t(dt_)] if d in ["mao", "maoAmarelo"] else "a bola bateu no corpo do %d %s, não no braço" % [dn, de_t(dt_)]
+	match d:
+		"siga": return "não houve falta"
+		"simulacao": return "o %d %s não foi tocado: simulou" % [an, de_t(at)]
+		"falta", "amarelo": return "o %d %s fez falta sobre o %d" % [dn, de_t(dt_), an]
+		"vermelho": return "o %d %s fez uma entrada que põe em perigo a integridade física do adversário" % [dn, de_t(dt_)]
+		"penalti": return "o %d %s fez falta dentro da área" % [dn, de_t(dt_)]
+	return "a decisão de campo foi revista"
+func anuncio_ask(L: Dictionary, d: String, then: Callable) -> void:
+	var dec := str(DEC_LABEL.get(d, d)).to_lower()
+	var mot := anuncio_motivo(L, d)
+	var certo := "Depois da revisão, " + mot + ". Decisão final: " + dec + "."
+	var opts := [
+		{"d": "certo", "label": "Curto e claro", "small": "«" + certo + "»"},
+		{"d": "var", "label": "Foi o VAR", "small": "«O VAR decidiu: " + dec + ".»"},
+		{"d": "desculpa", "label": "Pedir desculpa", "small": "«Peço desculpa, no campo vi mal. Fui ver e a decisão passa a ser " + dec + ".»"},
+		{"d": "nada", "label": "Não anunciar", "small": "faz só o gesto e recomeça"}]
+	if L.var_first == d:
+		opts[0].small = "«Depois da revisão, a decisão de campo mantém-se: " + dec + ".»"
+		opts[2] = {"d": "desculpa", "label": "Explicar tudo", "small": "«Vimos várias imagens, de vários ângulos, discutimos muito com o VAR e no fim mantenho " + dec + ".»"}
+	var idx := [0, 1, 2]
+	idx.shuffle()
+	var o2: Array = []
+	for i in idx: o2.append(opts[i])
+	o2.append(opts[3])
+	sfx("beep")
+	ask_open("Revisão terminada. O microfone está ligado ao som do estádio: o que dizes?", "Anúncio ao estádio", o2, func(c): _anuncio_res(L, d, c, then), 3)
+func _anuncio_res(L: Dictionary, d: String, c: String, then: Callable) -> void:
+	var pts := 0.0
+	var why := ""
+	match c:
+		"certo":
+			pts = 1.0; why = "Certo: o que se viu e a decisão final, em poucas palavras"
+			ctrl(3); crowd = clampf(crowd - 6, 0, 100); cap_trust[0] = clampf(cap_trust[0] + 0.03, 0, 1); cap_trust[1] = clampf(cap_trust[1] + 0.03, 0, 1)
+			radio("Estádio", "Depois da revisão… Decisão final: " + str(DEC_LABEL.get(d, d)).to_lower() + ".")
+		"var":
+			pts = 0.2; why = "Quem decide é o árbitro, nunca o VAR. O anúncio diz o que se viu e a decisão final do árbitro"
+			ctrl(-3); crowd = clampf(crowd + 6, 0, 100)
+		"desculpa":
+			pts = 0.4; why = "O anúncio é curto e factual: o que se viu e a decisão final, sem desculpas nem pormenores"
+			ctrl(-1); crowd = clampf(crowd + 3, 0, 100)
+		_:
+			pts = 0.3; why = "Depois de uma revisão o árbitro explica ao estádio a decisão final"
+	manage.append({"minute": minute(), "what": "Anúncio ao estádio depois da revisão do VAR", "dec": {"certo": "Curto e claro", "var": "Foi o VAR", "desculpa": "Pediu desculpa/explicou demais", "nada": "Não anunciou"}.get(c, c), "pts": pts, "why": why})
+	feed("Anúncio do árbitro ao estádio: " + {"certo": "decisão explicada.", "var": "«O VAR decidiu».", "desculpa": "longo e com desculpas.", "nada": "não houve."}.get(c, ""), "info")
+	then.call()
 	if control <= 10: end_match("abandonado")
 
 # cartão depois da vantagem, na paragem seguinte

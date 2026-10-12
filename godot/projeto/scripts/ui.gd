@@ -261,6 +261,8 @@ func show_ask(msg: String, tag: String, opts: Array) -> void:
 		var k := i
 		var b := _btn("%d  %s" % [i + 1, o.label] + ("  ·  " + o.small if o.has("small") else ""), func(): main.on_ui("ask", k), DEC_COL.get(o.get("sw", ""), Color()), 0, 17)
 		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		if b.text.length() > 64:
+			b.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART; b.custom_minimum_size = Vector2(560, 0)
 		ask_v.add_child(b); i += 1
 	ask.visible = true
 func show_protest(txt: String) -> void:
