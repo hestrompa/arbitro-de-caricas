@@ -221,6 +221,7 @@ var rng := RandomNumberGenerator.new()
 var est := {"posse": [0.0, 0.0], "remates": [0, 0], "alvo": [0, 0], "passes": [0, 0], "passes_ok": [0, 0], "desarmes": [0, 0], "faltas": [0, 0], "cantos": [0, 0],
 	"xg": [0.0, 0.0], "ocasioes": [0, 0], "rem_area": [0, 0], "cruz": [0, 0], "na_area": [0, 0], "primeira": [0, 0]}
 var ult_passe := false
+var util := 0.0                   # tempo útil: bola em jogo (sem paragens nem bolas paradas por bater)
 var cruz_q := Vector2(-1, -1)     # onde vai cair o cruzamento (quem ataca e quem defende vão lá)
 var af := {}                      # afinação do motor (testes): sobrepõe os valores por omissão
 func A(k: String, d: float) -> float: return float(af.get(k, d))
@@ -1705,6 +1706,7 @@ func _play_step(dt: float) -> void:
 	if pause > 0:
 		pause -= dt; physics(0)
 	else:
+		if parado_dono == null: util += dt
 		ai_step(dt)
 		if mode != "play": return
 		physics(dt)

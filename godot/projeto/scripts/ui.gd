@@ -414,6 +414,10 @@ func _estatisticas(S: Partida) -> Control:
 				h.add_child(nome)
 			else:
 				h.add_child(caixa); h.add_child(num)
+	if S.t > 1.0:
+		var u := int(round(S.util / S.MATCH_SECONDS * 90.0))
+		var tot := int(round(S.t / S.MATCH_SECONDS * 90.0))
+		v.add_child(_lbl("Tempo útil: %d minutos de bola em jogo, em %d jogados." % [u, tot], 15, DIM))
 	return v
 
 # mapa de calor do árbitro: onde andou durante o jogo e onde foram os lances (verde certo, vermelho errado)
