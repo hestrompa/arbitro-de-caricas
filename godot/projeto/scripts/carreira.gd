@@ -501,6 +501,7 @@ func setup_match(S: Partida) -> void:
 	S.career = {"tier": ti, "round": C.round, "attrs": C.attrs.duplicate(), "wrong": [0, 0], "h": B.h[0], "a": B.a[0]}
 	career_squad(S)
 	S.no_var = not B.T.var
+	S.taca = bool(B.T.get("cup", false))      # eliminatórias do Mundial: empate dá prolongamento e penáltis
 	S.lance_k = 1.1 - 0.05 * ti; S.sim_k = 0.7 + 0.15 * ti
 	var fm: Dictionary = C.get("fama", {})
 	for k in S.fama: S.fama[k] = float(fm.get(k, 0.0))
