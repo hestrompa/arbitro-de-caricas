@@ -1573,7 +1573,7 @@ func ref_step(dt: float) -> void:
 	var speed := 8.3 + fa * 0.06 if run else 5.8 + fa * 0.04
 	if moving: ref += d.normalized() * speed * dt
 	ref = Vector2(clamp(ref.x, -2, W + 2), clamp(ref.y, -2, H + 2))
-	stamina = clamp(stamina + ((-16.0 * (1.25 - 0.05 * fa)) if run else ((3.0 if moving else 7.0) * (0.75 + 0.05 * fa))) * dt, 0, 100)
+	stamina = clamp(stamina + ((-16.0 * (1.25 - 0.05 * fa) * (1.25 if clima == "calor" else 1.0)) if run else ((3.0 if moving else 7.0) * (0.75 + 0.05 * fa) * (0.8 if clima == "calor" else 1.0))) * dt, 0, 100)
 
 func stress_step(dt: float) -> void:
 	var tgt: float = stress_base + max(0.0, crowd - 55) * 0.4
@@ -2733,12 +2733,49 @@ func resolve_protest(choice: String, timed_out := false) -> void:
 	emit("protest_end")
 	if control <= 10: end_match("abandonado")
 
+# ---------- calor: pausas de hidratação (protocolo FIFA: acima de 32 °C, a meio de cada parte, na primeira bola parada) ----------
+var temp := 0
+var hidrata := [false, false]
+var hidrata_aviso := [false, false]
+func _calor_step() -> void:
+	if var_mode: return
+	var k := 0 if half == 0 else 1
+	var m0 := 30 if k == 0 else 75
+	if hidrata[k] or minute() < m0 or minute() > m0 + 12: return
+	if not hidrata_aviso[k]:
+		hidrata_aviso[k] = true
+		radio("4.º árbitro", "%d minutos e %d graus. Quando puderes, avisa." % [m0, temp])
+	if parado_dono == null or pause > 0 or not lance.is_empty() or not ask.is_empty() or mode != "play" or not fk.is_empty(): return
+	hidrata[k] = true
+	ask_open("Bola parada aos %d', com %d °C. Os jogadores estão encharcados em suor." % [minute(), temp], "Calor extremo",
+		[{"d": "pausa", "label": "Pausa de hidratação", "small": "3 minutos, todos à linha"}, {"d": "agua", "label": "Água rápida na linha", "small": "quem quiser bebe e segue"}, {"d": "seguir", "label": "Continuar", "small": "o jogo está a correr bem"}],
+		func(c): _calor_res(c, m0), 2)
+func _calor_res(c: String, m0: int) -> void:
+	var pts := 1.0 if c == "pausa" else (0.4 if c == "agua" else 0.0)
+	var why := "Certo: acima de 32 °C há uma pausa de hidratação a meio de cada parte" if pts == 1 else "Com %d °C o protocolo pede uma pausa de hidratação a meio de cada parte" % temp
+	match c:
+		"pausa":
+			pause = maxf(pause, 2.5); added += 1.2; stamina = minf(100.0, stamina + 25)
+			for k in 2: aggr[k] = maxf(0.05, aggr[k] - 0.04)
+			sfx("whistle", "short"); toast("Pausa de hidratação: todos à linha lateral", 2.4)
+			feed("Pausa de hidratação aos %d'." % minute(), "info")
+		"agua":
+			pause = maxf(pause, 0.8); added += 0.3; stamina = minf(100.0, stamina + 8)
+			toast("Água à pressa na linha lateral", 1.8)
+		_:
+			for k in 2: aggr[k] += 0.08
+			stamina = maxf(0.0, stamina - 10)
+			toast("O jogo continua: os jogadores estão exaustos e mais nervosos", 2.2)
+	ctrl(2.0 if pts == 1 else (-1.0 if pts > 0 else -4.0))
+	manage.append({"minute": minute(), "what": "Calor extremo (%d °C) por volta dos %d'" % [temp, m0], "dec": {"pausa": "Pausa de hidratação", "agua": "Água na linha", "seguir": "Continuar"}[c], "pts": pts, "why": why})
+
 # ---------- noites difíceis ----------
 # sorteio do tempo e do acontecimento do jogo (nas divisões de baixo há mais apagões; nos dérbis, tochas)
 func sorteia_ambiente(night: bool, derby := false, tier := -1) -> void:
 	noite = night
 	var r := rng.randf()
-	clima = "chuva" if r < 0.2 else ("nevoeiro" if r < 0.3 else "")
+	clima = "chuva" if r < 0.2 else ("nevoeiro" if r < 0.3 else ("calor" if r < 0.48 and not night else ""))
+	if clima == "calor": temp = rng.randi_range(33, 38)
 	var pc := 0.35 + (0.25 if derby else 0.0)
 	if rng.randf() >= pc: return
 	var w := {"tochas": 0.4 + (0.6 if derby else 0.0), "invasao": 0.35, "apagao": (0.4 if tier >= 0 and tier <= 2 else 0.2) if night else 0.0}
@@ -2751,7 +2788,8 @@ func sorteia_ambiente(night: bool, derby := false, tier := -1) -> void:
 func anuncia_clima() -> void:
 	if clima != "": feed(clima_txt(), "info"); later(2.2, func(): if mode == "play" and clima != "": toast(clima_txt(), 3.0))
 func clima_txt() -> String:
-	return {"chuva": "Chuva forte: relvado molhado, a bola corre mais e há mais escorregadelas.", "nevoeiro": "Nevoeiro: ao longe quase não se vê. Fica perto dos lances.", "": ""}[clima]
+	return {"chuva": "Chuva forte: relvado molhado, a bola corre mais e há mais escorregadelas.", "nevoeiro": "Nevoeiro: ao longe quase não se vê. Fica perto dos lances.",
+		"calor": "Calor extremo: %d °C à sombra. Todos se cansam mais depressa." % temp, "": ""}[clima]
 func ambiente_step(dt: float) -> void:
 	if not training.is_empty() or tut:
 		clima = ""; evento = {}; return
@@ -2760,6 +2798,7 @@ func ambiente_step(dt: float) -> void:
 		fumo.c += Vector2(0.4, 0.15) * dt
 		if fumo.a <= 0.0: fumo = {}
 	if not invasor.is_empty(): _invasor_step(dt)
+	if clima == "calor": _calor_step()
 	if luz < 1.0 and evento.get("k", "") == "apagao" and evento.get("volta", 0.0) > 0.0:
 		evento.volta -= dt
 		if evento.volta <= 0.0:
@@ -3052,6 +3091,7 @@ func added_time_check() -> void:
 	if rev: partes.append("%d %s do VAR" % [rev, "revisões" if rev > 1 else "revisão"])
 	if les: partes.append("%d %s" % [les, "assistências a lesionados" if les > 1 else "assistência a um lesionado"])
 	if paragens: partes.append("%d %s" % [paragens, "lances parados" if paragens > 1 else "lance parado"])
+	if hidrata[1] and manage.any(func(x): return str(x.what).begins_with("Calor") and int(x.minute) >= 45 and x.dec == "Pausa de hidratação"): partes.append("uma pausa de hidratação")
 	if evento.get("estado", "espera") != "espera" and int(evento.get("min", 0)) >= 45: partes.append({"tochas": "tochas no relvado", "invasao": "uma invasão de campo", "apagao": "um apagão"}.get(evento.get("k", ""), "uma interrupção"))
 	var msg_ := "Fim dos 90 minutos. O 4.º árbitro espera o teu sinal: quantos minutos de descontos?"
 	if partes.size(): msg_ += " Tempo perdido na 2.ª parte: " + ", ".join(partes) + "."

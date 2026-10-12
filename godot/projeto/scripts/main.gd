@@ -1636,7 +1636,7 @@ func _fumo_tex() -> ImageTexture:
 func _clima_3d(limpo := false) -> void:
 	var ativo: bool = jogo != null and not limpo and modo in ["lance", "var", "rever", "gesto", "flash"]
 	var c: String = jogo.clima if ativo else ""
-	env.fog_enabled = c != ""
+	env.fog_enabled = c == "chuva" or c == "nevoeiro"
 	env.fog_density = 0.04 if c == "nevoeiro" else 0.009
 	env.fog_light_color = (Color(0.3, 0.32, 0.36) if night else Color(0.74, 0.77, 0.8)) if c == "nevoeiro" else (Color(0.2, 0.22, 0.26) if night else Color(0.5, 0.55, 0.62))
 	env.fog_sky_affect = 0.9 if c == "nevoeiro" else 0.4

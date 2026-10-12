@@ -374,6 +374,15 @@ func _ambiente(rp: Vector2) -> void:
 		draw_rect(Rect2(Vector2(r0.end.x, y0), Vector2(maxf(0.0, full.end.x - r0.end.x), y1 - y0)), fc)
 	if jogo.luz < 1.0:
 		draw_rect(Rect2(w2s(Vector2(-4, -4)), Vector2(W + 8, H + 8) * sc), Color(0.0, 0.01, 0.04, (1.0 - jogo.luz) * 0.85))
+	if jogo.clima == "calor":
+		# calor: luz quente e o ar a tremer por cima da relva
+		draw_rect(Rect2(w2s(Vector2(-4, -4)), Vector2(W + 8, H + 8) * sc), Color(1.0, 0.6, 0.18, 0.13))
+		var tq := Time.get_ticks_msec() / 1000.0
+		for k in 7:
+			var yk := (k + 0.5) * H / 7.0 + sin(tq * 0.7 + k) * 2.0
+			var pts2 := PackedVector2Array()
+			for j in 25: pts2.append(w2s(Vector2(j * W / 24.0, yk + sin(j * 0.9 + tq * 2.6 + k * 1.3) * 0.6)))
+			draw_polyline(pts2, Color(1.0, 0.9, 0.7, 0.07), 2.0 * sc)
 	if jogo.clima == "chuva":
 		draw_rect(Rect2(w2s(Vector2(-4, -4)), Vector2(W + 8, H + 8) * sc), Color(0.05, 0.08, 0.14, 0.18))
 		var rng := RandomNumberGenerator.new(); rng.seed = 11
