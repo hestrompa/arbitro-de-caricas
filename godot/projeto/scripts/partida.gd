@@ -268,6 +268,7 @@ func _init(tms: Array) -> void:
 		if not teams[ti].has("estilo"): teams[ti].estilo = Carreira.estilo_of(str(teams[ti].name))
 	tat_update()
 	kickoff(0)
+	later(0.4, func(): if rng.randf() < 0.65: vistoria())
 
 # ---------- utilitários ----------
 func rand(a: float, b: float) -> float: return rng.randf_range(a, b)
@@ -741,6 +742,7 @@ func on_ball(p: Pl, dt: float) -> void:
 		"dribble": p.dribble = c.dir
 		"cruza":
 			var m: Pl = c.m
+			if cruz_bloqueio(p, c.q): return
 			var err: Vector2 = pass_err(p, p.p.distance_to(c.q)) * (1.4 if c.alto else 0.8)
 			kick(p, c.q + err, c.alto); target = m; cruz_q = c.q + err
 			est.passes[p.team] += 1; ult_passe = true; est.cruz[p.team] += 1
@@ -750,6 +752,28 @@ func on_ball(p: Pl, dt: float) -> void:
 			if mode == "play" and in_own_box(p.team, p.p) and rng.randf() < 0.3:   # alívio para canto
 				ult_passe = false; corner(1 - p.team, 0.5 if bp.y < H / 2 else H - 0.5); return
 			kick(p, Vector2(abs_x(p.team, rel(p.team, p.p.x) + 30), H / 2 + rand(-12, 12)), true)
+
+# cruzamento à frente de um defesa colado: bate-lhe na perna e sai muitas vezes para canto
+func cruz_bloqueio(p: Pl, q: Vector2) -> bool:
+	if mode != "play": return false
+	var dir := (q - p.p).normalized()
+	for o in active():
+		if o.team == p.team or o.role == "gk" or o.down > 0: continue
+		var r: Vector2 = o.p - p.p
+		var d: float = r.length()
+		if d > A("cz_bloq_d", 2.2) or r.dot(dir) < 0.2 * d: continue
+		if rng.randf() > A("cz_bloq", 0.0) * (1.25 - d / 2.2): continue
+		est.cruz[p.team] += 1; est.passes[p.team] += 1
+		if dbg_on: dbg["cruz_bloq"] = dbg.get("cruz_bloq", 0) + 1
+		if rng.randf() < 0.6:
+			if mode == "play": toast("Cruzamento cortado: canto", 1.2)
+			ult_passe = false; corner(p.team, 0.5 if bp.y < H / 2 else H - 0.5)
+		else:
+			kick(p, p.p + dir * 3.0, false)
+			bv = (dir * -0.4 + Vector2(rand(-1, 1), rand(-1, 1))).normalized() * rand(6, 10); bvz = rand(0.3, 2.0)
+			last = o.team; no_pick = o; no_pick_t = 0.25; target = null
+		return true
+	return false
 
 # cruzamento para uma zona: primeiro poste, marca de penálti, segundo poste ou, da linha de fundo, o passe atrás rasteiro.
 # Ganha quem lá chega primeiro; o guarda-redes sai às bolas altas perto da baliza
@@ -863,7 +887,7 @@ func shoot(p: Pl, pen: bool, q := -1.0, opps: Array = []) -> void:
 	for o in opps:
 		if o.role == "gk": continue
 		var sd := seg_dist(bp, Vector2(gx, gy), o.p)
-		if sd.x < 1.5 and sd.y > 0.03 and sd.y < 0.9 and rng.randf() < (0.55 if sd.x < 0.9 else 0.3):
+		if sd.x < A("bloq_r", 1.5) and sd.y > 0.03 and sd.y < 0.9 and rng.randf() < (0.55 if sd.x < 0.9 else A("bloq_p", 0.3)):
 			if rng.randf() < 0.6:   # desvio para a linha de fundo
 				bv = Vector2(signf(bv.x) * 0.75, -1.0 if bp.y < H / 2 and rng.randf() < 0.7 else 1.0).normalized() * rand(9, 13)
 			else: bv = bv.rotated(rand(0.35, 0.9) * (-1.0 if rng.randf() < 0.5 else 1.0)) * 0.6
@@ -1036,7 +1060,7 @@ func tackle(def: Pl, att: Pl) -> void:
 		dbg[kd] = dbg.get(kd, 0) + 1
 	lesao_check(att, def)
 	# corte perto da linha de fundo: a bola foge muitas vezes pela linha (canto)
-	if mode == "play" and absf(def.p.x - own_goal_x(def.team)) < 16 and rng.randf() < 0.3:
+	if mode == "play" and absf(def.p.x - own_goal_x(def.team)) < A("canto_zona", 16.0) and rng.randf() < A("canto_corte", 0.3):
 		att.down = 0.35; ult_passe = false
 		corner(1 - def.team, 0.5 if bp.y < H / 2 else H - 0.5); return
 	owner = def; last = def.team; target = null; def.cd = 0.3; att.down = 0.35; def.dribble = Vector2.ZERO
@@ -1153,7 +1177,7 @@ func physics(dt: float) -> void:
 		var save_p: float = 0.28 if bpen else (shot_save if shot_save >= 0.0 else clamp(0.95 - (sp - 12) * 0.03 + gk_bonus(best), 0.5, 0.93))
 		if rng.randf() > save_p:
 			no_pick = best; no_pick_t = 0.5; return
-		if sp > 15 and rng.randf() < 0.6:
+		if sp > A("parry_v", 13.5) and rng.randf() < A("parry_p", 0.7):
 			# defesa para o lado: muitas vezes para fora, pela linha de fundo (canto)
 			var fora := rng.randf() < 0.65
 			var lado := -1.0 if rng.randf() < 0.5 else 1.0
@@ -1164,7 +1188,7 @@ func physics(dt: float) -> void:
 			return
 	if best.role == "gk" and last == best.team and kicker != null and kicker != best and kicker.team == best.team and atraso_check(best, kicker): return
 	# cruzamento cortado de cabeça pelo defesa dentro da área: muitas vezes vai para canto
-	if best.role != "gk" and bz > 0.6 and kicker != null and kicker.team != best.team and in_own_box(best.team, best.p) and mode == "play" and rng.randf() < 0.4:
+	if best.role != "gk" and bz > 0.6 and kicker != null and kicker.team != best.team and in_own_box(best.team, best.p) and mode == "play" and rng.randf() < A("canto_cab", 0.4):
 		ult_passe = false
 		corner(1 - best.team, 0.5 if bp.y < H / 2 else H - 0.5)
 		return
@@ -2962,11 +2986,90 @@ func stall_step(dt: float) -> void:
 			toast(m, 2.2), 0)
 
 # descontos
+# Lei 4: vistoria aos equipamentos no túnel, antes do apito inicial
+const VISTORIA := [
+	["traz um fio ao pescoço", "corrigir", "Lei 4: são proibidas todas as joias (tapar com fita não chega)"],
+	["tem uma pulseira de silicone no pulso", "corrigir", "Lei 4: são proibidas todas as joias, também as pulseiras de silicone"],
+	["vai entrar sem caneleiras", "corrigir", "Lei 4: as caneleiras são obrigatórias"],
+	["tem uma camisola térmica de cor diferente das mangas", "corrigir", "Lei 4: a roupa interior tem de ser da cor principal das mangas"],
+	["tem fita nas meias de outra cor", "corrigir", "Lei 4: a fita nas meias tem de ser da cor da parte da meia que tapa"],
+	["joga com óculos desportivos de proteção", "deixar", "Lei 4: equipamento de proteção sem perigo, como óculos desportivos, é permitido"],
+	["usa luvas por causa do frio", "deixar", "Lei 4: luvas sem perigo são permitidas"],
+	["traz uma proteção macia de cabeça, preta", "deixar", "Lei 4: a proteção de cabeça é permitida se for preta ou da cor da camisola"],
+	["GR:veste calças compridas de fato de treino", "deixar", "Lei 4: o guarda-redes pode usar calças compridas"],
+	["GR:veste uma cor parecida com a da equipa adversária", "corrigir", "Lei 4: o guarda-redes tem de se distinguir dos outros jogadores e dos árbitros"]]
+func vistoria() -> void:
+	if not training.is_empty() or tut or var_mode or mode != "play" or not ask.is_empty(): return
+	var it: Array = VISTORIA[rng.randi() % VISTORIA.size()]
+	var ti := rng.randi() % 2
+	var txt: String = it[0]
+	var quem := ""
+	if txt.begins_with("GR:"):
+		txt = txt.substr(3); quem = "O guarda-redes " + de_t(ti)
+	else:
+		var cand: Array = players.filter(func(q): return q.team == ti and q.role != "gk")
+		var p: Pl = cand[rng.randi() % cand.size()]
+		quem = "O %d %s" % [p.num, de_t(ti)]
+	var opts := [{"d": "deixar", "label": "Pode jogar assim"}, {"d": "corrigir", "label": "Corrige antes de entrar"}, {"d": "amarelo", "label": "Corrige e leva amarelo"}]
+	ask_open("Vistoria no túnel, antes do apito inicial. " + quem + " " + txt + ".", "Vistoria aos equipamentos", opts, func(c): _vistoria_res(it, quem + " " + txt, c), 0)
+func _vistoria_res(it: Array, what: String, c: String) -> void:
+	var certo: String = it[1]
+	var pts := 1.0 if c == certo else 0.0
+	var why: String = ("Certo · " if pts == 1 else "") + str(it[2])
+	if c == "amarelo": why = ("Não há cartão por equipamento antes do jogo: corrige-se e pronto. " if certo == "corrigir" else "Não havia nada a corrigir. ") + str(it[2])
+	if pts == 1: ctrl(2)
+	elif c == "amarelo": ctrl(-4)
+	else: ctrl(-2)
+	manage.append({"minute": 0, "what": "Vistoria: " + what.substr(0, 1).to_lower() + what.substr(1), "dec": {"deixar": "Pode jogar", "corrigir": "Corrigir", "amarelo": "Corrigir + amarelo"}[c], "pts": pts, "why": why})
+	feed("Vistoria no túnel: " + ("tudo em ordem." if c == "deixar" else "um jogador teve de corrigir o equipamento."), "info")
+	toast("Certo: " + str(it[2]) if pts == 1 else str(it[2]), 3.2)
+
+# Lei 7: o árbitro decide o tempo perdido (golos, substituições, lesões, VAR, interrupções) e o 4.º árbitro mostra a placa
+var desc_ask := false
+var desc_base := {}                  # contagens no intervalo: os descontos são o tempo perdido na 2.ª parte
+func _contagens() -> Dictionary:
+	return {"added": added, "gol": score[0] + score[1], "rev": var_n, "les": lesao_n,
+		"par": incidents.filter(func(l): return not l.get("training", false)).size()}
 func added_time_check() -> void:
-	if t < MATCH_SECONDS or add_min: return
-	add_min = clampi(int(round(added)), 1, 6)
+	if t < MATCH_SECONDS or add_min or desc_ask or prol > 0: return
+	var c0 := _contagens()
+	var b0: Dictionary = desc_base if desc_base.size() else {"added": 0.0, "gol": 0, "rev": 0, "les": 0, "par": 0}
+	var certo := clampi(int(round(float(c0.added) - float(b0.added) + 0.6)), 1, 8)
+	if not training.is_empty() or tut or var_mode or not ask.is_empty() or mode != "play":
+		_mostra_descontos(certo); return
+	desc_ask = true
+	var ini := clampi(certo - rng.randi_range(0, 3), 1, 7)
+	var opts: Array = []
+	for k in 4: opts.append({"d": str(ini + k), "label": "+%d'" % (ini + k)})
+	var partes: Array = []
+	var gol: int = int(c0.gol) - int(b0.gol)
+	var trocas: int = int(subs[0].n) + int(subs[1].n)
+	var rev: int = int(c0.rev) - int(b0.rev)
+	var les: int = int(c0.les) - int(b0.les)
+	var paragens: int = int(c0.par) - int(b0.par)
+	if gol: partes.append("%d %s" % [gol, "golos" if gol > 1 else "golo"])
+	if trocas: partes.append("%d %s" % [trocas, "substituições" if trocas > 1 else "substituição"])
+	if rev: partes.append("%d %s do VAR" % [rev, "revisões" if rev > 1 else "revisão"])
+	if les: partes.append("%d %s" % [les, "assistências a lesionados" if les > 1 else "assistência a um lesionado"])
+	if paragens: partes.append("%d %s" % [paragens, "lances parados" if paragens > 1 else "lance parado"])
+	if evento.get("estado", "espera") != "espera" and int(evento.get("min", 0)) >= 45: partes.append({"tochas": "tochas no relvado", "invasao": "uma invasão de campo", "apagao": "um apagão"}.get(evento.get("k", ""), "uma interrupção"))
+	var msg_ := "Fim dos 90 minutos. O 4.º árbitro espera o teu sinal: quantos minutos de descontos?"
+	if partes.size(): msg_ += " Tempo perdido na 2.ª parte: " + ", ".join(partes) + "."
+	ask_open(msg_, "Descontos", opts, func(c): _descontos_res(int(c), certo), 0)
+func _descontos_res(n: int, certo: int) -> void:
+	var dif := n - certo
+	var pts := 1.0 if absi(dif) <= 1 else (0.4 if absi(dif) == 2 else 0.0)
+	var why := "Certo" if dif == 0 else ("No limite, aceitável (era +%d')" % certo if absi(dif) == 1 else ("Pouco tempo: o tempo perdido dava +%d'" % certo if dif < 0 else "Tempo a mais: o tempo perdido dava +%d'" % certo))
+	if dif <= -2 and score[0] != score[1]:
+		ctrl(-3); protest_after_soon(0 if score[0] < score[1] else 1)
+	elif dif >= 2 and score[0] != score[1]:
+		ctrl(-2); protest_after_soon(0 if score[0] > score[1] else 1)
+	manage.append({"minute": minute(), "what": "Descontos da 2.ª parte", "dec": "+%d'" % n, "pts": pts, "why": why})
+	_mostra_descontos(n)
+func _mostra_descontos(n: int) -> void:
+	add_min = n
 	toast("O 4.º árbitro mostra +%d' de descontos" % add_min, 2.6)
-	radio("4.º árbitro", "Tempo cumprido. Vou mostrar +%d." % add_min)
+	radio("4.º árbitro", "Vou mostrar mais %d." % add_min)
 	feed("Descontos: mais %d %s" % [add_min, "minutos." if add_min > 1 else "minuto."], "info")
 
 # treinador fora da área técnica: aviso, amarelo e, se insistir, vermelho
@@ -3657,6 +3760,7 @@ func second_half(talk := "descanso") -> void:
 			stamina = 100; stress = max(stress_base, stress - 12)
 			msg = "Descansaste no balneário: energia cheia e menos nervos."
 	for tm in teams: tm.dir = -int(tm.dir)
+	desc_base = _contagens()
 	half = 2; lance = {}
 	if training.is_empty() and not tut: subs_intervalo()
 	kickoff(1)
