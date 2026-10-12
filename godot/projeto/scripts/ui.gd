@@ -496,6 +496,7 @@ const NOVIDADES := [
 	["Calor extremo", "pausas de hidratação aos 30' e 75' nos dias de muito calor"],
 	["Festejos", "quem marca corre para a bandeirola e os colegas vão atrás"],
 	["Lesões e confrontos", "jogador a sangrar (Lei 5), lançamento mal executado (Lei 15), confrontos depois de entradas duras (Lei 12)"],
+	["Bola no árbitro", "se a bola te bate e muda de posse, há bola ao solo para quem a jogou (Lei 9)"],
 	["Penáltis", "antes do desempate: sorteio da baliza e de quem começa, e a equipa com mais jogadores reduz (Lei 10)"],
 	["Relatório", "estatísticas do jogo (posse, remates, ocasiões, cantos, faltas) e tempo útil"]]
 func show_novidades() -> void:

@@ -1122,6 +1122,8 @@ func physics(dt: float) -> void:
 	elif not trail.is_empty(): trail.pop_front()
 	if no_pick_t > 0: no_pick_t -= dt
 	else: no_pick = null
+	if owner == null and bz < 1.6 and sp > 6.0 and bp.distance_to(ref) < 0.55 and arb_toque_n < 1 and mode == "play" and training.is_empty() and not tut and not var_mode and desempate.is_empty():
+		_bola_arbitro(); return
 	if bp.y < 0 or bp.y > H:
 		throw_in(); return
 	if bp.x < 0 or bp.x > W:
@@ -3267,6 +3269,43 @@ func _moeda_res(c: String) -> void:
 	ctrl(1.0 if pts == 1 else -1.5)
 	manage.append({"minute": 0, "what": "Sorteio inicial: o que escolhe quem ganha a moeda", "dec": {"baliza": "Só a baliza", "ambos": "Baliza ou pontapé de saída", "saida": "Só o pontapé de saída"}[c], "pts": pts, "why": why})
 	toast(why, 3.0)
+
+# Lei 9: a bola bate no árbitro. Se muda a posse, começa um ataque prometedor ou entra na baliza: bola ao solo
+var arb_toque_n := 0
+func _bola_arbitro() -> void:
+	arb_toque_n += 1
+	var tm: int = last
+	bv = bv.rotated(rand(1.8, 2.6) * (-1.0 if rng.randf() < 0.5 else 1.0)) * 0.35; bvz = 0.0
+	var muda := rng.randf() < 0.65
+	var quem: int = 1 - tm if muda else tm
+	sfx("ooh")
+	ask_open("A bola bateu em ti e ressaltou para %s (quem a jogou foram %s)." % [art_t(quem), art_t(tm)], "A bola bateu no árbitro",
+		[{"d": "siga", "label": "Siga", "small": "o árbitro faz parte do campo"}, {"d": "solo", "label": "Bola ao solo para " + str(teams[tm].name), "small": "onde te tocou"},
+		 {"d": "livreind", "label": "Livre indireto para " + str(teams[1 - tm].name)}], func(c): _bola_arbitro_res(c, tm, muda), 0)
+func _bola_arbitro_res(c: String, tm: int, muda: bool) -> void:
+	var certo := "solo" if muda else "siga"
+	var pts := 1.0 if c == certo else 0.0
+	var why := ""
+	if muda: why = "Certo: a bola tocou no árbitro e mudou de posse, bola ao solo para quem a tinha" if pts == 1 else "Lei 9: se a bola toca no árbitro e muda de posse, para-se e há bola ao solo para quem a jogou"
+	else: why = "Certo: a bola tocou-te mas ficou com a mesma equipa, sem ataque prometedor: segue" if pts == 1 else "Lei 9: a bola tocou no árbitro mas ficou com a mesma equipa e sem ataque prometedor: o jogo segue"
+	ctrl(1.0 if pts == 1 else -2.0)
+	manage.append({"minute": minute(), "what": "Bola bateu no árbitro" + (" e mudou de posse" if muda else " e ficou com a mesma equipa"), "dec": {"siga": "Siga", "solo": "Bola ao solo", "livreind": "Livre indireto"}[c], "pts": pts, "why": why})
+	toast(why, 2.6)
+	if c == "siga":
+		var cand: Array = active().filter(func(q): return q.team == (1 - tm if muda else tm) and q.role != "gk")
+		if cand.size():
+			var p: Pl = nearest(cand, bp)[0]
+			reset_ball(bp); owner = p; p.cd = 0.4; last = p.team
+		return
+	sfx("whistle", "short")
+	var ti: int = tm if c == "solo" else 1 - tm
+	var at := Vector2(clampf(bp.x, 2, W - 2), clampf(bp.y, 2, H - 2))
+	var cand2: Array = active().filter(func(q): return q.team == ti and q.role != "gk")
+	if cand2.is_empty(): return
+	var p2: Pl = nearest(cand2, at)[0]
+	reset_ball(at); p2.p = at - Vector2(dirs(ti) * 0.8, 0); p2.v = Vector2.ZERO
+	owner = p2; p2.cd = 0.9; p2.set_piece = true; last = ti; parado_dono = p2
+	pause = maxf(pause, 0.8)
 
 # Lei 7: o árbitro decide o tempo perdido (golos, substituições, lesões, VAR, interrupções) e o 4.º árbitro mostra a placa
 var desc_ask := false
