@@ -2280,6 +2280,7 @@ func on_ui(a: String, v) -> void:
 			_new_match(Carreira.default_teams()); jogo.sorteia_ambiente(night); jogo.anuncia_clima()
 			jogo.taca = ultimo_taca
 		"menu": _show_menu()
+		"novidades": ui.show_novidades()
 		"tut_click": if jogo: jogo.tut_click()
 		"cap": if jogo: ui.show_card(jogo, v, "")
 

@@ -475,8 +475,36 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 	hb.add_child(_btn("Todo o som ligado" if som else "Todo o som desligado", func(): main.on_ui("som", null), Color(), 0, 16))
 	if best != "": menu_v.add_child(_lbl("Melhor nota: " + best, 15, DIM))
 	menu_v.add_child(_wrap("Teclas: WASD/setas mover · Shift correr · 1–6 decidir · R rever · C câmara · Espaço pausa · Esc menu", 13, DIM, 500))
-	menu_v.add_child(_lbl("Versão " + VERSAO.TXT, 13, DIM))
+	var vb := HBoxContainer.new(); vb.add_theme_constant_override("separation", 10); menu_v.add_child(vb)
+	vb.add_child(_lbl("Versão " + VERSAO.TXT, 13, DIM))
+	vb.add_child(_btn("Novidades", func(): main.on_ui("novidades", null), Color(), 0, 14))
 	menu.visible = true
+
+# lista do que mudou nas últimas versões (para quem testa saber o que procurar)
+const NOVIDADES := [
+	["Motor de jogo", "mais jogadores na área, cruzamentos para zonas, remates e cabeceamentos à primeira, contra-ataques e menos foras de jogo"],
+	["Guarda-redes", "sai aos cruzamentos para agarrar ou socar, e defende para o lado mais vezes"],
+	["Posicionamento", "no relatório, mapa de calor do árbitro, diagonal e distância à bola"],
+	["Jogo da taça", "empate dá prolongamento e penáltis em 3D (guarda-redes adiantado, paradinha); também no Mundial da carreira"],
+	["Anúncio ao estádio", "depois de uma revisão do VAR explicas a decisão ao microfone"],
+	["Descontos", "aos 90' és tu que escolhes os minutos; aparece a placa do 4.º árbitro"],
+	["Vistoria e sorteio", "antes do apito: joias, caneleiras, cores (Lei 4) e a moeda (Lei 8)"],
+	["Calor extremo", "pausas de hidratação aos 30' e 75' nos dias de muito calor"],
+	["Festejos", "quem marca corre para a bandeirola e os colegas vão atrás"],
+	["Lesões e confrontos", "jogador a sangrar (Lei 5), lançamento mal executado (Lei 15), confrontos depois de entradas duras (Lei 12)"],
+	["Relatório", "estatísticas do jogo: posse, remates, ocasiões, cantos e faltas"]]
+func show_novidades() -> void:
+	hide_all()
+	_clear(report_v)
+	report_v.add_child(_lbl("Novidades", 26, GOLD))
+	report_v.add_child(_wrap("O que mudou desde a versão 50 (12 de outubro).", 15, DIM, 900))
+	for n in NOVIDADES:
+		var h := HBoxContainer.new(); h.add_theme_constant_override("separation", 12); report_v.add_child(h)
+		var t := _lbl(str(n[0]), 17, INK); t.custom_minimum_size = Vector2(210, 0); h.add_child(t)
+		h.add_child(_wrap(str(n[1]), 16, DIM, 640))
+	_sep(report_v)
+	report_v.add_child(_btn("Menu", func(): main.on_ui("menu", null)))
+	report.visible = true
 
 # ---------- carreira ----------
 func show_career(car: Carreira) -> void:

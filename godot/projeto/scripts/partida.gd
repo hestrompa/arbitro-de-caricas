@@ -2844,7 +2844,7 @@ func _molho_step(dt: float) -> void:
 	molho.t = -99.0
 	ask_open("Confusão depois da entrada: o %d %s %s." % [ag.num, de_t(ag.team), str(it[0]) % ("o %d %s" % [vi.num, de_t(vi.team)])], "Confronto entre jogadores",
 		[{"d": "amarelo", "label": "Amarelo ao %d" % ag.num, "sw": "amarelo"}, {"d": "vermelho", "label": "Vermelho ao %d" % ag.num, "sw": "vermelho"},
-		 {"d": "dois", "label": "Amarelo aos dois", "small": "%d e %d %s" % [ag.num, vi.num, de_t(vi.team)]}, {"d": "nada", "label": "Separar e acalmar", "small": "sem cartões"}],
+		 {"d": "dois", "label": "Amarelo aos dois", "small": "%d %s e %d %s" % [ag.num, de_t(ag.team), vi.num, de_t(vi.team)]}, {"d": "nada", "label": "Separar e acalmar", "small": "sem cartões"}],
 		func(c): _molho_res(c), 3)
 func _molho_res(c: String) -> void:
 	var ag: Pl = players[molho.agr]
