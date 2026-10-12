@@ -1503,6 +1503,29 @@ func _sorteio_pen(c: String) -> void:
 		manage.append({"minute": minute(), "what": "Sorteio antes dos penáltis", "dec": {"dois": "Dois sorteios", "um": "Um só sorteio", "casa": "Sem sorteio"}[c], "pts": pts, "why": why})
 		toast(why, 2.8)
 	feed("Sorteio: começa%s %s." % ["m" if str(teams[first].get("art", "o")).ends_with("s") else "", art_t(first)], "info")
+	_reduz_check()
+# Lei 10: se uma equipa tem mais jogadores do que a outra, reduz para o mesmo número antes dos penáltis
+func _reduz_check() -> void:
+	var n0: int = active().filter(func(q): return q.team == 0).size()
+	var n1: int = active().filter(func(q): return q.team == 1).size()
+	if n0 == n1 or not training.is_empty() or tut or not ask.is_empty():
+		later(2.0, pen_seguinte); return
+	var maior := 0 if n0 > n1 else 1
+	var n: int = mini(n0, n1)
+	var opts := [{"d": "reduz", "label": "%s reduzem para %d" % [cap_t(maior), n], "small": "o capitão diz quem fica de fora"}, {"d": "todos", "label": "Cada equipa bate com os que tem", "small": "%d contra %d" % [maxi(n0, n1), n]}]
+	opts.shuffle()
+	ask_open("Antes dos penáltis: %s acabaram com %d jogadores e %s com %d." % [art_t(maior), maxi(n0, n1), art_t(1 - maior), n], "Penáltis com expulsões", opts, func(c): _reduz_res(c, maior, n, maxi(n0, n1)), 0)
+func _reduz_res(c: String, maior: int, n: int, nmax: int) -> void:
+	var pts := 1.0 if c == "reduz" else 0.0
+	var why := "Certo: as duas equipas batem com o mesmo número de jogadores" if pts == 1 else "Lei 10: a equipa com mais jogadores reduz para o número do adversário antes dos penáltis"
+	if c == "reduz":
+		var lst: Array = desempate.ordem[maior]
+		var alvo: int = (desempate.ordem[1 - maior] as Array).size()
+		while lst.size() > alvo: lst.pop_back()
+		feed("%s reduzem para %d jogadores para os penáltis." % [cap_t(maior), n], "info")
+	ctrl(1.0 if pts == 1 else -3.0)
+	manage.append({"minute": minute(), "what": "Penáltis com %d contra %d jogadores" % [nmax, n], "dec": "Reduzir" if c == "reduz" else "Bater com todos", "pts": pts, "why": why})
+	toast(why, 2.6)
 	later(2.0, pen_seguinte)
 func pen_seguinte() -> void:
 	var D := desempate

@@ -17,6 +17,7 @@ func _initialize():
 		if m.modo == "jogo" and m.jogo.mode == "play" and not foto2d and m.jogo.desempate.a_bater:
 			for i in 40: await process_frame
 			root.get_viewport().get_texture().get_image().save_png(OUT + "taca_2d.png"); foto2d = true
+		if m.modo == "jogo" and m.jogo.mode == "pergunta": m.on_ui("ask", 0)
 		if m.modo == "gesto": m._end_gesture()
 		if (m.modo == "lance" or m.modo == "var") and m.dec_shown:
 			if not foto3d:
