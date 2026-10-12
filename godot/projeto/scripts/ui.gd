@@ -233,7 +233,15 @@ func show_dec(choices: Array, extra: String) -> void:
 		i += 1
 		var d: String = c
 		var campo: bool = main.modo == "var" and str(main.L.get("var_campo", "")) == d
-		dec_row.add_child(_btn("%d  %s%s" % [i, Partida.DEC_LABEL[d], "  (campo)" if campo else ""], func(): main.on_ui("decide", d), DEC_COL.get(d, Color(0.25, 0.3, 0.35)), 130, 18))
+		var txt: String = "%d  %s%s" % [i, Partida.DEC_LABEL[d], "  (campo)" if campo else ""]
+		if main.modo == "var" and main.jogo and main.jogo.var_mode:
+			# protocolo: check completo (fica a decisão de campo), revisão no monitor ou revisão só do VAR (decisões de facto)
+			if campo: txt = "%d  Confirmar: %s" % [i, Partida.DEC_LABEL[d]]
+			elif d == "identidade": txt = "%d  Jogador errado" % i
+			else: txt = "%d  %s %s" % [i, "Só VAR:" if main.jogo.var_factual(main.L) else "Monitor:", Partida.DEC_LABEL[d]]
+			dec_row.add_child(_btn(txt, func(): main.on_ui("decide", d), Color("2f8a4a") if campo else DEC_COL.get(d, Color(0.25, 0.3, 0.35)), 0, 15))
+			continue
+		dec_row.add_child(_btn(txt, func(): main.on_ui("decide", d), DEC_COL.get(d, Color(0.25, 0.3, 0.35)), 130, 18))
 	dec_row.add_child(_btn("R  Rever", func(): main.on_ui("replay", null), Color(0.2, 0.24, 0.3), 0, 16))
 	dec_row.add_child(_btn("C  Câmara", func(): main.on_ui("camera", null), Color(0.2, 0.24, 0.3), 0, 16))
 	if main.modo != "lance" and main.lance != 9:

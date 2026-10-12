@@ -17,8 +17,13 @@ func _initialize():
 			if o != "" and shots < 2:
 				for i in 20: await process_frame
 				root.get_viewport().get_texture().get_image().save_png(o + "/var%d.png" % shots); shots += 1
-			var d: String = m.L.var_campo if OS.get_environment("CONFIRMA") == "1" else (m.L.truth if m.jogo.kind_of(m.L) != "offside" else ("fora" if m.L.truth == "fora" else "emjogo"))
-			print("  verificação %d': campo %s  verdade %s  escolho %s" % [m.L.minute, m.L.var_campo, m.L.truth, d])
+			var d0: String = m.L.var_campo
+			var tr: String = m.L.truth if m.jogo.kind_of(m.L) != "offside" else ("fora" if m.L.truth == "fora" else "emjogo")
+			var d: String = d0
+			if OS.get_environment("CONFIRMA") != "1":
+				if m.L.has("ident"): d = "identidade"
+				elif not m.jogo.lance_certo(m.L, d0) and m.jogo.needs_var(m.L, d0): d = tr
+			print("  check %d': %s | campo %s  verdade %s  escolho %s  ident %s" % [m.L.minute, m.L.get("var_tit", ""), m.campo_txt(), m.L.truth, d, m.L.get("ident", "-")])
 			m._decide(d)
 		await process_frame
 	await process_frame

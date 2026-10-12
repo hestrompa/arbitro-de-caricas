@@ -23,6 +23,9 @@ func _initialize():
 					var sm: Array = o.map(func(x): return x.get("small", ""))
 					if "obrigatório (Lei 12)" in sm: pick = 1; cont["festejos (pergunta)"] = cont.get("festejos (pergunta)", 0) + 1
 					elif "esperar" in ds: pick = ds.find("linha")
+					elif "parar" in ds: pick = ds.find("parar")
+					elif "posse" in ds: pick = ds.find("gr") if "gr" in ds else ds.find("posse")
+					elif "canto" in ds: pick = ds.find("canto")
 					elif "repetir" in ds and "pontapé de baliza outra vez" in sm: pick = ds.find("repetir")
 					elif o[1].get("label", "") == "Afastar a 1 m": pick = 1
 					if o[1].get("label", "") == "Afastar a 1 m": cont["barreira 1 m"] = cont.get("barreira 1 m", 0) + 1
@@ -33,7 +36,7 @@ func _initialize():
 			S.tick(1.0 / 30.0)
 		for m in S.manage:
 			var w: String = m.what
-			if w.begins_with("Festejos") or w.contains("pontapé de baliza") or w.contains("devagar") or w.contains("barreira"):
+			if w.begins_with("Festejos") or w.contains("pontapé de baliza") or w.contains("devagar") or w.contains("barreira") or w.contains("Guarda-redes com") or w.contains("caído") or w.contains("Choque") or w.contains("Recomeço"):
 				cont[w] = cont.get(w, 0) + 1
 				print("  jogo %d  %d'  %s -> %s  (%s)" % [j, m.minute, w, m.dec, m.pts])
 		for ti in 2: subs_tot += S.subs[ti].n; paragens_tot += S.subs[ti].paragens

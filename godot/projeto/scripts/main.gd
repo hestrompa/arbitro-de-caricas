@@ -1869,15 +1869,16 @@ func _lance_ui(delta: float) -> void:
 		var sub := "Decisão de campo: " + str(Partida.DEC_LABEL.get(L.get("var_campo", L.get("var_first", "")), "")) + " · C câmara · R repetir · S lento · Espaço pausa"
 		if jogo.var_mode:
 			if not paused: L.var_t = float(L.get("var_t", 0.0)) + delta / maxf(Engine.time_scale, 0.01)
-			sub += " · a verificar há %d s" % int(L.get("var_t", 0.0))
+			sub = "Campo: %s · %s · check há %d s · C câmara · R repetir · S lento" % [campo_txt(), "o árbitro aguarda" if L.get("goal_ctx", false) or str(L.var_campo) != "siga" else "o jogo seguiu (check silencioso)", int(L.get("var_t", 0.0))]
 		if lance == 9 and sc.has("lines"):
 			var gap: float = (var_line[0] - var_line[1]) * float(sc.dir)
 			sub = "Linhas: Tab troca (vermelha = atacante, azul = penúltimo defesa) · setas mexem · C câmara · atacante %s %d cm %s" % ["", int(round(absf(gap) * 100)), "à frente" if gap > 0 else "atrás"]
-		ui.info(("SALA DO VAR · %d' · confirma a decisão de campo ou escolhe outra (só erros claros e óbvios)" if jogo.var_mode else "MONITOR DO VAR · %d'") % L.minute, sub)
+		ui.info(("SALA DO VAR · CHECK · %d' · " % L.minute + str(L.get("var_tit", ""))) if jogo.var_mode else ("MONITOR DO VAR · %d'" % L.minute), sub)
 	if dec_shown:
 		# no monitor do VAR não há relógio: vês o lance as vezes que precisares
 		if modo == "var":
-			ui.dec_text("Decide: teclas 1–%d   (sem limite de tempo)" % jogo.choices_for(L).size())
+			if jogo.var_mode: ui.dec_text("Teclas 1–%d · verde: check completo · as outras recomendam revisão · sem limite de tempo" % jogo.choices_for(L).size())
+			else: ui.dec_text("Decide: teclas 1–%d   (sem limite de tempo)" % jogo.choices_for(L).size())
 			return
 		if not paused: dec_left -= delta
 		ui.dec_text("Decide: teclas 1–%d   (%d s)" % [jogo.choices_for(L).size(), int(ceil(maxf(dec_left, 0.0)))])
@@ -1886,15 +1887,44 @@ func _lance_ui(delta: float) -> void:
 # modo VAR: cada lance passa pela sala; os que não se podem rever (faltas no meio-campo, amarelos) o árbitro decide sozinho
 func _var_sala() -> void:
 	var d0 := jogo.ai_campo(L)
+	# identidade errada: o árbitro acerta na infração mas mostra o cartão a um colega do infrator
+	var tr := str(L.truth)
+	if tr in ["amarelo", "vermelho"] and d0 in ["amarelo", "vermelho"] and not L.get("goal_ctx", false) and L.has("def") and int(L.def.get("id", -1)) >= 0 and randf() < 0.16:
+		var cands: Array = jogo.active().filter(func(q): return q.team == int(L.def.team) and q.id != int(L.def.id) and q.role != "gk" and q.p.distance_to(L.P) < 16.0)
+		if cands.size():
+			d0 = tr
+			L.ident = cands[randi() % cands.size()].num
 	L.var_campo = d0; L.var_done = true
 	if not jogo.var_eligible(L, d0) and not jogo.var_eligible(L, str(L.truth)):
 		L.ia = true
 		jogo.call_deferred("decide", d0)
 		return
-	ui.flash("VAR: a verificar"); som.beep()
-	jogo.feed("Lance aos %d': o árbitro deu %s. O VAR está a verificar." % [L.minute, str(Partida.DEC_LABEL.get(d0, d0)).to_lower()], "var")
+	var_tipo_txt()
+	ui.flash("CHECK DO VAR"); som.beep()
+	jogo.feed("%d': %s. Campo: %s. O VAR verifica." % [L.minute, L.var_tit, campo_txt()], "var")
 	flash_t = 0.9; modo = "flash"
 	var_pend = true
+# o que se está a verificar, como no protocolo (golo, penálti, vermelho direto, identidade, segundo amarelo)
+func var_tipo_txt() -> void:
+	var k := jogo.kind_of(L)
+	var t := ""
+	if L.get("goal_ctx", false):
+		if k == "offside": t = "Golo · fora de jogo no último passe" + (" (bandeira atrasada)" if L.get("atrasada", false) else "")
+		elif k == "linha": t = "Golo · a bola entrou toda?"
+		else: t = "Golo · falta do atacante na fase de ataque?"
+	elif str(L.var_campo) in ["amarelo", "vermelho", "maoAmarelo"] and not L.get("in_box", false) and str(L.var_campo) != "vermelho" and not jogo.segundo_amarelo(L, str(L.var_campo)): t = "Cartão · confirmar o infrator"
+	elif jogo.segundo_amarelo(L, str(L.var_campo)): t = "Segundo amarelo (expulsão)"
+	elif L.get("in_box", false) or k in ["pen", "mao"]: t = "Penálti / não penálti"
+	else: t = "Vermelho direto?"
+	L.var_tit = t
+func campo_txt() -> String:
+	var d0 := str(L.get("var_campo", ""))
+	var t := str(Partida.DEC_LABEL.get(d0, d0))
+	if d0 in ["amarelo", "vermelho", "maoAmarelo"] and L.has("def"): t += " ao %d" % int(L.get("ident", L.def.num))
+	if jogo.segundo_amarelo(L, d0): t += " (segundo amarelo)"
+	if jogo.kind_of(L) == "offside": t += " · bandeira " + ("levantada" if L.get("flag", false) else "em baixo")
+	return t
+
 func _decide(d: String, timed_out := false) -> void:
 	if not (modo in ["lance", "var"]) or not dec_shown: return
 	dec_shown = false
@@ -2307,6 +2337,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			"jogo":
 				if jogo.mode == "pergunta" and kc >= KEY_1 and kc <= KEY_4: jogo.ask_pick(kc - KEY_1)
 				elif jogo.mode == "protesto" and kc >= KEY_1 and kc <= KEY_4: jogo.resolve_protest(["ignorar", "afastar", "capitao", "amarelo"][kc - KEY_1])
+				elif kc == KEY_G: jogo.conta_mao()
 				elif kc == KEY_SPACE:
 					match_paused = not match_paused
 					ui.toast("Pausa · Espaço para continuar" if match_paused else "Continua", 1.5 if not match_paused else 999.0)

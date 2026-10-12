@@ -94,6 +94,7 @@ func _gui_input(e: InputEvent) -> void:
 	if e is InputEventScreenDrag: at = e.position
 	if at == null: return
 	var w: Vector2 = (at - org) / sc
+	if tap and btn_mao.has_point(at): jogo.conta_mao(); accept_event(); return
 	# tocar numa carica: ficha do jogador
 	if tap:
 		var best = null
@@ -107,6 +108,67 @@ func _gui_input(e: InputEvent) -> void:
 	jogo.ref_target = w
 	# toque longe do árbitro = corrida
 	jogo.sprint = jogo.ref.distance_to(w) > 18
+
+# guarda-redes com a bola nas mãos (luvas a piscar), contagem do árbitro com a mão e o botão para a começar;
+# jogador caído à espera de assistência (cruz vermelha)
+var btn_mao := Rect2()
+func _regras2d(rp: Vector2) -> void:
+	btn_mao = Rect2()
+	var pul := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 120.0)
+	if not jogo.gk8.is_empty():
+		var g = jogo.players[jogo.gk8.id]
+		var gc := w2s(g.p)
+		draw_arc(gc, sc * (1.8 + pul * 0.4), 0, TAU, 24, Color(0.4, 1.0, 0.9, 0.9), maxf(2.0, sc * 0.25))
+		draw_string(font, gc + Vector2(-60, -sc * 2.6), "bola nas mãos", HORIZONTAL_ALIGNMENT_CENTER, 120, 12, Color(0.75, 1.0, 0.95))
+		var f: int = jogo.gk8_falta()
+		if f >= 0:
+			# mão levantada do árbitro com os segundos que faltam
+			draw_rect(Rect2(rp + Vector2(-sc * 0.35, -sc * 4.6), Vector2(sc * 0.7, sc * 2.6)), Color(0.98, 0.85, 0.7))
+			draw_string(font, rp + Vector2(-40, -sc * 5.2), str(f), HORIZONTAL_ALIGNMENT_CENTER, 80, int(maxf(18.0, sc * 2.6)), Color(1.0, 0.86, 0.35))
+		elif jogo.mode == "play":
+			var bw := 250.0
+			btn_mao = Rect2(Vector2(size.x / 2 - bw / 2, size.y - 64), Vector2(bw, 38))
+			draw_rect(btn_mao, Color(0.1, 0.45, 0.42, 0.92))
+			draw_rect(btn_mao, Color(0.6, 1.0, 0.95, 0.4 + 0.5 * pul), false, 2.0)
+			draw_string(font, btn_mao.position + Vector2(0, 25), "G  Contar 5 s com a mão", HORIZONTAL_ALIGNMENT_CENTER, bw, 16, Color.WHITE)
+	if jogo.var_mode: _sala_var()
+	if not jogo.lesao.is_empty():
+		var q = jogo.players[jogo.lesao.id]
+		var c := w2s(q.p) + Vector2(sc * 1.4, -sc * 1.4)
+		var k := sc * 0.55
+		draw_rect(Rect2(c - Vector2(k * 1.5, k * 0.5), Vector2(k * 3, k)), Color(0.9, 0.15, 0.15, 0.6 + 0.4 * pul))
+		draw_rect(Rect2(c - Vector2(k * 0.5, k * 1.5), Vector2(k, k * 3)), Color(0.9, 0.15, 0.15, 0.6 + 0.4 * pul))
+
+# modo Sala do VAR: o 2D é a câmara principal; em baixo, a linha do tempo dos checks; bandeira em espera no assistente
+func _sala_var() -> void:
+	var A: Dictionary = jogo.atraso_band
+	if not A.is_empty():
+		var i := 1 if jogo.dirs(int(A.team)) > 0 else 0
+		var ap := w2s(jogo.ast[i])
+		var pul := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 90.0)
+		draw_rect(Rect2(ap + Vector2(-2, -sc * 3.2), Vector2(sc * 1.3, sc * 0.9)), Color(1.0, 0.85, 0.1, 0.5 + 0.5 * pul))
+		draw_line(ap + Vector2(-2, -sc * 3.2), ap, Color(0.9, 0.9, 0.9), 2.0)
+		draw_string(font, ap + Vector2(-90, -sc * 3.6), "bandeira em espera", HORIZONTAL_ALIGNMENT_CENTER, 180, 13, Color(1.0, 0.9, 0.4))
+	var x0 := 40.0
+	var w := size.x - 80.0
+	var y := size.y - 22.0
+	draw_rect(Rect2(x0 - 8, y - 26, w + 16, 40), Color(0.02, 0.05, 0.12, 0.85))
+	draw_line(Vector2(x0, y), Vector2(x0 + w, y), Color(0.6, 0.7, 0.9, 0.6), 2.0)
+	for m in [0, 45, 90]:
+		var mx: float = x0 + w * float(m) / 95.0
+		draw_line(Vector2(mx, y - 5), Vector2(mx, y + 5), Color(0.6, 0.7, 0.9, 0.6), 1.5)
+	var nowx: float = x0 + w * minf(1.0, float(jogo.t) / Partida.MATCH_SECONDS * 90.0 / 95.0)
+	draw_circle(Vector2(nowx, y), 4.0, Color(1, 1, 1, 0.9))
+	var rev := 0
+	for c in jogo.var_checks:
+		var cx: float = x0 + w * float(c.minute) / 95.0
+		var tp: String = c.get("tipo", "check")
+		var col := Color("4cc46a") if tp == "check" else (Color("4ad3e8") if tp in ["so_var", "ident"] else Color("ff9b3d"))
+		if tp != "check": rev += 1
+		draw_circle(Vector2(cx, y), 6.0, col)
+		draw_string(font, Vector2(cx - 20, y - 9), "%d'" % int(c.minute), HORIZONTAL_ALIGNMENT_CENTER, 40, 11, col)
+	draw_string(font, Vector2(x0, y - 12), "SALA DO VAR  ·  checks %d  ·  revisões %d" % [jogo.var_checks.size(), rev], HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color(0.75, 0.85, 1.0))
+	draw_string(font, Vector2(x0 + w - 330, y - 12), "verde: check completo  laranja: monitor  azul: só VAR", HORIZONTAL_ALIGNMENT_LEFT, -1, 11, Color(0.6, 0.7, 0.85))
 
 func _star(c: Vector2, r: float) -> void:
 	var pts := PackedVector2Array()
@@ -222,6 +284,7 @@ func _draw() -> void:
 	draw_string(font, rp + Vector2(-sc * 2, sc * 0.45), "Á", HORIZONTAL_ALIGNMENT_CENTER, sc * 4, int(max(8.0, sc * 1.2)), Color("111111"))
 	if jogo.ref_target != null: draw_arc(w2s(jogo.ref_target), sc * 0.8, 0, TAU, 16, Color(1, 1, 0.4, 0.6), 2)
 	_ambiente(rp)
+	_regras2d(rp)
 	# placa do 4.º árbitro nas substituições: número que sai a vermelho, o que entra a verde
 	if not jogo.placa.is_empty():
 		var tr: Array = jogo.placa.trocas
