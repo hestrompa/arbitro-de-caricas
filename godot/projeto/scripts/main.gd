@@ -112,6 +112,7 @@ var end_data := {}
 var is_career := false
 # televisão: repetição com vários ângulos e câmara lenta; jogos à noite com luz artificial
 const TV_SHOTS := [[4, -1.4, 1.6, 1.0, "Câmara principal"], [2, -0.9, 1.1, 0.4, "Atrás do lance"], [3, -0.55, 0.8, 0.22, "De perto"]]
+var ultimo_taca := false         # "Jogar outra vez" repete o jogo da taça
 const RITMO := 1.5          # velocidade das caricas (com MATCH_SECONDS = 270, o jogo dura 3 minutos reais)
 var tv := {}
 # vídeo do observador: os lances mal decididos, cada um visto de quatro maneiras
@@ -2225,7 +2226,12 @@ func _show_menu() -> void:
 
 func on_ui(a: String, v) -> void:
 	match a:
-		"partida": _new_match(Carreira.default_teams()); jogo.sorteia_ambiente(night); jogo.anuncia_clima()
+		"partida": ultimo_taca = false; _new_match(Carreira.default_teams()); jogo.sorteia_ambiente(night); jogo.anuncia_clima()
+		"taca":
+			ultimo_taca = true
+			_new_match(Carreira.default_teams()); jogo.sorteia_ambiente(night); jogo.anuncia_clima()
+			jogo.taca = true
+			jogo.feed("Jogo da taça: se acabar empatado há prolongamento e, depois, penáltis.", "info")
 		"carreira", "career":
 			if not car.load_c(): car.new_career()
 			modo = "carreira"; _show_menu_bg(); ui.show_career(car)
@@ -2270,7 +2276,9 @@ func on_ui(a: String, v) -> void:
 		"ver_lance": _review(v)
 		"obs_video": _obs_start(v)
 		"entrevista": _entrevista(int(v))
-		"again": _new_match(Carreira.default_teams()); jogo.sorteia_ambiente(night); jogo.anuncia_clima()
+		"again":
+			_new_match(Carreira.default_teams()); jogo.sorteia_ambiente(night); jogo.anuncia_clima()
+			jogo.taca = ultimo_taca
 		"menu": _show_menu()
 		"tut_click": if jogo: jogo.tut_click()
 		"cap": if jogo: ui.show_card(jogo, v, "")

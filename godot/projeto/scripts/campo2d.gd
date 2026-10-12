@@ -311,9 +311,14 @@ func _draw() -> void:
 	var t0: Dictionary = jogo.teams[0]
 	var t1: Dictionary = jogo.teams[1]
 	draw_rect(Rect2(14, 12, 14, 14), t0.color); draw_rect(Rect2(14, 32, 14, 14), t1.color)
-	draw_string(font, Vector2(34, 25), "%s  %d" % [t0.name, jogo.score[0]], HORIZONTAL_ALIGNMENT_LEFT, 260, 17, Color(0.97, 0.97, 0.94))
-	draw_string(font, Vector2(34, 45), "%s  %d" % [t1.name, jogo.score[1]], HORIZONTAL_ALIGNMENT_LEFT, 260, 17, Color(0.97, 0.97, 0.94))
+	# no desempate, os penáltis marcados aparecem entre parênteses
+	var dsp: Dictionary = jogo.desempate
+	var pn := ["", ""] if dsp.is_empty() else ["  (%d)" % int(dsp.g[0]), "  (%d)" % int(dsp.g[1])]
+	draw_string(font, Vector2(34, 25), "%s  %d%s" % [t0.name, jogo.score[0], pn[0]], HORIZONTAL_ALIGNMENT_LEFT, 260, 17, Color(0.97, 0.97, 0.94))
+	draw_string(font, Vector2(34, 45), "%s  %d%s" % [t1.name, jogo.score[1], pn[1]], HORIZONTAL_ALIGNMENT_LEFT, 260, 17, Color(0.97, 0.97, 0.94))
 	var clk := jogo.clock_txt() + ("  2.ª parte" if jogo.half == 2 else ("  1.ª parte" if jogo.half == 0 else ""))
+	if not dsp.is_empty(): clk = "Penáltis"
+	elif jogo.prol > 0: clk = jogo.clock_txt() + "  Prolongamento"
 	if jogo.add_min > 0: clk += "  +%d'" % jogo.add_min
 	draw_string(font, Vector2(310, 36), clk, HORIZONTAL_ALIGNMENT_LEFT, -1, 20, Color(1.0, 0.86, 0.35))
 	var bx := maxf(500.0, size.x - 560)

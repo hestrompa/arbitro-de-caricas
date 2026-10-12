@@ -423,7 +423,7 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 	_clear(menu_v)
 	menu_v.add_child(_lbl("ÁRBITRO DE CARICAS", 34, GOLD))
 	menu_v.add_child(_wrap("És o árbitro. Acompanha o jogo de caricas de perto: os lances aparecem em 3D, vistos de onde estás, e tens poucos segundos para decidir.", 16, DIM, 500))
-	for it in [["Jogar partida", "partida", Color("2f8a4a")], ["Continuar carreira" if has_career else "Carreira", "carreira", Color("3a5fa8")], ["Sala do VAR (és o videoárbitro)", "modo_var", Color("12305e")], ["Treinar o VAR", "treino_var", Color()],
+	for it in [["Jogar partida", "partida", Color("2f8a4a")], ["Jogo da taça (prolongamento e penáltis)", "taca", Color("6a4a1a")], ["Continuar carreira" if has_career else "Carreira", "carreira", Color("3a5fa8")], ["Sala do VAR (és o videoárbitro)", "modo_var", Color("12305e")], ["Treinar o VAR", "treino_var", Color()],
 			["Primeiro jogo guiado", "tutorial", Color()], ["Treino de lances 3D", "treino3d", Color()]]:
 		var k: String = it[1]
 		menu_v.add_child(_btn(it[0], func(): main.on_ui(k, null), it[2], 500, 20))
