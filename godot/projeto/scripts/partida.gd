@@ -1301,21 +1301,56 @@ func goal(team: int) -> void:
 	if not desempate.is_empty(): pen_registo(true); return
 	if var_mode and goal_var(team): return
 	if goal_check(team): return
-	goal_award(team)
+	goal_award(team, true)
 	if not no_var and training.is_empty():
 		later(1.4, func(): if mode == "play": radio("VAR", "Golo verificado. Pode recomeçar."))
 
-func goal_award(team: int) -> void:
+func goal_award(team: int, festeja := false) -> void:
 	score[team] += 1; added += 0.4
 	toast("Golo " + de_t(team) + "!", 2.2)
 	sfx("cheer", 1.0 if team == HOME else 0.4); sfx("whistle", "short")
 	feed_goal(team)
 	crowd = clamp(crowd + (-18 if team == HOME else 8), 0, 100)
 	var k := kicker
-	kickoff(1 - team)
-	pause = 2.2
+	if festeja and mode == "play" and training.is_empty() and not tut and not var_mode and desempate.is_empty():
+		_festa_inicio(team, k if k and k.team == team and not k.off else null)
+	else:
+		kickoff(1 - team)
+		pause = 2.2
 	if k and k.team == team and not k.off and training.is_empty() and not tut and rng.randf() < 0.14:
 		later(1.2, func(): if mode == "play" and not k.off: _festejo(k))
+
+# festejos no 2D: quem marcou corre para a bandeirola de canto, os colegas vão atrás dele,
+# quem sofreu volta devagar para o seu meio-campo; depois todos regressam e há pontapé de saída
+var festa := {}
+func _festa_inicio(team: int, k: Pl) -> void:
+	var gx := opp_goal_x(team)
+	var y0: float = k.p.y if k else H / 2
+	var alvo := Vector2(gx - dirs(team) * 1.5, 1.5 if y0 < H / 2 else H - 1.5)
+	if k and rng.randf() < 0.35: alvo = Vector2(gx - dirs(team) * 10.0, -0.5 if y0 < H / 2 else H + 0.5)   # para a bancada
+	if k: alvo = k.p + (alvo - k.p).limit_length(20.0)
+	owner = null; target = null; bv = Vector2.ZERO; bvz = 0.0; bz = 0.0
+	bp = Vector2(clampf(bp.x, -1.2, W + 1.2), clampf(bp.y, H / 2 - GOAL_W / 2 + 0.4, H / 2 + GOAL_W / 2 - 0.4))
+	for p in players: p.run = 0; p.down = 0.0
+	festa = {"team": team, "k": k, "t": 0.0, "alvo": alvo}
+func _festa_step(dt: float) -> void:
+	festa.t += dt
+	var team: int = festa.team
+	var k: Pl = festa.k
+	var volta: bool = festa.t > 3.2
+	for p in active():
+		var tg: Vector2 = formation_pos(p)
+		var sp := 6.0
+		if not volta:
+			if p.team != team: sp = 2.0
+			elif p == k: tg = festa.alvo; sp = 7.5
+			elif p.role == "gk": tg = formation_pos(p) + Vector2(dirs(team) * 8.0, 0); sp = 4.0
+			elif k: tg = k.p + (p.p - k.p).normalized() * (1.0 + 0.25 * (p.id % 4)); sp = 7.2
+		move_to(p, tg, sp, dt)
+		p.p += p.v * dt
+	if festa.t > 4.8:
+		festa = {}
+		kickoff(1 - team)
 
 # ---------- fora de jogo ----------
 func offside_snap(p: Pl, m: Pl) -> void:
@@ -1608,6 +1643,10 @@ func _play_step(dt: float) -> void:
 		if taca and score[0] == score[1] and training.is_empty() and not tut: inicia_prolongamento(); return
 		end_match("fim"); return
 	if prol > 0 and prol_check(dt): return
+	if not festa.is_empty():
+		ref_step(dt); ast_step(dt); stress_step(dt)
+		if mode == "play": _festa_step(dt)
+		return
 	lance_cd -= dt
 	for k in 2: aggr[k] = max(0.05, aggr[k] - 0.012 * dt)
 	control = min(100.0, control + 0.05 * dt)
@@ -3757,6 +3796,7 @@ func half_check(dt := 0.0) -> void:
 const FOLGA_MAX := 3.0
 var fim_folga := 0.0
 func pode_acabar(dt: float) -> bool:
+	if not festa.is_empty(): return false
 	if bpen or not ask.is_empty() or not fk.is_empty() or not pend_card.is_empty(): return false
 	if parado_dono != null and parado_dono.penalty: return false
 	if pen_3d: return false

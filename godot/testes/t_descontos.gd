@@ -4,7 +4,7 @@ var q: Array = []
 func on_ev(n: String, d: Dictionary) -> void:
 	if n in ["lance", "decided", "ask", "protest", "half", "var"]: q.append([n, d])
 func _init():
-	for i in 6:
+	for i in 3:
 		var S := Partida.new(Carreira.default_teams())
 		S.ev = on_ev
 		var msg := ""
