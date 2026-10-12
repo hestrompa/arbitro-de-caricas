@@ -3544,6 +3544,24 @@ func _assistencia(parado: bool) -> void:
 	# Lei 5: quem é assistido em campo sai e só volta com autorização do árbitro
 	feed("Entra a equipa médica: o %d %s é assistido e sai do campo para voltar depois." % [p.num, de_t(p.team)], "info")
 	if not parado: toast("Bola fora: entra a equipa médica", 1.6)
+	if rng.randf() < 0.45: later(1.4, func(): _sangue(p))
+
+# Lei 5: quem sangra sai do campo e só volta com sinal do árbitro, sem sangue e sem sangue no equipamento
+func _sangue(p: Pl) -> void:
+	if mode != "play" or p.off or not ask.is_empty(): return
+	var onde: String = ["um corte na sobrancelha", "o nariz a sangrar", "um corte no joelho"][rng.randi() % 3]
+	ask_open("O %d %s tem %s e a camisola manchada de sangue. O médico diz que estanca em dois minutos." % [p.num, de_t(p.team), onde], "Jogador a sangrar",
+		[{"d": "sai", "label": "Sai e volta com o meu sinal", "small": "sem sangue, camisola trocada"}, {"d": "campo", "label": "Tratam-no dentro do campo", "small": "e segue a jogar"},
+		 {"d": "camisola", "label": "Troca a camisola e joga já", "small": "o sangue para sozinho"}], func(c): _sangue_res(p, c), 0)
+func _sangue_res(p: Pl, c: String) -> void:
+	var pts := 1.0 if c == "sai" else (0.3 if c == "camisola" else 0.0)
+	var why := "Certo: quem sangra sai e só volta com o sangue estancado e sem sangue no equipamento" if pts == 1 else "Lei 5: quem sangra tem de sair e só volta com o sinal do árbitro, já sem sangue"
+	ctrl(1.5 if pts == 1 else -2.0)
+	if pts == 1:
+		p.down = maxf(p.down, 3.0); added += 0.3
+		toast("O %d sai para estancar o sangue; volta com o teu sinal" % p.num, 2.2)
+	else: toast(why, 2.6)
+	manage.append({"minute": minute(), "what": "Jogador a sangrar: o %d %s" % [p.num, de_t(p.team)], "dec": {"sai": "Sai e volta com sinal", "campo": "Tratado em campo", "camisola": "Troca a camisola e joga"}[c], "pts": pts, "why": why})
 
 # ---------- livres diretos: barreira a 9,15 m ----------
 func fk_check(tk: Pl) -> void:
