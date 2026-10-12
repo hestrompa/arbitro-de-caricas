@@ -3147,6 +3147,7 @@ func _descontos_res(n: int, certo: int) -> void:
 	_mostra_descontos(n)
 func _mostra_descontos(n: int) -> void:
 	add_min = n
+	placa = {"t": 4.0, "desc": n}
 	toast("O 4.º árbitro mostra +%d' de descontos" % add_min, 2.6)
 	radio("4.º árbitro", "Vou mostrar mais %d." % add_min)
 	feed("Descontos: mais %d %s" % [add_min, "minutos." if add_min > 1 else "minuto."], "info")

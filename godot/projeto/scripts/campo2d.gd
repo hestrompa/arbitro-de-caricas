@@ -289,7 +289,15 @@ func _draw() -> void:
 	_ambiente(rp)
 	_regras2d(rp)
 	# placa do 4.º árbitro nas substituições: número que sai a vermelho, o que entra a verde
-	if not jogo.placa.is_empty():
+	if not jogo.placa.is_empty() and jogo.placa.has("desc"):
+		# placa dos descontos: número verde grande
+		var bw2 := 84.0; var bh2 := 44.0
+		var c2 := w2s(Vector2(W / 2, 0)) + Vector2(-bw2 / 2, -bh2 - 6)
+		c2.y = maxf(c2.y, TOP + 2)
+		draw_rect(Rect2(c2, Vector2(bw2, bh2)), Color(0.05, 0.05, 0.06, 0.92))
+		draw_rect(Rect2(c2, Vector2(bw2, bh2)), Color(1, 1, 1, 0.5), false, 1.5)
+		draw_string(font, Vector2(c2.x, c2.y + 34), "+%d" % int(jogo.placa.desc), HORIZONTAL_ALIGNMENT_CENTER, bw2, 30, Color("4dff6a"))
+	elif not jogo.placa.is_empty():
 		var tr: Array = jogo.placa.trocas
 		var bw := 92.0; var bh := 26.0 * tr.size() + 8.0
 		var c0 := w2s(Vector2(W / 2, 0)) + Vector2(-bw / 2, -bh - 6)

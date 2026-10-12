@@ -19,5 +19,8 @@ func _initialize():
 	J.t = J.MATCH_SECONDS + 0.1
 	for i in 30: await process_frame
 	root.get_viewport().get_texture().get_image().save_png(OUT + "descontos.png")
-	print("ask: ", J.mode, " manage: ", J.manage)
+	m.on_ui("ask", 2)
+	for i in 40: await process_frame
+	root.get_viewport().get_texture().get_image().save_png(OUT + "placa.png")
+	print("ask: ", J.mode, " manage: ", J.manage, " placa ", J.placa)
 	quit()
