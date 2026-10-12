@@ -1,3 +1,3 @@
 extends RefCounted
 # gerado pelo publicar.sh: número da publicação e hora de Lisboa
-const TXT := "66 · 12/10 20:09"
+const TXT := "67 · 12/10 20:11"

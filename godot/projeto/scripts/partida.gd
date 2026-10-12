@@ -3277,6 +3277,7 @@ func added_time_check() -> void:
 	if evento.get("estado", "espera") != "espera" and int(evento.get("min", 0)) >= 45: partes.append({"tochas": "tochas no relvado", "invasao": "uma invasão de campo", "apagao": "um apagão"}.get(evento.get("k", ""), "uma interrupção"))
 	var msg_ := "Fim dos 90 minutos. O 4.º árbitro espera o teu sinal: quantos minutos de descontos?"
 	if partes.size(): msg_ += " Tempo perdido na 2.ª parte: " + ", ".join(partes) + "."
+	msg_ += " (Conta cerca de meio minuto por golo e por substituição, mais o tempo do VAR, das lesões e das paragens longas.)"
 	ask_open(msg_, "Descontos", opts, func(c): _descontos_res(int(c), certo), 0)
 func _descontos_res(n: int, certo: int) -> void:
 	var dif := n - certo
