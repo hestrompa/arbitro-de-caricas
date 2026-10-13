@@ -1070,6 +1070,15 @@ func tackle(def: Pl, att: Pl) -> void:
 	if mode == "play" and absf(def.p.x - own_goal_x(def.team)) < A("canto_zona", 16.0) and rng.randf() < A("canto_corte", 0.3):
 		att.down = 0.35; ult_passe = false
 		corner(1 - def.team, 0.5 if bp.y < H / 2 else H - 0.5); return
+	# desarme encostado à linha lateral: a bola sai muitas vezes pela linha (lançamento para quem conduzia)
+	var dlin: float = minf(att.p.y, H - att.p.y)
+	if mode == "play" and dlin < A("lat_zona", 8.0) and rng.randf() < A("lat_corte", 0.6):
+		att.down = 0.6; ult_passe = false; owner = null; target = null; last = def.team
+		var sy := -1.0 if att.p.y < H / 2 else 1.0
+		bv = Vector2(rand(-2.5, 2.5), sy * (dlin * 0.8 + rand(5.0, 7.0))); bvz = 0; bz = 0
+		no_pick = def; no_pick_t = 0.5
+		if dbg_on: dbg["lat_corte"] = dbg.get("lat_corte", 0) + 1
+		return
 	owner = def; last = def.team; target = null; def.cd = 0.3; att.down = 0.35; def.dribble = Vector2.ZERO
 
 # ---------- física ----------
@@ -1129,6 +1138,7 @@ func physics(dt: float) -> void:
 	if owner == null and bz < 1.6 and sp > 6.0 and bp.distance_to(ref) < 0.55 and arb_toque_n < 1 and mode == "play" and training.is_empty() and not tut and not var_mode and desempate.is_empty():
 		_bola_arbitro(); return
 	if bp.y < 0 or bp.y > H:
+		if dbg_on: dbg["lateral"] = dbg.get("lateral", 0) + 1
 		throw_in(); return
 	if bp.x < 0 or bp.x > W:
 		var side := 0 if own_goal_x(0) == (0.0 if bp.x < 0 else W) else 1   # equipa que defende esta baliza
@@ -1200,6 +1210,14 @@ func physics(dt: float) -> void:
 	if best.role != "gk" and bz > 0.6 and kicker != null and kicker.team != best.team and in_own_box(best.team, best.p) and mode == "play" and rng.randf() < A("canto_cab", 0.4):
 		ult_passe = false
 		corner(1 - best.team, 0.5 if bp.y < H / 2 else H - 0.5)
+		return
+	# passe cortado perto da linha lateral: o defesa só lhe chega com a ponta da bota e a bola sai (lançamento)
+	var dlat: float = minf(bp.y, H - bp.y)
+	if best.role != "gk" and ult_passe and kicker != null and kicker.team != best.team and mode == "play" and dlat < A("lat_zona2", 12.0) and rng.randf() < A("desvio_lat", 0.6):
+		var sy := -1.0 if bp.y < H / 2 else 1.0
+		bv = Vector2(bv.x * 0.3, sy * (dlat * 0.8 + rand(5.0, 7.0))); bz = 0; bvz = 0.6
+		last = best.team; no_pick = best; no_pick_t = 0.6; target = null; ult_passe = false
+		if dbg_on: dbg["desvio_lat"] = dbg.get("desvio_lat", 0) + 1
 		return
 	if dbg_on and kicker != null and kicker.team != best.team:
 		var zk := rel(kicker.team, bp.x)
