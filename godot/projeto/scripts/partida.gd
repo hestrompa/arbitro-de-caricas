@@ -405,10 +405,10 @@ func atributos(p: Pl, base: float, r) -> void:
 	p.hard_k = 1.7 if "duro" in p.tr else 1.0
 	p.sim_k = 2.6 if "simulador" in p.tr else 1.0
 func pass_err(p: Pl, d: float) -> Vector2:
-	var e := (100 - p.pas) / 100.0 * d * 0.11
+	var e := (100 - p.pas) / 100.0 * d * A("pass_e", 0.11)
 	return Vector2(rand(-1, 1), rand(-1, 1)) * e
 func shot_spread(p: Pl) -> float: return 0.5 + (100 - p.fin) / 100.0 * 0.45
-func tackle_p(d: Pl, a: Pl) -> float: return clamp(0.42 + (d.tck - a.drb) / 110.0, 0.2, 0.8)
+func tackle_p(d: Pl, a: Pl) -> float: return clamp(A("tck_b", 0.42) + (d.tck - a.drb) / 110.0, 0.2, 0.8)
 func gk_bonus(gk: Pl) -> float: return (gk.rel - 70) * 0.004
 
 # ---------- inteligência das caricas ----------
@@ -614,6 +614,7 @@ func on_ball(p: Pl, dt: float) -> void:
 	# quem lê bem o jogo vê a pressão a chegar e solta a bola antes do desarme (o desarme é a 1,9 m)
 	var alerta := A("alerta0", 1.25) + p.dec * A("alerta_dec", 0.0)
 	if rel(p.team, p.p.x) < A("rec_def", 16.5) and p.role != "gk": alerta = A("alerta_def", 2.4)
+	elif rel(p.team, p.p.x) < A("mei_lim", 68.0) and p.role != "gk": alerta = maxf(alerta, A("alerta_mei", 1.25))   # a meio-campo, com alguém em cima, solta a bola
 	if p.cd > 0 and not (press < alerta and p.desde > 0.2):
 		var dir := p.dribble if p.dribble != Vector2.ZERO else (goal - p.p).normalized()
 		var sp := 0.0 if p.role == "gk" else p.spd * 0.8
@@ -697,7 +698,9 @@ func on_ball(p: Pl, dt: float) -> void:
 			choices.append(cz)
 	if p.role != "gk" and not p.set_piece:
 		var perde_aqui: float = (amea(1 - p.team, p.p) + base_v + 0.02) * caut     # perder a bola a conduzir apanha a equipa desequilibrada
-		for k in range(-3, 4):
+		# perto da área não se conduz para o lado nem para trás (andar às voltas): ou se ganha a linha ou se solta
+		var kmax := 3 if rel(p.team, p.p.x) < A("drib_lim", 200.0) else int(A("drib_k", 2))
+		for k in range(-kmax, kmax + 1):
 			var dir := to_goal.rotated(k * PI / 6)
 			var a := p.p + dir * 4.5
 			if a.x < 1.5 or a.x > W - 1.5 or a.y < 1.5 or a.y > H - 1.5: continue
@@ -1020,6 +1023,7 @@ func ai_step(dt: float) -> void:
 
 # a bola muda de dono: quem estava à frente arranca logo para as costas da defesa que ficou subida
 func transicao(o: Pl) -> void:
+	if dbg_on: dbg["posse_troca"] = dbg.get("posse_troca", 0) + 1
 	# quem perdeu a bola demora a perceber e a travar (quem lê melhor o jogo reage mais depressa)
 	for q in active():
 		if q.team != o.team and q.role != "gk" and q.p.distance_to(o.p) > 4.0: q.reage = rand(0.25, 0.7) * (1.35 - q.dec / 200.0) * A("reage_k", 1.0)
@@ -2829,6 +2833,22 @@ func resolve_protest(choice: String, timed_out := false) -> void:
 			aggr[team] = max(0.05, aggr[team] - 0.1); cap_trust[team] = clamp(tr + 0.08, 0, 1); add_stress(-6); dc = 4; m = "Falaste com " + w + ": acalmou os colegas"
 		else:
 			cap_trust[team] = clamp(tr - 0.1, 0, 1); add_stress(3); dc = -2; m = "Falaste com " + w + ", mas não te deu ouvidos"
+	elif choice == "so_capitao":
+		# protocolo do capitão (UEFA): o árbitro faz o sinal e só o capitão se pode aproximar para falar
+		var cap := captain_of(team)
+		var teimoso: Pl = null
+		if P.ids.size() > 1 and I > 0.5 and teimoso_n < 2 and rng.randf() < I - 0.15:
+			teimoso_n += 1
+			for id in P.ids:
+				if players[id] != cap and not players[id].off: teimoso = players[id]; break
+		var w := "o capitão " + de_t(team) + (" (%d)" % cap.num if cap else "")
+		if teimoso == null:
+			dc = 4.0 if I < 0.8 else 1.5; aggr[team] = max(0.05, aggr[team] - 0.08); cap_trust[team] = clamp(cap_trust[team] + 0.05, 0, 1); add_stress(-4)
+			m = "Fizeste o sinal: os outros afastam-se e só " + w + " fala contigo"
+		else:
+			dc = -1.0; add_stress(2)
+			m = "Fizeste o sinal, mas o %d %s continua a protestar" % [teimoso.num, de_t(teimoso.team)]
+			later(0.9, func(): _teimoso(teimoso))
 	else:
 		var p: Pl = players[P.ids[0]]
 		if p == captain_of(p.team): cap_trust[p.team] = clamp(cap_trust[p.team] - 0.25, 0, 1)
@@ -2850,6 +2870,30 @@ func resolve_protest(choice: String, timed_out := false) -> void:
 	mode = "play"; pause = max(pause, 0.8)
 	emit("protest_end")
 	if control <= 10: end_match("abandonado")
+
+var teimoso_n := 0
+# depois do sinal do capitão, quem não é capitão e continua a protestar leva amarelo (protocolo do capitão)
+func _teimoso(p: Pl) -> void:
+	if mode != "play" or p.off or not ask.is_empty(): return
+	ask_open("Depois do teu sinal, o %d %s continua a gritar contigo. Só o capitão %s pode falar com o árbitro." % [p.num, de_t(p.team), de_t(p.team)], "Só o capitão fala",
+		[{"d": "amarelo", "label": "Amarelo", "small": "por protestos, depois do sinal", "sw": "amarelo"}, {"d": "aviso", "label": "Mais um aviso", "small": "falas com ele outra vez"},
+		 {"d": "deixar", "label": "Deixar", "small": "ele acaba por ir embora"}], func(c): _teimoso_res(p, c), 0)
+func _teimoso_res(p: Pl, c: String) -> void:
+	var pts := 1.0 if c == "amarelo" else (0.4 if c == "aviso" else 0.0)
+	var why := "Certo: depois do sinal, quem não é capitão e continua a protestar leva amarelo" if pts == 1 else ("Já tinha havido sinal: um segundo aviso tira-te autoridade" if c == "aviso" else "Deixaste um jogador ignorar o sinal: os outros vão fazer o mesmo")
+	if c == "amarelo":
+		p.yellow += 1; ctrl(5.0); aprende(p.team, "prot", -0.4)
+		var m := "Amarelo ao %d %s: só o capitão fala" % [p.num, de_t(p.team)]
+		if p.yellow >= 2:
+			p.off = true; m = "Segundo amarelo: %d %s expulso por protestos" % [p.num, de_t(p.team)]
+			if owner == p: owner = null
+			_novo_marcador()
+		feed(m + ".", "card"); toast(m, 2.2); sfx("whistle", "short")
+	else:
+		ctrl(-2.0 if c == "aviso" else -5.0); aggr[p.team] += 0.08 if c == "aviso" else 0.15
+		if c == "deixar": aprende(p.team, "prot", 0.3)
+		toast(why, 2.6)
+	manage.append({"minute": minute(), "what": "O %d %s ignora o sinal do capitão" % [p.num, de_t(p.team)], "dec": {"amarelo": "Amarelo", "aviso": "Mais um aviso", "deixar": "Deixar"}[c], "pts": pts, "why": why})
 
 # confronto depois de uma entrada dura: jogadores juntam-se e um deles passa das marcas (Lei 12)
 var molho := {}

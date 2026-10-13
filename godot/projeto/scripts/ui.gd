@@ -269,7 +269,7 @@ func show_protest(txt: String) -> void:
 	_clear(ask_v)
 	ask_v.add_child(_lbl("PROTESTO", 14, BAD))
 	ask_v.add_child(_wrap(txt, 19, INK, 520))
-	var opts := [["ignorar", "Ignorar", "seguir em frente"], ["afastar", "Afastar", "mandar recuar com firmeza"], ["capitao", "Capitão", "pedir ao capitão que os acalme"], ["amarelo", "Amarelo", "a quem protesta mais"]]
+	var opts := [["ignorar", "Ignorar", "seguir em frente"], ["afastar", "Afastar", "mandar recuar com firmeza"], ["capitao", "Capitão", "pedir ao capitão que os acalme"], ["so_capitao", "Só o capitão", "sinal: os outros afastam-se"], ["amarelo", "Amarelo", "a quem protesta mais"]]
 	var i := 0
 	for o in opts:
 		i += 1
@@ -486,6 +486,7 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 
 # lista do que mudou nas últimas versões (para quem testa saber o que procurar)
 const NOVIDADES := [
+	["Só o capitão fala", "nos protestos podes fazer o sinal: os outros afastam-se e quem continua a gritar leva amarelo"],
 	["Motor de jogo", "mais jogadores na área, cruzamentos para zonas, remates e cabeceamentos à primeira, contra-ataques e menos foras de jogo"],
 	["Guarda-redes", "sai aos cruzamentos para agarrar ou socar, e defende para o lado mais vezes"],
 	["Posicionamento", "no relatório, mapa de calor do árbitro, diagonal e distância à bola"],

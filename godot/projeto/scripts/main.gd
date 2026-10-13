@@ -2355,7 +2355,7 @@ func _unhandled_input(e: InputEvent) -> void:
 				if kc == KEY_SPACE or kc == KEY_ENTER: _end_gesture()
 			"jogo":
 				if jogo.mode == "pergunta" and kc >= KEY_1 and kc <= KEY_4: jogo.ask_pick(kc - KEY_1)
-				elif jogo.mode == "protesto" and kc >= KEY_1 and kc <= KEY_4: jogo.resolve_protest(["ignorar", "afastar", "capitao", "amarelo"][kc - KEY_1])
+				elif jogo.mode == "protesto" and kc >= KEY_1 and kc <= KEY_5: jogo.resolve_protest(["ignorar", "afastar", "capitao", "so_capitao", "amarelo"][kc - KEY_1])
 				elif kc == KEY_G: jogo.conta_mao()
 				elif kc == KEY_SPACE:
 					match_paused = not match_paused
