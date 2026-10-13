@@ -2895,7 +2895,7 @@ func _teimoso(p: Pl) -> void:
 	if mode != "play" or p.off or not ask.is_empty(): return
 	ask_open("Depois do teu sinal, o %d %s continua a gritar contigo. Só o capitão %s pode falar com o árbitro." % [p.num, de_t(p.team), de_t(p.team)], "Só o capitão fala",
 		[{"d": "amarelo", "label": "Amarelo", "small": "por protestos, depois do sinal", "sw": "amarelo"}, {"d": "aviso", "label": "Mais um aviso", "small": "falas com ele outra vez"},
-		 {"d": "deixar", "label": "Deixar", "small": "ele acaba por ir embora"}], func(c): _teimoso_res(p, c), 0)
+		 {"d": "deixar", "label": "Deixar", "small": "ele acaba por ir embora"}], func(c): _teimoso_res(p, c), 2, true)
 func _teimoso_res(p: Pl, c: String) -> void:
 	var pts := 1.0 if c == "amarelo" else (0.4 if c == "aviso" else 0.0)
 	var why := "Certo: depois do sinal, quem não é capitão e continua a protestar leva amarelo" if pts == 1 else ("Já tinha havido sinal: um segundo aviso tira-te autoridade" if c == "aviso" else "Deixaste um jogador ignorar o sinal: os outros vão fazer o mesmo")
@@ -3004,7 +3004,7 @@ func _calor_step() -> void:
 	hidrata[k] = true
 	ask_open("Bola parada aos %d', com %d °C. Os jogadores estão encharcados em suor." % [minute(), temp], "Calor extremo",
 		[{"d": "pausa", "label": "Pausa de hidratação", "small": "3 minutos, todos à linha"}, {"d": "agua", "label": "Água rápida na linha", "small": "quem quiser bebe e segue"}, {"d": "seguir", "label": "Continuar", "small": "o jogo está a correr bem"}],
-		func(c): _calor_res(c, m0), 2)
+		func(c): _calor_res(c, m0), 2, true)
 func _calor_res(c: String, m0: int) -> void:
 	var pts := 1.0 if c == "pausa" else (0.4 if c == "agua" else 0.0)
 	var why := "Certo: acima de 32 °C há uma pausa de hidratação a meio de cada parte" if pts == 1 else "Com %d °C o protocolo pede uma pausa de hidratação a meio de cada parte" % temp
@@ -3143,7 +3143,13 @@ func _invasor_step(dt: float) -> void:
 		invasor = {}; evento.estado = "fim"
 
 # ---------- perguntas curtas a meio do jogo ----------
-func ask_open(msg_: String, tag: String, opts: Array, cb: Callable, def := 0) -> void:
+func ask_open(msg_: String, tag: String, opts: Array, cb: Callable, def := 0, mistura := false) -> void:
+	# mistura: baralha as opções para a certa não estar sempre no mesmo sítio (o tempo esgotado continua a escolher a mesma)
+	if mistura and opts.size() > 1:
+		var d0: String = str(opts[def].d)
+		opts = opts.duplicate(); opts.shuffle()
+		for i in opts.size():
+			if str(opts[i].d) == d0: def = i
 	ask = {"opts": opts, "cb": cb, "t": 0.0, "def": def}
 	mode = "pergunta"
 	emit("ask", {"msg": msg_, "tag": tag, "opts": opts})
@@ -3821,7 +3827,7 @@ func _sangue(p: Pl) -> void:
 	var onde: String = ["um corte na sobrancelha", "o nariz a sangrar", "um corte no joelho"][rng.randi() % 3]
 	ask_open("O %d %s tem %s e a camisola manchada de sangue. O médico diz que estanca em dois minutos." % [p.num, de_t(p.team), onde], "Jogador a sangrar",
 		[{"d": "sai", "label": "Sai e volta com o meu sinal", "small": "sem sangue, camisola trocada"}, {"d": "campo", "label": "Tratam-no dentro do campo", "small": "e segue a jogar"},
-		 {"d": "camisola", "label": "Troca a camisola e joga já", "small": "o sangue para sozinho"}], func(c): _sangue_res(p, c), 0)
+		 {"d": "camisola", "label": "Troca a camisola e joga já", "small": "o sangue para sozinho"}], func(c): _sangue_res(p, c), 1, true)
 func _sangue_res(p: Pl, c: String) -> void:
 	var pts := 1.0 if c == "sai" else (0.3 if c == "camisola" else 0.0)
 	var why := "Certo: quem sangra sai e só volta com o sangue estancado e sem sangue no equipamento" if pts == 1 else "Lei 5: quem sangra tem de sair e só volta com o sinal do árbitro, já sem sangue"
