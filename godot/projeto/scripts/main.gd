@@ -896,7 +896,7 @@ func _extras_step(dt: float) -> void:
 			cu += vel * dt
 			e.set_meta("cur", cu); e.set_meta("vel", vel)
 			sp = vel.length()
-			face = vel.normalized() if sp > 1.2 else (to.normalized() if to.length() > 0.1 else e.dir)
+			face = e.rumo(vel, sp, Vector2(b3.x, b3.z)) if sp > 1.2 else (to.normalized() if to.length() > 0.1 else e.dir)
 			# reagem ao lance: os da equipa do derrubado pedem falta ao árbitro, os outros protestam a inocência
 			if not e.has_meta("reac"): e.set_meta("reac", _reacao(e, to.length()))
 			if e.gesto != "" and e.gesto_t > 0.0 and sp < 1.2 and (REF - cu).length() > 0.5: face = (REF - cu).normalized()
@@ -966,7 +966,7 @@ func _segue_2d(e: Jogador) -> bool:
 	var b = _hist_pos(id, minf(t - t2d + 0.15, 0.0))
 	var vel: Vector2 = ((b as Vector2) - (a as Vector2)) / maxf(minf(0.15, t2d - t), 0.02)
 	var sp := vel.length()
-	var face: Vector2 = vel / sp if sp > 0.6 else e.dir
+	var face: Vector2 = e.rumo(vel, sp, Vector2(b3.x, b3.z)) if sp > 0.6 else e.dir
 	e.set_meta("cur", a); e.set_meta("vel", vel)
 	e.move(a, face, sp)
 	e.play("run" if sp > 4.2 else ("jog" if sp > 0.7 else "idle"), 0.3)
@@ -2496,7 +2496,7 @@ func _tackle(dt: float) -> void:
 			outcome = "corte limpo: o defesa tira a bola, o atacante só tropeça (siga)"
 			var b3 := Vector3(bpos.x, 0.11, bpos.y)
 			_impacto(b3, 0.6, true)
-			_brilha_bola()
+			if _marcas(): _brilha_bola()
 			_brilha(def, b3, ["pe", "perna"], Color(0.3, 0.95, 1.0))
 			bvel = (D * 0.9 - A * 0.2).normalized() * 9.0
 			att.hit(Vector3(0.3, 0.0, 0.25 * side))
@@ -2574,8 +2574,14 @@ func _toque_agora(com_toque: bool) -> bool:
 
 # marca do impacto: anel que se abre no ponto do toque, um tufo de relva/pó e um instante em câmara lenta
 func _impacto(pt: Vector3, f: float, bola := false) -> void:
-	if modo in ["lance", "treino", "rever", "var"] and tv.is_empty(): hitstop = HIT_CONGELA + HIT_LENTO + 0.12 * clampf(f - 0.8, 0.0, 1.0)
-	_estrela_em(pt, Color(0.35, 0.95, 1.0) if bola else Color(1.0, 0.3, 0.05), Color.WHITE, 0.32 + 0.1 * clampf(f - 0.6, 0.0, 1.0))
+	# ao vivo o lance corre natural (só o pó da relva); a quase-paragem, a estrela e o anel ficam para as repetições e o VAR
+	if _marcas():
+		if tv.is_empty(): hitstop = HIT_CONGELA + HIT_LENTO + 0.12 * clampf(f - 0.8, 0.0, 1.0)
+		_estrela_em(pt, Color(0.35, 0.95, 1.0) if bola else Color(1.0, 0.3, 0.05), Color.WHITE, 0.32 + 0.1 * clampf(f - 0.6, 0.0, 1.0))
+		_anel(pt, f)
+	if pt.y < 0.6: _po(pt)
+func _marcas() -> bool: return modo in ["rever", "var"] or not tv.is_empty()
+func _anel(pt: Vector3, f: float) -> void:
 	var ring := MeshInstance3D.new(); var tm := TorusMesh.new(); tm.inner_radius = 0.12; tm.outer_radius = 0.16; ring.mesh = tm
 	var mt := StandardMaterial3D.new(); mt.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; mt.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mt.albedo_color = Color(1, 0.95, 0.7, 0.9); mt.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
@@ -2586,15 +2592,15 @@ func _impacto(pt: Vector3, f: float, bola := false) -> void:
 	tw.tween_property(ring, "scale", Vector3.ONE * (2.2 + f), 0.35)
 	tw.tween_property(mt, "albedo_color:a", 0.0, 0.35)
 	tw.chain().tween_callback(ring.queue_free)
-	if pt.y < 0.6:
-		var pf := CPUParticles3D.new(); pf.one_shot = true; pf.amount = 14; pf.lifetime = 0.6; pf.explosiveness = 1.0
-		pf.direction = Vector3(0, 1, 0); pf.spread = 70.0; pf.initial_velocity_min = 0.8; pf.initial_velocity_max = 1.8; pf.gravity = Vector3(0, -6, 0)
-		pf.scale_amount_min = 0.03; pf.scale_amount_max = 0.06
-		var qm := QuadMesh.new(); qm.size = Vector2(1, 1); pf.mesh = qm
-		var pm := StandardMaterial3D.new(); pm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; pm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES; pm.albedo_color = Color(0.32, 0.5, 0.2)
-		qm.material = pm
-		add_child(pf); pf.global_position = pt; pf.emitting = true
-		get_tree().create_timer(1.2, true, false, true).timeout.connect(pf.queue_free)
+func _po(pt: Vector3) -> void:
+	var pf := CPUParticles3D.new(); pf.one_shot = true; pf.amount = 14; pf.lifetime = 0.6; pf.explosiveness = 1.0
+	pf.direction = Vector3(0, 1, 0); pf.spread = 70.0; pf.initial_velocity_min = 0.8; pf.initial_velocity_max = 1.8; pf.gravity = Vector3(0, -6, 0)
+	pf.scale_amount_min = 0.03; pf.scale_amount_max = 0.06
+	var qm := QuadMesh.new(); qm.size = Vector2(1, 1); pf.mesh = qm
+	var pm := StandardMaterial3D.new(); pm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED; pm.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES; pm.albedo_color = Color(0.32, 0.5, 0.2)
+	qm.material = pm
+	add_child(pf); pf.global_position = pt; pf.emitting = true
+	get_tree().create_timer(1.2, true, false, true).timeout.connect(pf.queue_free)
 
 # tropeção capturado: o corpo cai para a frente como na captura, depois fica queixoso no chão
 func _trip(j: Jogador, d: Vector2, k: float, from := 0.12, blend := 0.08) -> void:
@@ -2849,6 +2855,7 @@ func _estrela_em(pt: Vector3, fora: Color, dentro: Color, tam: float) -> void:
 
 # o membro que tocou fica a brilhar (vê-se através dos corpos) e acompanha o movimento
 func _brilha(j: Jogador, pt: Vector3, partes: Array, c: Color) -> void:
+	if not _marcas(): return
 	var caps: Array = j.capsulas()
 	var bi := -1; var bd := 1e9
 	for i in caps.size():

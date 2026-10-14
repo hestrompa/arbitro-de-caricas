@@ -38,6 +38,13 @@ const PTS := [["root", 0.15, 0.0], ["spine01", 0.16, 0.0], ["head", 0.11, 0.0], 
 	["upperarm01_L", 0.06, 0.0], ["upperarm01_R", 0.06, 0.0], ["lowerarm01_L", 0.05, 0.0], ["lowerarm01_R", 0.05, 0.0], ["wrist_L", 0.05, 0.0], ["wrist_R", 0.05, 0.0]]
 
 static var clip_speed := {}       # velocidade a que cada ciclo de corrida anda no chão (para os pés não deslizarem)
+# locomoção: trote em 8 direções com o corpo virado para a frente (recuar e andar de lado a olhar para a bola)
+const LOCO_DIR := ["jog", "jog_fr", "jog_fl", "jog_r", "jog_l", "jog_br", "jog_bl", "jog_b"]
+const LOCO_CICLO := ["walk", "jog", "run", "jog_fr", "jog_fl", "jog_r", "jog_l", "jog_br", "jog_bl", "jog_b"]
+static var clip_vel := {}         # ciclo -> velocidade no chão no referencial do corpo (x = lado, y = frente), m/s
+static var clip_fase := {}        # ciclo -> fase (0..1) com o pé esquerdo mais em baixo: troca de ciclo sem trocar de pé
+static var natural := true        # testes: false volta ao trote/corrida só para a frente, sem pés presos
+static var clip_pe := {}          # ciclo -> {pé: altura mínima}: abaixo disto (+3 cm) o pé está apoiado
 
 var node: Node3D
 var skel: Skeleton3D
@@ -95,6 +102,13 @@ var lean := Vector3.ZERO          # inclinação extra do tronco (ombro a ombro)
 var label: Label3D
 # naturalidade: viragens suaves, inclinação nas curvas e ao acelerar, desequilíbrio com braços
 var snap := true                  # a primeira colocação depois de reset não é suavizada
+var loco_req := ""                # o que quem chama pediu (idle, walk, jog, run); o ciclo certo escolhe-se aqui
+var vel_obs := Vector2.ZERO       # velocidade real, medida pelas posições (suavizada)
+var pos_upd := Vector2.INF
+var want_yaw := 0.0
+var olha_bola := false            # está a recuar ou a andar de lado de frente para a bola
+var loco_t := 0.0                 # tempo desde a última troca de ciclo (não trocar a cada frame numa viragem)
+var pe_lock := {}                 # pé apoiado -> [onde ficou no chão (global), peso]: não escorrega enquanto apoia
 var last_yaw := 0.0
 var last_speed := 0.0
 var body_lean := Vector3.ZERO
@@ -164,7 +178,18 @@ func _init(parent: Node3D, kit: Dictionary, n: int, id: int, tm: int) -> void:
 	_build_body()
 	for q in PTS: pts.append([bi[q[0]], q[1], q[2]])
 	if clip_speed.is_empty():
-		for c in ["run", "jog"]: clip_speed[c] = _measure_speed(c)
+		for c in LOCO_CICLO:
+			if anim.get_animation(c) == null: continue
+			_measure_ciclo(c)
+			clip_speed[c] = (clip_vel[c] as Vector2).length()
+		for c in LOCO_CICLO + ["idle", "gk_idle"]:
+			if anim.get_animation(c) == null: continue
+			var an := anim.get_animation(c)
+			var mn := {"foot_L": 99.0, "foot_R": 99.0}
+			for k in 25:
+				var fr: Array = fk(c, an.length * k / 24.0)
+				for f in mn.keys(): mn[f] = minf(mn[f], fr[bi[f]].origin.y)
+			clip_pe[c] = mn
 		for c in ["trip", "trip_m"]: _sem_escorpiao(anim.get_animation(c))
 
 # o tropeção capturado cai de peito e atira as pernas por cima da cabeça (parece o pino):
@@ -254,6 +279,9 @@ func _build_body() -> void:
 
 # ---------- animação ----------
 func play(name: String, blend := 0.15, from := 0.0) -> void:
+	if name in ["idle", "walk", "jog", "run"] and from <= 0.0 and not clip_vel.is_empty():
+		loco_req = name; _loco_pick(blend); return
+	loco_req = ""
 	if gr and name == "idle": name = "gk_idle"       # o guarda-redes espera meio agachado, de braços abertos
 	if state == name: return
 	var era := state
@@ -284,6 +312,85 @@ func fk(name: String, tm: float) -> Array:
 		out.append(loc if p < 0 else out[p] * loc)
 	return out
 
+# velocidade de um ciclo no chão (pelo pé apoiado) e a fase em que o pé esquerdo está mais em baixo
+func _measure_ciclo(name: String) -> void:
+	var an := anim.get_animation(name)
+	var n := 48
+	var fr: Array = []
+	for k in n + 1: fr.append(fk(name, an.length * k / n))
+	var lowy := 99.0
+	var fase := 0.0
+	var ly := 99.0
+	for k in n + 1:
+		var yl: float = fr[k][bi["foot_L"]].origin.y
+		lowy = minf(lowy, minf(yl, fr[k][bi["foot_R"]].origin.y))
+		if yl < ly: ly = yl; fase = float(k) / n
+	var tot := Vector2.ZERO
+	var cnt := 0
+	for k in range(1, n + 1):
+		for f in ["foot_L", "foot_R"]:
+			var a: Vector3 = fr[k - 1][bi[f]].origin
+			var b: Vector3 = fr[k][bi[f]].origin
+			if maxf(a.y, b.y) < lowy + 0.03:
+				tot += Vector2(a.x - b.x, a.z - b.z) / (an.length / n); cnt += 1
+	clip_vel[name] = tot / maxi(cnt, 1)
+	clip_fase[name] = fase
+
+# velocidade real no referencial do corpo (x = lado, y = frente), em direção (comprimento 1)
+func _local_dir() -> Vector2:
+	var w := vel_obs if vel_obs.length() > 0.4 else dir * maxf(speed, 0.01)
+	var yaw := node.rotation.y
+	var l := Vector2(w.x * cos(yaw) - w.y * sin(yaw), w.x * sin(yaw) + w.y * cos(yaw))
+	return l.normalized() if l.length() > 0.01 else Vector2(0, 1)
+
+# escolhe o ciclo pela velocidade e pela direção em que o corpo anda em relação a para onde está virado
+func _loco_pick(blend: float) -> void:
+	var nm := "idle"
+	if not natural and loco_req != "idle" and speed > 0.25: nm = "run" if loco_req == "run" else "jog"
+	elif loco_req != "idle" and speed > 0.25:
+		var lv := _local_dir()
+		if (loco_req == "run" or speed > 4.2) and lv.y > 0.5: nm = "run"
+		elif speed < 1.8 and lv.y > 0.6 and clip_vel.has("walk"): nm = "walk"
+		else:
+			var bd := -2.0
+			for c in LOCO_DIR:
+				if not clip_vel.has(c): continue
+				var d: float = (clip_vel[c] as Vector2).normalized().dot(lv) + (0.08 if c == state else 0.0)
+				if d > bd: bd = d; nm = c
+	if gr and nm == "idle": nm = "gk_idle"
+	# numa viragem a direção passa por várias: só se troca de ciclo de trote passado um bocadinho
+	if state != nm and state in LOCO_DIR and nm in LOCO_DIR and loco_t < 0.25: nm = state
+	if state != nm:
+		loco_t = 0.0
+		var era := state
+		var f := fase_passo
+		# entre ciclos mantém-se o pé que está no chão
+		if clip_fase.has(era) and clip_fase.has(nm) and anim.current_animation_length > 0.0:
+			f = fposmod(anim.current_animation_position / anim.current_animation_length - float(clip_fase[era]) + float(clip_fase[nm]), 1.0)
+		state = nm
+		anim.play(nm, blend)
+		if anim.current_animation_length > 0.0: anim.seek(f * anim.current_animation_length, true)
+	_cadencia()
+
+# a passada acompanha a velocidade (para os pés não deslizarem)
+func _cadencia() -> void:
+	if clip_speed.has(state) and speed > 0.3:
+		var lo := 0.5 if state == "walk" else (0.45 if state in LOCO_DIR and state != "jog" else 0.6)
+		anim.speed_scale = clamp(speed / float(clip_speed[state]), lo, 1.6 if state in LOCO_DIR else 1.45)
+	else: anim.speed_scale = 1.0
+	if stum_t > 0.0: anim.speed_scale *= 1.25   # passos curtos e rápidos para não cair
+
+# para onde o corpo fica virado: para onde corre; mas quem trota com a bola atrás ou ao lado recua
+# ou anda de lado de frente para ela (como os defesas e o árbitro)
+func rumo(mov: Vector2, sp_: float, alvo: Vector2) -> Vector2:
+	var b := alvo - pos
+	if mov.length() < 0.01 or sp_ < 0.3: return b.normalized() if b.length() > 0.3 else dir
+	var m := mov.normalized()
+	if b.length() < 1.5 or sp_ > 4.2: olha_bola = false; return m
+	var c := m.dot(b.normalized())
+	olha_bola = c < (0.45 if olha_bola else 0.2)
+	return b.normalized() if olha_bola else m
+
 func _measure_speed(name: String) -> float:
 	var an := anim.get_animation(name)
 	var n := 40
@@ -308,13 +415,18 @@ func move(p: Vector2, d: Vector2, v: float) -> void:
 	var q := p + off + stag
 	node.position = Vector3(q.x, lift + jump, q.y)
 	var want := atan2(d.x, d.y)
+	want_yaw = want
 	if snap: node.rotation.y = want; snap = false; last_yaw = want
-	else: node.rotation.y = lerp_angle(node.rotation.y, want, 0.22)
-	if clip_speed.has(state) and v > 0.3: anim.speed_scale = clamp(v / clip_speed[state], 0.6, 1.45)
-	else: anim.speed_scale = 1.0
-	if stum_t > 0.0: anim.speed_scale *= 1.25   # passos curtos e rápidos para não cair
+	elif phase != "anim": node.rotation.y = lerp_angle(node.rotation.y, want, 0.22)
+	_cadencia()
 
 func update(dt: float, t: float) -> void:
+	if pos_upd != Vector2.INF and dt > 0.0:
+		var vo := (pos - pos_upd) / dt
+		if vo.length() < 12.0: vel_obs = vel_obs.lerp(vo, 1.0 - exp(-dt * 10.0))
+	pos_upd = pos
+	loco_t += dt
+	if phase == "anim" and not rag: _virar(dt)
 	if phase == "levantar":
 		_getup_step(dt)
 		return
@@ -338,8 +450,43 @@ func update(dt: float, t: float) -> void:
 	_stagger(dt)
 	_arm_swing(dt)
 	_ik()
+	_pes(dt)
 	_balance(dt)
 	_gesto(dt)
+
+# pé apoiado fica preso ao chão (IK da perna) e solta-se quando a captura o levanta: os pés não deslizam
+# quando a velocidade não bate certo com a passada, nas trocas de ciclo e nas viragens
+func _pes(dt: float) -> void:
+	if not natural or not clip_pe.has(state) or stum_t > 0.0 or jump > 0.0 or lift > 0.01 or layer_w > 0.0 or dt <= 0.0:
+		pe_lock.clear(); return
+	var gt := skel.global_transform
+	for f in ["foot_L", "foot_R"]:
+		if ik.has(f) and float(ik[f][1]) > 0.0: pe_lock.erase(f); continue
+		var lp := skel.get_bone_global_pose(bi[f]).origin
+		var fp: Vector3 = gt * lp
+		var apoio: bool = lp.y < float(clip_pe[state][f]) + 0.03
+		var e = pe_lock.get(f)
+		if apoio:
+			if e == null:
+				pe_lock[f] = [fp, 0.0]; e = pe_lock[f]
+			if Vector2(e[0].x - fp.x, e[0].z - fp.z).length() > 0.22: pe_lock.erase(f); continue    # esticava demais: larga
+			e[1] = minf(1.0, float(e[1]) + dt / 0.06)
+		else:
+			if e == null: continue
+			e[1] = float(e[1]) - dt / 0.1
+			if float(e[1]) <= 0.0: pe_lock.erase(f); continue
+		var sd: String = str(f).substr(5)
+		two_bone("upperleg01_" + sd, "lowerleg01_" + sd, f, Vector3(e[0].x, fp.y, e[0].z), float(e[1]) * 0.85)
+
+# o corpo vira com velocidade limitada (mais devagar a correr); a sprintar não se corre de lado nem de costas
+func _virar(dt: float) -> void:
+	var want := want_yaw
+	if speed > 4.8 and vel_obs.length() > 4.0:
+		var vy := atan2(vel_obs.x, vel_obs.y)
+		if absf(angle_difference(want, vy)) > PI / 3.0: want = vy
+	var dy := angle_difference(node.rotation.y, want)
+	var mx := lerpf(11.0, 6.5, clampf(speed / 7.0, 0.0, 1.0)) * dt
+	node.rotation.y += clampf(dy * (1.0 - exp(-dt * 14.0)), -mx, mx)
 
 # tronco de outra animação por cima das pernas a correr (puxar a camisola, ser agarrado)
 func _layers(t: float) -> void:
@@ -814,6 +961,7 @@ func reset() -> void:
 	slide_v = 0.0; snap = true; body_lean = Vector3.ZERO; stum_t = 0.0; last_speed = 0.0
 	state = ""; off = Vector2.ZERO; lift = 0.0; jump = 0.0; sp = Vector3.ZERO; sv = Vector3.ZERO
 	stag = Vector2.ZERO; stagv = Vector2.ZERO; ik.clear(); layer = ""; layer_w = 0.0; lean = Vector3.ZERO; hurt = 0.0; gesto = ""
+	loco_req = ""; vel_obs = Vector2.ZERO; pos_upd = Vector2.INF; olha_bola = false; pe_lock.clear()
 	if has_meta("reac"): remove_meta("reac")
 
 # ---------- contacto com o chão e com os outros ----------

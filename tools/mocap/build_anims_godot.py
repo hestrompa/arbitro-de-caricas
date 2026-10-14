@@ -27,6 +27,8 @@ kt = 4.975; A['kick'] = clip('10_01', kt - 0.7, kt + 0.5, fix_h=kick_heading());
 A['getup_front'] = clip('77_16', 1.0, 3.8)
 A['getup_back'] = clip('77_18', 1.2, 4.9)
 A['pull'] = clip('18_03', 1.3, 2.6)
+# andar (um ciclo, de apoio do pé esquerdo a apoio do pé esquerdo, a 1,36 m/s)
+A['walk'] = clip('07_01', 0.533, 1.583, inplace=True, loop=True)
 A['held'] = clip('19_03', 1.3, 2.3)
 json.dump(A, open('anims_godot.json', 'w'))
 print({k: v['n'] for k, v in A.items()}, 'bytes', len(open('anims_godot.json').read()))
@@ -59,5 +61,10 @@ A['gk_catch'] = mclip('goalkeeper_catch', 0.0, L('goalkeeper_catch') - 0.04)
 A['gk_catch2'] = mclip('goalkeeper_catch_2', 0.0, L('goalkeeper_catch_2') - 0.04)
 # guarda-redes à espera: meio agachado, braços abertos, a balançar o peso (em vez da espera de jogador de campo)
 A['gk_idle'] = mclip('goalkeeper_idle', 0.0, L('goalkeeper_idle') - 1 / 30, inplace=True, loop=True)
+# trote em 8 direções (o corpo virado para a frente): para recuar e andar de lado a olhar para a bola
+# (os da direita, que estão mais limpos, espelhados para a esquerda: o conjunto fica simétrico)
+for nm, src in [('jog_b', 'jog_backward'), ('jog_br', 'jog_backward_diagonal'), ('jog_bl', 'jog_backward_diagonal@m'),
+                ('jog_fr', 'jog_forward_diagonal'), ('jog_fl', 'jog_forward_diagonal@m'), ('jog_r', 'jog_strafe_right'), ('jog_l', 'jog_strafe_right@m')]:
+    A[nm] = mclip(src, 0.0, L(src) - 1 / 30, inplace=True, loop=True)
 json.dump(A, open('anims_godot.json', 'w'))
 print('com mixamo', {k: v['n'] for k, v in A.items()})
