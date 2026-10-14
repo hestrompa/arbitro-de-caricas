@@ -74,6 +74,9 @@ class Pl:
 	var desde := 0.0                # segundos desde a última decisão com a bola
 	var reage := 0.0                # acabou de perder a bola: ainda vai embalado antes de voltar atrás
 	var alvo := Vector2.ZERO        # para onde quer ir (testes)
+	var apoio := Vector2(-1, -1)    # motor 2: sítio escolhido para dar apoio a quem tem a bola
+	var apoio_cd := 0.0
+	var corre := Vector2(-1, -1)    # motor 2: para onde vai na desmarcação (tabela, terceiro homem)
 	var fouls := 0
 	# qualidade (à Football Manager) e manias
 	var name := ""
@@ -221,6 +224,10 @@ var rng := RandomNumberGenerator.new()
 var est := {"posse": [0.0, 0.0], "remates": [0, 0], "alvo": [0, 0], "passes": [0, 0], "passes_ok": [0, 0], "desarmes": [0, 0], "faltas": [0, 0], "cantos": [0, 0],
 	"xg": [0.0, 0.0], "ocasioes": [0, 0], "rem_area": [0, 0], "cruz": [0, 0], "na_area": [0, 0], "primeira": [0, 0]}
 var ult_passe := false
+var entrou3 := false
+var bp_lento := Vector2(W / 2, H / 2)   # motor 2: onde o bloco que defende "vê" a bola
+var seq_n := 0                    # passes certos seguidos da equipa com a bola (medir o motor)
+func m2() -> bool: return A("motor2", 0.0) > 0.0
 var util := 0.0                   # tempo útil: bola em jogo (sem paragens nem bolas paradas por bater)
 var cruz_q := Vector2(-1, -1)     # onde vai cair o cruzamento (quem ataca e quem defende vão lá)
 var af := {}                      # afinação do motor (testes): sobrepõe os valores por omissão
@@ -513,7 +520,9 @@ func offside_line(ti: int) -> float:
 	return max(opp[1] if opp.size() > 1 else W, W / 2)
 
 func shape_target(p: Pl, poss: bool) -> Vector2:
-	var bx := rel(p.team, bp.x)
+	# motor 2: o bloco que defende ajusta-se à bola com atraso (a bola anda mais depressa do que os jogadores)
+	var b := bp_lento if (m2() and not poss and A("m2_lag_bola", 0.0) > 0.0) else bp
+	var bx := rel(p.team, b.x)
 	var line := offside_line(p.team)
 	var d: float; var m: float; var f: float
 	if poss:
@@ -531,14 +540,14 @@ func shape_target(p: Pl, poss: bool) -> Vector2:
 		var fa := pos_ataque(p, bx, line)
 		if fa.x >= 0: return fa
 	if poss:
-		y = p.lane + (bp.y - H / 2) * 0.25
-		if (p.role == "lb" or p.role == "rb") and absf(bp.y - p.lane) < 26 and bx > 40: r += 16
+		y = p.lane + (b.y - H / 2) * 0.25
+		if (p.role == "lb" or p.role == "rb") and absf(b.y - p.lane) < 26 and bx > 40: r += 16
 		if p.role == "lw" or p.role == "rw": y = 6.0 if p.lane < H / 2 else H - 6
-		if p.role == "st": y = H / 2 + (bp.y - H / 2) * 0.3
+		if p.role == "st": y = H / 2 + (b.y - H / 2) * 0.3
 		if p.line == "f" and p.run > 0: r = max(r, line + 6)
 		if p.line == "f": r = min(r, max(line + (6.0 if p.run > 0 else p.line_off), bx + 4))
 	else:
-		y = H / 2 + (p.lane - H / 2) * 0.7 + (bp.y - H / 2) * 0.4
+		y = H / 2 + (p.lane - H / 2) * 0.7 + (b.y - H / 2) * 0.4
 	return Vector2(abs_x(p.team, clamp(r, 3, W - 3)), clamp(y, 2, H - 2))
 
 # último terço: a equipa ocupa a área para o cruzamento (primeiro e segundo poste), a entrada da área
@@ -615,7 +624,10 @@ func on_ball(p: Pl, dt: float) -> void:
 	var alerta := A("alerta0", 1.25) + p.dec * A("alerta_dec", 0.0)
 	if rel(p.team, p.p.x) < A("rec_def", 16.5) and p.role != "gk": alerta = A("alerta_def", 2.4)
 	elif rel(p.team, p.p.x) < A("mei_lim", 68.0) and p.role != "gk": alerta = maxf(alerta, A("alerta_mei", 1.25))   # a meio-campo, com alguém em cima, solta a bola
+	if m2() and p.role != "gk" and rel(p.team, p.p.x) < A("m2_alerta_lim", 60.0): alerta = maxf(alerta, A("m2_alerta", 2.6) + (p.dec - 70.0) / 100.0 * A("m2_alerta_dec", 0.8))
 	if p.cd > 0 and not (press < alerta and p.desde > 0.2):
+		# motor 2: depois de receber conduz para o espaço livre, não a direito para a baliza
+		if m2() and p.dribble == Vector2.ZERO and p.role != "gk" and rel(p.team, p.p.x) < A("m2_cd_lim", 0.0): p.dribble = conduz_v2(p, opps, goal)
 		var dir := p.dribble if p.dribble != Vector2.ZERO else (goal - p.p).normalized()
 		var sp := 0.0 if p.role == "gk" else p.spd * 0.8
 		var tg := Vector2(clamp(p.p.x + dir.x * 3, 1.2, W - 1.2), clamp(p.p.y + dir.y * 3, 1.2, H - 1.2))
@@ -636,6 +648,7 @@ func on_ball(p: Pl, dt: float) -> void:
 	# o ruído é a "visão": quem decide mal escolhe muitas vezes uma opção pior
 	var ruido := (0.005 + (100.0 - p.dec) / 100.0 * 0.03) * A("ruido_k", 1.0)
 	var base_v := A("base_v", 0.03)  # ter a bola já vale alguma coisa
+	if m2(): base_v = A("m2_base_v", 0.03)
 	var caut: float = T.cautela
 	if dg < 32 and p.role != "gk" and not p.set_piece:
 		var q := xg(p, opps, press)
@@ -733,10 +746,17 @@ func on_ball(p: Pl, dt: float) -> void:
 	if dbg_on and choices.size() > 1 and rel(p.team, p.p.x) > W - 33 and absf(p.p.y - H / 2) > 10.0:
 		dbg["cz_esc_" + str(c.type)] = dbg.get("cz_esc_" + str(c.type), 0) + 1
 		dbg["cz_esc_sc"] = dbg.get("cz_esc_sc", 0.0) + float(c.sc)
+	# motor 2: um passe à frente de quem pressiona deixa-o fora da jogada um instante (vinha lançado contra quem passou)
+	if m2() and (c.type == "pass" or c.type == "through" or c.type == "cruza") and press < A("m2_salta_d", 3.0) and mode == "play":
+		var pq: Pl = nearest(opps, p.p)[0]
+		if pq and pq.role != "gk" and pq.v.dot(p.p - pq.p) > 0.0:
+			pq.reage = maxf(pq.reage, rand(0.25, 0.5) * (1.3 - pq.tck / 200.0) * A("m2_salta", 1.8))
+			if dbg_on: dbg["salta"] = dbg.get("salta", 0) + 1
 	match c.type:
 		"shoot": shoot(p, false, float(c.q), opps)
 		"pass":
 			pass_to(p, c.m, c.lofted)
+			if m2() and mode == "play" and not was_set: desmarca_v2(p, c.m, opps)
 			if not sem_offside: offside_snap(p, c.m)
 			if c.cross: est.cruz[p.team] += 1
 			if c.cross and not was_set: corner_check(p.team, p, true)
@@ -758,6 +778,53 @@ func on_ball(p: Pl, dt: float) -> void:
 			if mode == "play" and in_own_box(p.team, p.p) and rng.randf() < 0.3:   # alívio para canto
 				ult_passe = false; corner(1 - p.team, 0.5 if bp.y < H / 2 else H - 0.5); return
 			kick(p, Vector2(abs_x(p.team, rel(p.team, p.p.x) + 30), H / 2 + rand(-12, 12)), true)
+
+# motor 2: depois do passe, desmarcações combinadas. Quem passou arranca para a tabela (dá e segue);
+# ou um terceiro colega, à frente de quem recebe, ataca o espaço para o passe seguinte
+func desmarca_v2(p: Pl, m: Pl, opps: Array) -> void:
+	var x0 := rel(p.team, p.p.x)
+	var line := offside_line(p.team)
+	var rk: float = float(tat(p.team).runs)
+	var fw := Vector2(dirs(p.team), 0)
+	if p.role != "gk" and x0 > 30.0 and x0 < W - 18.0 and p.p.distance_to(m.p) < 24.0 and rng.randf() < A("m2_tabela", 0.35) * (0.6 + rk * 0.6):
+		# dá e segue: passa pelo lado de quem recebe, para o espaço nas costas do adversário mais perto
+		var sd: float = signf(m.p.y - p.p.y) if absf(m.p.y - p.p.y) > 2.0 else (1.0 if p.p.y < H / 2 else -1.0)
+		var alvo: Vector2 = m.p + fw * rand(8.0, 13.0) + Vector2(0, -sd * rand(2.0, 5.0))
+		alvo.x = abs_x(p.team, clampf(rel(p.team, alvo.x), x0 + 4.0, minf(line + 9.0, W - 6.0)))
+		p.corre = Vector2(alvo.x, clampf(alvo.y, 3.0, H - 3.0)); p.run = rand(1.3, 1.9)
+		if dbg_on: dbg["tabela"] = dbg.get("tabela", 0) + 1
+		return
+	if rng.randf() < A("m2_terceiro", 0.25) * (0.6 + rk * 0.6):
+		var xm := rel(m.team, m.p.x)
+		var c: Pl = null
+		var cd := 99.0
+		for q in active():
+			if q.team != p.team or q == p or q == m or q.role == "gk" or q.line == "d" or q.run > 0 or q.down > 0: continue
+			var dq: float = q.p.distance_to(m.p)
+			if rel(q.team, q.p.x) < xm - 2.0 or dq > 26.0 or rel(q.team, q.p.x) > line - 0.5: continue
+			if dq < cd: cd = dq; c = q
+		if c == null: return
+		var alvo2: Vector2 = c.p + fw * rand(9.0, 15.0)
+		alvo2.x = abs_x(c.team, clampf(rel(c.team, alvo2.x), rel(c.team, c.p.x) + 4.0, minf(line + 10.0, W - 6.0)))
+		alvo2.y = clampf(alvo2.y + (H / 2 - alvo2.y) * 0.25, 3.0, H - 3.0)
+		c.corre = alvo2; c.run = rand(1.4, 2.0)
+		if dbg_on: dbg["terceiro"] = dbg.get("terceiro", 0) + 1
+
+# motor 2: direção da condução: para a frente, mas para onde há espaço (longe dos adversários e da linha)
+func conduz_v2(p: Pl, opps: Array, goal: Vector2) -> Vector2:
+	var tg := (goal - p.p).normalized()
+	var best := tg
+	var bs := -1e9
+	for k in range(-4, 5):
+		var dir := tg.rotated(k * PI / 8.0)
+		var a := p.p + dir * 5.0
+		if a.x < 1.5 or a.x > W - 1.5 or a.y < 1.5 or a.y > H - 1.5: continue
+		var dd: float = 99.0
+		for o in opps: dd = minf(dd, o.p.distance_to(a))
+		var sc: float = A("m2_cd_frente", 0.5) * dir.dot(tg) + A("m2_cd_esp", 0.12) * minf(dd, 8.0)
+		if a.y < 4.0 or a.y > H - 4.0: sc -= 0.3
+		if sc > bs: bs = sc; best = dir
+	return best
 
 # cruzamento à frente de um defesa colado: bate-lhe na perna e sai muitas vezes para canto
 func cruz_bloqueio(p: Pl, q: Vector2) -> bool:
@@ -835,7 +902,7 @@ func kick(p: Pl, tg: Vector2, lofted: bool) -> void:
 	var vz := 0.0
 	if lofted:
 		vz = clamp(3 + d * 0.16, 4, 9); var T := 2 * vz / G; sp = d / T * 0.92
-	else: sp = clamp(6 + d * 0.72, 9, 26)
+	else: sp = clamp(6 + d * 0.72, 9, 26) * (A("m2_vpasse", 1.0) if m2() else 1.0)
 	if lanc: sp = minf(sp, 14.0); vz = minf(vz, 4.0)
 	owner = null; kicker = p; bv = n * sp; bvz = vz; bz = max(bz, 0.05); last = p.team; no_pick = p; no_pick_t = 0.3
 	if mode == "play": sfx("kick", clamp(1 - bp.distance_to(ref) / 45, 0, 1) * (0.9 if lofted else 0.6))
@@ -843,7 +910,7 @@ func kick(p: Pl, tg: Vector2, lofted: bool) -> void:
 
 func pass_to(p: Pl, m: Pl, lofted: bool) -> void:
 	var d := m.p.distance_to(p.p)
-	var lead := 0.8 if lofted else d / 16
+	var lead := 0.8 if lofted else d / (16.0 * (A("m2_vpasse", 1.0) if m2() else 1.0))
 	kick(p, m.p + m.v * lead + pass_err(p, d), lofted)
 	target = m
 	est.passes[p.team] += 1; ult_passe = true
@@ -913,8 +980,27 @@ func ai_step(dt: float) -> void:
 	mark_t -= dt
 	if mark_t <= 0:
 		mark_t = 0.5; assign_marks(0); assign_marks(1)
+		if dbg_on and owner and parado_dono == null:
+			# medir o espaço: distância média ao colega mais perto (quem ataca) e colegas a menos de 10 m da bola
+			var ms: Array = act.filter(func(q): return q.team == owner.team and q.role != "gk")
+			var sm := 0.0
+			var perto := 0
+			for a in ms:
+				var dm := 99.0
+				for c in ms:
+					if c != a: dm = minf(dm, a.p.distance_to(c.p))
+				sm += dm
+				if a != owner and a.p.distance_to(owner.p) < 10.0: perto += 1
+			dbg["esp_n"] = dbg.get("esp_n", 0) + 1; dbg["esp_sum"] = dbg.get("esp_sum", 0.0) + sm / maxf(ms.size(), 1)
+			dbg["perto_sum"] = dbg.get("perto_sum", 0.0) + perto
+	bp_lento += (bp - bp_lento) * minf(1.0, dt / maxf(A("m2_lag_bola", 0.0), 0.01))
 	tat_cd -= dt
 	if tat_cd <= 0: tat_cd = 1.0; tat_update()
+	if dbg_on and owner:
+		var zo := rel(owner.team, owner.p.x)
+		var kz := "t_def" if zo < 35 else ("t_mei" if zo < 70 else "t_ata")
+		dbg[kz] = dbg.get(kz, 0.0) + dt
+		if zo >= 70 and not entrou3: entrou3 = true; dbg["entra3"] = dbg.get("entra3", 0) + 1
 	if owner and owner.team != poss_last:
 		poss_last = owner.team
 		if parado_dono == null: transicao(owner)
@@ -970,6 +1056,8 @@ func ai_step(dt: float) -> void:
 			continue
 		var poss: bool = poss_team == p.team
 		var tg := shape_target(p, poss)
+		if p.run <= 0: p.corre = Vector2(-1, -1)
+		elif poss and p.corre.x >= 0: tg = p.corre      # motor 2: tabela ou terceiro homem
 		if not poss and p.mark and not p.mark.off:
 			var m: Pl = p.mark
 			var n := (Vector2(own_goal_x(p.team), H / 2) - m.p).normalized()
@@ -984,8 +1072,15 @@ func ai_step(dt: float) -> void:
 				tg = Vector2(tg.x, lerp(tg.y, mm.y, 0.5))
 				if rel(p.team, m.p.x) < rel(p.team, tg.x) - 3: tg.x = lerp(tg.x, mm.x, 0.7)
 			elif mm.distance_to(tg) < 18: tg = tg.lerp(mm, 0.6)
+		# motor 2: cada um procura, perto do seu lugar na equipa, onde pode receber com tempo e perigo, sem se amontoar
+		if poss and m2() and A("m2_apoio", 1.0) > 0.0 and owner and owner != p and p.run <= 0 and rel(p.team, bp.x) < A("m2_apoio_lim", 65.0):
+			p.apoio_cd -= dt
+			if p.apoio_cd <= 0.0 or p.apoio.x < 0.0:
+				p.apoio_cd = rand(0.25, 0.4)
+				p.apoio = apoio_v2(p, tg, act)
+			tg = p.apoio
 		# apoio: se a linha de passe para mim está tapada, saio para o lado onde fico livre
-		if poss and owner and owner != p and p.p.distance_to(owner.p) < 24.0 and p.run <= 0:
+		elif poss and owner and owner != p and p.p.distance_to(owner.p) < 24.0 and p.run <= 0:
 			var opps2: Array = act.filter(func(q): return q.team != p.team)
 			if lane_open(owner.p, p.p, opps2) < 1.4:
 				var nn: Vector2 = (p.p - owner.p).normalized().orthogonal()
@@ -1021,9 +1116,52 @@ func ai_step(dt: float) -> void:
 				tackle(c, owner)
 				if mode != "play": return
 
+# motor 2: sítio de apoio pelo valor do espaço (receber com tempo, perigo do sítio, distância aos colegas, lugar na equipa)
+func apoio_v2(p: Pl, base: Vector2, act: Array) -> Vector2:
+	var opps: Array = []
+	var mates: Array = []
+	for q in act:
+		if q.team != p.team: opps.append(q)
+		elif q != p and q.role != "gk": mates.append(q)
+	var lim: float = maxf(offside_line(p.team), rel(p.team, bp.x)) - 0.6       # não fica em fora de jogo
+	var raio: float = A("m2_raio", 7.0) if p.line != "d" else A("m2_raio_d", 3.5)
+	var cands: Array = [base, p.p]
+	for k in 8:
+		var a: float = k * PI / 4.0
+		cands.append(base + Vector2(cos(a), sin(a)) * raio)
+		cands.append(base + Vector2(cos(a + PI / 8.0), sin(a + PI / 8.0)) * raio * 0.5)
+	var sep: float = A("m2_sep", 10.0)
+	var best := base
+	var bv := -1e9
+	for c0 in cands:
+		var c: Vector2 = Vector2(clampf(c0.x, 2.0, W - 2.0), clampf(c0.y, 2.0, H - 2.0))
+		if rel(p.team, c.x) > lim: c.x = abs_x(p.team, lim)
+		var dd: float = minf(float(nearest(opps, c)[1]), 8.0)
+		var d_o: float = owner.p.distance_to(c)
+		var lane: float = minf(lane_open(owner.p, c, opps), 6.0) if d_o > 4.0 else 0.0
+		var recv: float = sig(A("m2_lane", 0.55) * lane + A("m2_esp", 0.3) * dd - 0.05 * d_o - 1.2)
+		var v: float = recv * (amea(p.team, c) + A("m2_base", 0.03))
+		var pen := 0.0
+		for m in mates:
+			var dm: float = m.p.distance_to(c)
+			if dm < sep: pen += (sep - dm) / sep * (2.0 if m == owner else 1.0)
+		v -= pen * A("m2_sep_k", 0.012)
+		v -= c.distance_to(base) * A("m2_forma", 0.002)
+		# apoio a uma distância boa para o passe curto (nem colado, nem longe)
+		if d_o > A("m2_curto_max", 0.0) * 0.4 and d_o < A("m2_curto_max", 0.0): v += A("m2_curto", 0.0)
+		if c.distance_to(p.apoio) < 1.0: v += A("m2_fica", 0.004)
+		if v > bv: bv = v; best = c
+	return best
+
 # a bola muda de dono: quem estava à frente arranca logo para as costas da defesa que ficou subida
 func transicao(o: Pl) -> void:
-	if dbg_on: dbg["posse_troca"] = dbg.get("posse_troca", 0) + 1
+	if dbg_on:
+		dbg["posse_troca"] = dbg.get("posse_troca", 0) + 1
+		dbg["seq_tot"] = dbg.get("seq_tot", 0) + seq_n
+		if seq_n >= 3: dbg["seq3"] = dbg.get("seq3", 0) + 1
+		if seq_n >= 6: dbg["seq6"] = dbg.get("seq6", 0) + 1
+	seq_n = 0
+	entrou3 = false
 	# quem perdeu a bola demora a perceber e a travar (quem lê melhor o jogo reage mais depressa)
 	for q in active():
 		if q.team != o.team and q.role != "gk" and q.p.distance_to(o.p) > 4.0: q.reage = rand(0.25, 0.7) * (1.35 - q.dec / 200.0) * A("reage_k", 1.0)
@@ -1043,11 +1181,15 @@ func tackle(def: Pl, att: Pl) -> void:
 	var pt := tackle_p(def, att)
 	# perto da própria baliza o defesa não se atira ao chão (penálti): acompanha e espera, e o avançado consegue rematar
 	var zona: float = rel(def.team, att.p.x)
-	if zona < A("cuid_zona", 24.0): pt *= A("cuid_p", 0.75); def.tackle_cd *= A("cuid_cd", 1.4)
+	if zona < A("cuid_zona", 24.0): pt *= A("m2_cuid_p", 0.6) if m2() else A("cuid_p", 0.75); def.tackle_cd *= A("cuid_cd", 1.4)
 	var won := rng.randf() < pt
+	if dbg_on:
+		dbg["duelo"] = dbg.get("duelo", 0) + 1
+		if not won: dbg["batido"] = dbg.get("batido", 0) + 1
 	# quem é batido no drible é quem faz falta: defesas fracos contra avançados habilidosos, e em contra-ataque
 	var risco: float = (0.12 + ag * 0.45) * def.foul_k * (1.0 + clampf((att.drb - def.tck) / 60.0, -0.5, 0.8)) * (1.0 + 0.4 * brando(def.team, "duro"))
 	risco *= 0.7 if won else 1.8
+	if m2(): risco *= A("m2_risco", 1.3)
 	if clima == "chuva": risco *= 1.2
 	if not won and counter_attack(att): risco *= 1.5
 	if not won:
@@ -1229,6 +1371,8 @@ func physics(dt: float) -> void:
 	var de_passe: bool = ult_passe and kicker != null and kicker != best and kicker.team == best.team
 	if ult_passe and kicker != null and kicker != best and kicker.team == best.team:
 		est.passes_ok[best.team] += 1
+		seq_n += 1
+		if dbg_on and absf(kicker.p.y - best.p.y) > 28.0: dbg["vira"] = dbg.get("vira", 0) + 1
 		if in_own_box(1 - best.team, best.p): est.na_area[best.team] += 1
 	if dbg_on and not dbg_ps.is_empty() and str(dbg_ps[0]) != "dribble" and kicker != null: calib_add(best.team == kicker.team)
 	shot_save = -1.0
@@ -1239,6 +1383,13 @@ func physics(dt: float) -> void:
 	if best.role != "gk" and rel(best.team, best.p.x) > W - 35: best.cd = rand(0.3, 0.7) * (1.15 - best.dec / 250.0)
 	# perto da própria baliza também: com um adversário em cima, ninguém fica a conduzir na área
 	elif best.role != "gk" and rel(best.team, best.p.x) < A("rec_def", 16.5): best.cd = rand(0.25, 0.6) * (1.15 - best.dec / 250.0)
+	# motor 2: quem recebe com um adversário a chegar joga a um ou dois toques
+	elif m2() and best.role != "gk" and rel(best.team, best.p.x) < A("m2_pr_lim", 0.0):
+		var pr_rec := 99.0
+		for q in act:
+			if q.team != best.team and q.down <= 0: pr_rec = minf(pr_rec, q.p.distance_to(best.p))
+		if pr_rec < A("m2_pr_rec", 6.0): best.cd = rand(0.15, 0.45) * (1.15 - best.dec / 250.0)
+		else: best.cd *= A("m2_cd_livre", 1.0)          # com espaço, conduz mais tempo (ganha metros a correr com a bola)
 	if best.role == "gk" and mode == "play": gk8_check(best)
 	if primeira_check(best, z_rec, sp_rec, de_passe): return
 
@@ -1764,6 +1915,9 @@ func _play_step(dt: float) -> void:
 		lance_cd = 1e9; training.next -= dt
 		if training.next <= 0 and pause <= 0: train_next()
 		if mode != "play": return
+	if dbg_on:
+		var ks := "e_pausa" if pause > 0 else ("e_parado" if parado_dono != null else ("e_dono" if owner else ("e_voo" if ult_passe else "e_solta")))
+		dbg[ks] = dbg.get(ks, 0.0) + dt
 	if pause > 0:
 		pause -= dt; physics(0)
 	else:

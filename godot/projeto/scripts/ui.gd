@@ -464,7 +464,7 @@ func _mapa_calor(S: Partida) -> Control:
 	return c
 
 # ---------- menu ----------
-func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := true) -> void:
+func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := true, motor_novo := false) -> void:
 	hide_all()
 	_clear(menu_v)
 	menu_v.add_child(_lbl("ÁRBITRO DE CARICAS", 34, GOLD))
@@ -477,6 +477,7 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 	hb.add_child(_btn("Voz ligada" if voz else "Voz desligada", func(): main.on_ui("voz", null), Color(), 0, 16))
 	hb.add_child(_btn("Público ligado" if publico else "Público desligado", func(): main.on_ui("publico", null), Color(), 0, 16))
 	hb.add_child(_btn("Todo o som ligado" if som else "Todo o som desligado", func(): main.on_ui("som", null), Color(), 0, 16))
+	menu_v.add_child(_btn("Motor das caricas: novo (em teste)" if motor_novo else "Motor das caricas: atual", func(): main.on_ui("motor", null), Color("4a3a6a") if motor_novo else Color(), 500, 16))
 	if best != "": menu_v.add_child(_lbl("Melhor nota: " + best, 15, DIM))
 	menu_v.add_child(_wrap("Teclas: WASD/setas mover · Shift correr · 1–6 decidir · R rever · C câmara · Espaço pausa · Esc menu", 13, DIM, 500))
 	var vb := HBoxContainer.new(); vb.add_theme_constant_override("separation", 10); menu_v.add_child(vb)
@@ -486,6 +487,7 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 
 # lista do que mudou nas últimas versões (para quem testa saber o que procurar)
 const NOVIDADES := [
+	["Motor das caricas novo", "em teste: escolhe-o no menu. Quem recebe com um adversário em cima solta a bola a tempo, há tabelas e desmarcações de terceiro homem, e as posses são mais longas, com menos desarmes a meio-campo"],
 	["Movimento 3D", "os jogadores andam, recuam e andam de lado de frente para a bola, e os pés já não escorregam; a quase-paragem e a estrela no toque ficam só nas repetições e no VAR"],
 	["Lançamentos laterais", "cortes e desarmes junto à linha mandam a bola para fora: cerca de 2 lançamentos por jogo em vez de menos de 1"],
 	["Só o capitão fala", "nos protestos podes fazer o sinal: os outros afastam-se e quem continua a gritar leva amarelo"],

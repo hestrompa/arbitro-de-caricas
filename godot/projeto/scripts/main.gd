@@ -151,8 +151,11 @@ var kp := {}               # capturas planeadas por jogador (cabeceamento, remat
 var min_contact := 99.0    # menor distância entre as pernas do defesa e as do atacante à volta do contacto
 var contact_checked := false
 
+var motor_novo := false       # motor 2 das caricas (em teste): escolhido no menu, guardado em user://motor.cfg
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	var cfm := ConfigFile.new()
+	if cfm.load("user://motor.cfg") == OK: motor_novo = bool(cfm.get_value("j", "motor_novo", false))
 	hi_q = RenderingServer.get_current_rendering_method() != "gl_compatibility"
 	rng.randomize()
 	_world()
@@ -1807,6 +1810,7 @@ func _new_match(teams: Array, career := false) -> void:
 	ui.hide_all()
 	jogo = Partida.new(teams)
 	jogo.ev = _ev
+	if motor_novo: jogo.af["motor2"] = 1.0
 	_fans_colors(Color(teams[0].color), Color(teams[1].color))
 	campo.jogo = jogo
 	is_career = career
@@ -2222,7 +2226,7 @@ func _show_menu() -> void:
 	ui.info("", ""); ui.ref_say("")
 	som.set_crowd(0.15)
 	var b := _best()
-	ui.show_menu(car.exists(), ("%.1f" % b).replace(".", ",") if b > 0 else "", som.voice_on, not som.muted, not som.publico_off)
+	ui.show_menu(car.exists(), ("%.1f" % b).replace(".", ",") if b > 0 else "", som.voice_on, not som.muted, not som.publico_off, motor_novo)
 
 func on_ui(a: String, v) -> void:
 	match a:
@@ -2264,6 +2268,10 @@ func on_ui(a: String, v) -> void:
 			_show_menu()
 		"som": som.toggle(); _show_menu()
 		"publico": som.toggle_publico(); _show_menu()
+		"motor":
+			motor_novo = not motor_novo
+			var cfm := ConfigFile.new(); cfm.set_value("j", "motor_novo", motor_novo); cfm.save("user://motor.cfg")
+			_show_menu()
 		"decide": _decide(v)
 		"replay": _replay()
 		"tv": tv_start()
