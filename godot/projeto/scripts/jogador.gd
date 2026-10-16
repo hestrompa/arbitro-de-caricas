@@ -99,6 +99,8 @@ var stagv := Vector2.ZERO
 var ik := {}                      # "foot_R" -> [alvo global, peso]
 var layer := ""                   # animação só do tronco por cima da corrida (puxar, ser puxado)
 var layer_w := 0.0
+var toque := ""                   # reação do tronco a um toque sem queda (animação da Quaternius), uma vez
+var toque_t := 0.0
 var lean := Vector3.ZERO          # inclinação extra do tronco (ombro a ombro)
 var label: Label3D
 # naturalidade: viragens suaves, inclinação nas curvas e ao acelerar, desequilíbrio com braços
@@ -460,6 +462,7 @@ func update(dt: float, t: float) -> void:
 		return
 	anim.advance(dt)
 	_layers(t)
+	_toque(dt)
 	_body_lean(dt)
 	_springs(dt)
 	_stagger(dt)
@@ -543,6 +546,16 @@ func _layers(t: float) -> void:
 		var i: int = bi[b]
 		skel.set_bone_pose_rotation(i, skel.get_bone_pose_rotation(i).slerp(anim_rot(an, b, tm), layer_w))
 
+func _toque(dt: float) -> void:
+	if toque == "": return
+	toque_t += dt
+	var an := anim.get_animation(toque)
+	if toque_t >= an.length: toque = ""; return
+	var w: float = clampf(toque_t / 0.06, 0.0, 1.0) * clampf((an.length - toque_t) / (an.length * 0.45), 0.0, 1.0) * 0.85
+	for b in ["spine03", "spine02", "spine01", "neck01", "head", "clavicle_L", "upperarm01_L", "lowerarm01_L", "clavicle_R", "upperarm01_R", "lowerarm01_R"]:
+		var i: int = bi[b]
+		skel.set_bone_pose_rotation(i, skel.get_bone_pose_rotation(i).slerp(anim_rot(an, b, toque_t), w))
+
 # o corpo inclina-se para dentro das curvas e para a frente ao acelerar (para trás ao travar)
 func _body_lean(dt: float) -> void:
 	if dt <= 0.0: return
@@ -603,6 +616,16 @@ func hit(ang: Vector3) -> void:
 
 func push(v: Vector2) -> void:
 	stagv += v
+	# o tronco reage ao sítio do toque: de frente vai o peito para trás, de lado roda o ombro
+	if not rag and natural and v.length() > 0.9:
+		var fw := Vector2(sin(node.rotation.y), cos(node.rotation.y))
+		var dr := Vector2(-fw.y, fw.x)
+		var u := v.normalized()
+		var c := ""
+		if u.dot(fw) < -0.5: c = "q_toque_peito"
+		elif u.dot(dr) > 0.5: c = "q_toque_ombro_l"
+		elif u.dot(dr) < -0.5: c = "q_toque_ombro_r"
+		if c != "" and anim.has_animation(c): toque = c; toque_t = 0.0
 	# um empurrão a sério desequilibra: braços abertos e passos curtos
 	if v.length() > 1.2 and not rag:
 		stum_T = clamp(0.5 + v.length() * 0.18, 0.6, 1.2); stum_t = stum_T; stum_d = v.normalized()
@@ -960,6 +983,9 @@ func get_up() -> void:
 	var chest: PhysicalBone3D = bones[1]
 	var front := chest.global_basis.z.y < 0.0       # peito virado para o chão
 	getup_anim = "getup_front" if front else "getup_back"
+	# de costas, quem não se queixa muito levanta-se num gesto só, como um atleta (animação da Quaternius);
+	# o levantar lento do CMU fica para quem ficou magoado
+	if not front and anim.has_animation("q_levanta") and (hurt < 0.35 or randf() < 0.4): getup_anim = "q_levanta"
 	var pel: Vector3 = bones[0].global_position
 	var head: Vector3 = bones[2].global_position
 	var hw := Vector2(head.x - pel.x, head.z - pel.z)
@@ -1007,7 +1033,7 @@ func reset() -> void:
 	for ab in proxies: ab.collision_layer = L_PROXY
 	slide_v = 0.0; snap = true; body_lean = Vector3.ZERO; stum_t = 0.0; last_speed = 0.0
 	state = ""; off = Vector2.ZERO; lift = 0.0; jump = 0.0; sp = Vector3.ZERO; sv = Vector3.ZERO
-	stag = Vector2.ZERO; stagv = Vector2.ZERO; ik.clear(); layer = ""; layer_w = 0.0; lean = Vector3.ZERO; hurt = 0.0; gesto = ""
+	stag = Vector2.ZERO; stagv = Vector2.ZERO; ik.clear(); layer = ""; layer_w = 0.0; toque = ""; lean = Vector3.ZERO; hurt = 0.0; gesto = ""
 	loco_req = ""; vel_obs = Vector2.ZERO; pos_upd = Vector2.INF; olha_bola = false; pe_lock.clear()
 	if has_meta("reac"): remove_meta("reac")
 
