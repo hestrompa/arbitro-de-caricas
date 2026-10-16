@@ -6,6 +6,7 @@ var fase := ""
 var lances := 0
 var hist := {}      # jogador -> [[t, estado, speed]]
 var maus := []
+var qs := {}
 var N_LANCES := int(OS.get_environment("NL")) if OS.get_environment("NL") != "" else 8
 func _initialize():
 	m = load("res://main.tscn").instantiate()
@@ -37,6 +38,7 @@ func _process(dt: float) -> bool:
 			if not hist.has(k): hist[k] = []
 			var h: Array = hist[k]
 			if h.is_empty() or h[-1][1] != j.state: h.append([m.t, j.state, j.speed])
+			if j.state.begins_with("q_"): qs[j.state] = int(qs.get(j.state, 0)) + 1
 		if m.t > m.TC + 4.0:
 			_analisa()
 			m._decide(m.L.truth); fase = "dec"; lances += 1
@@ -58,5 +60,5 @@ func _analisa() -> void:
 				maus.append(m.lance)
 				break
 func _fim() -> bool:
-	print("lances ", lances, " com tremor ", maus.size(), " ", maus)
+	print("lances ", lances, " com tremor ", maus.size(), " ", maus, " gestos ", qs.keys())
 	quit(); return true

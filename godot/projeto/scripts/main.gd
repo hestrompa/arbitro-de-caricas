@@ -906,6 +906,12 @@ func _extras_step(dt: float) -> void:
 				e.set_meta("parou", parado)
 				vel = vel.lerp(want, clamp(dt * 3.0, 0.0, 1.0))
 				if want == Vector2.ZERO and vel.length() < 0.3: vel = Vector2.ZERO
+				# não passam por cima de quem está no chão (nem de quem se está a levantar): contornam
+				for q in [att, def]:
+					if q.rag or q.phase in ["queda", "chao", "chao_k", "levantar"]:
+						var qb: Vector3 = q.body_pos()
+						var dq := cu - Vector2(qb.x, qb.z)
+						if dq.length() < 1.4 and dq.length() > 0.01: vel += dq.normalized() * (1.4 - dq.length()) * 6.0 * dt
 			cu += vel * dt
 			e.set_meta("cur", cu); e.set_meta("vel", vel)
 			sp = vel.length()
@@ -917,13 +923,17 @@ func _extras_step(dt: float) -> void:
 		var nm := "run" if sp > 4.2 else ("jog" if sp > 0.7 else "idle")
 		# parado a reagir: o corpo todo faz o gesto (animações da Quaternius), não só os braços
 		# (com margem: quem já está no gesto não o larga por um passo pequeno)
-		if e.gesto != "" and e.gesto_t > 0.0 and (sp < 0.5 or (e.state.begins_with("q_") and sp < 0.9)):
+		# (só depois de ter chegado e parado: ao travar a meio do caminho ainda vai voltar a andar)
+		if e.gesto != "" and e.gesto_t > 0.0 and ((sp < 0.5 and bool(e.get_meta("parou", false))) or (e.state.begins_with("q_") and sp < 0.9)):
 			if not e.has_meta("qclip"): e.set_meta("qclip", _qclip(e.gesto))
 			if e.get_meta("qclip") != "": nm = e.get_meta("qclip")
+		# quem ficou longe e parado espera pela decisão de braços cruzados
+		elif nm == "idle" and e.gesto == "" and bool(e.get_meta("parou", false)) and t > TC + 2.2 and i % 4 == 2: nm = "q_bracos"
 		e.play(nm, 0.3)
 func _qclip(g: String) -> String:
 	match g:
 		"abre": return "q_nao" if rng.randf() < 0.55 else "q_fala"
+		"braco": return "q_sim" if rng.randf() < 0.35 else ""   # aponta para o árbitro em vez de levantar o braço
 	return ""
 func _reacao(e: Jogador, dist: float) -> String:
 	if not (lance <= 4 or lance == 6) or dist > 28.0: return ""

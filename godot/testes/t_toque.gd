@@ -21,10 +21,15 @@ func _initialize():
 		m._restart()
 		var vistos := {}
 		var lev := {}
+		var perto := 99.0
 		while m.t < m.TC + 6.0:
 			await process_frame
 			for j in [m.att, m.def]:
 				if j.toque != "": vistos[j.toque] = true
 				if j.phase == "levantar": lev[j.getup_anim] = true
-		print(c[0], " toques=", vistos.keys(), " levantar=", lev.keys())
+				if j.rag or j.phase in ["queda", "chao", "chao_k", "levantar"]:
+					var jb: Vector3 = j.body_pos()
+					for e in m.extras:
+						if e.node.visible: perto = minf(perto, Vector2(e.body_pos().x - jb.x, e.body_pos().z - jb.z).length())
+		print(c[0], " toques=", vistos.keys(), " levantar=", lev.keys(), " outro mais perto de quem caiu=%.2f m" % perto)
 	quit()

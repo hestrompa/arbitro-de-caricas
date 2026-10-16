@@ -21,6 +21,10 @@ const PARES = [
 	["", "q_cansado", "Idle_Tired_Loop", "Cansado"],
 	["", "q_festa", "Celebration", "Festejar"],
 	["", "q_cai1", "Death01", "Cair"],
+	["", "q_surpresa", "u2/Surprise", "Surpresa"],
+	["", "q_bracos", "u2/Idle_FoldArms_Loop", "Bracos cruzados"],
+	["", "q_sim", "u2/Yes", "Sim com a cabeca"],
+	["", "q_fala", "Idle_Talking_Loop", "Falar"],
 ]
 
 func _carrega(f: String) -> Node3D:
