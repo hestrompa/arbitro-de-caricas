@@ -487,6 +487,9 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 
 # lista do que mudou nas últimas versões (para quem testa saber o que procurar)
 const NOVIDADES := [
+	["Sem saltos", "nas bolas paradas e depois dos golos as caricas vão a correr para o lugar, travam aos poucos nas paragens e ninguém salta de sítio; o relógio para enquanto se preparam"],
+	["Guarda-redes expulso", "sai um jogador de campo a pé e entra o guarda-redes suplente pela linha do meio-campo; sem substituições, um defesa veste a camisola"],
+	["Expulsos", "saem do campo a pé até ao banco"],
 	["Motor das caricas novo", "em teste: escolhe-o no menu. Quem recebe com um adversário em cima solta a bola a tempo, há tabelas e desmarcações de terceiro homem, e as posses são mais longas, com menos desarmes a meio-campo"],
 	["Movimento 3D", "os jogadores andam, recuam e andam de lado de frente para a bola, e os pés já não escorregam; a quase-paragem e a estrela no toque ficam só nas repetições e no VAR"],
 	["Lançamentos laterais", "cortes e desarmes junto à linha mandam a bola para fora: cerca de 2 lançamentos por jogo em vez de menos de 1"],

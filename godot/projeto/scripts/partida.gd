@@ -76,6 +76,9 @@ class Pl:
 	var alvo := Vector2.ZERO        # para onde quer ir (testes)
 	var apoio := Vector2(-1, -1)    # motor 2: sítio escolhido para dar apoio a quem tem a bola
 	var apoio_cd := 0.0
+	var dest_t := 0.0
+	var dest := Vector2(-1, -1)     # vai a correr para este sítio (bola parada, regresso ao meio-campo): ninguém se teletransporta
+	var sai_p := Vector2(-1, -1)    # expulso a sair do campo a pé (só para o desenho)
 	var corre := Vector2(-1, -1)    # motor 2: para onde vai na desmarcação (tabela, terceiro homem)
 	var fouls := 0
 	# qualidade (à Football Manager) e manias
@@ -225,6 +228,8 @@ var est := {"posse": [0.0, 0.0], "remates": [0, 0], "alvo": [0, 0], "passes": [0
 	"xg": [0.0, 0.0], "ocasioes": [0, 0], "rem_area": [0, 0], "cruz": [0, 0], "na_area": [0, 0], "primeira": [0, 0]}
 var ult_passe := false
 var entrou3 := false
+var espera_todos := -1.0          # pontapé de saída depois do golo: espera que todos voltem ao seu meio-campo
+var troca_gr := {}                 # guarda-redes expulso: um jogador sai e entra o guarda-redes suplente
 var bp_lento := Vector2(W / 2, H / 2)   # motor 2: onde o bloco que defende "vê" a bola
 var seq_n := 0                    # passes certos seguidos da equipa com a bola (medir o motor)
 func m2() -> bool: return A("motor2", 0.0) > 0.0
@@ -483,9 +488,14 @@ func hist_pack() -> Array:
 	for h in hist + [hist_now()]: out.append({"tau": h.t - t, "ps": h.ps, "b": h.b})
 	return out
 
-func kickoff(team: int) -> void:
+func kickoff(team: int, anda := false) -> void:
 	for p in players:
-		p.p = formation_pos(p); p.v = Vector2.ZERO; p.down = 0; p.set_piece = false; p.penalty = false; p.run = 0
+		var fp := formation_pos(p)
+		# Lei 8: os adversários de quem dá o pontapé de saída ficam fora do círculo central
+		if p.team != team and fp.distance_to(Vector2(W / 2, H / 2)) < 9.8: fp = Vector2(W / 2, H / 2) + (fp - Vector2(W / 2, H / 2)).normalized() * 9.8
+		if anda and not p.off: vai(p, fp)
+		else: p.p = fp; p.v = Vector2.ZERO; p.dest = Vector2(-1, -1)
+		p.down = 0; p.set_piece = false; p.penalty = false; p.run = 0
 	reset_ball(Vector2(W / 2, H / 2))
 	var taker: Pl = null
 	for p in active():
@@ -493,7 +503,8 @@ func kickoff(team: int) -> void:
 	if taker == null:
 		for p in active():
 			if p.team == team and p.role != "gk": taker = p; break
-	taker.p = Vector2(W / 2 - dirs(team) * 1.1, H / 2)
+	if anda: vai(taker, Vector2(W / 2 - dirs(team) * 1.1, H / 2)); espera_todos = 0.0
+	else: taker.p = Vector2(W / 2 - dirs(team) * 1.1, H / 2)
 	owner = taker; last = team; taker.cd = 0.6; taker.set_piece = true; pause = 1.0; parado_dono = taker
 
 func move_to(p: Pl, tg: Vector2, speed: float, dt: float) -> void:
@@ -504,6 +515,37 @@ func move_to(p: Pl, tg: Vector2, speed: float, dt: float) -> void:
 	var k: float = min(1.0, dt * 7.0)
 	p.v += (n * sp - p.v) * k
 	if dl < 0.25: p.v *= 0.8
+
+# sem teletransporte: quem tem de ir a um sítio (bola parada, regresso ao meio-campo) vai lá a correr
+func vai(p: Pl, q: Vector2) -> void:
+	if p.p.distance_to(q) < 0.25: p.p = q; p.dest = Vector2(-1, -1); return
+	p.dest = q; p.dest_t = 0.0
+func anda_dest(p: Pl, dt: float) -> void:
+	move_to(p, p.dest, vel(p) * 0.9, dt)
+	p.v = p.v.limit_length(vel(p))
+	p.dest_t += dt
+	# chegou (ou ficou preso atrás de alguém): a partir daqui joga normalmente
+	if p.p.distance_to(p.dest) < 0.3 or p.dest_t > 7.0: p.dest = Vector2(-1, -1); p.v *= 0.3
+func a_caminho() -> bool:
+	for p in active():
+		if p.dest.x >= 0 and p.dest_t < 7.0: return true
+	return false
+# durante a paragem ninguém fica congelado: quem corria trava aos poucos, quem tem um sítio para ir vai
+func _pausa_mov(dt: float) -> void:
+	for p in active():
+		if p.dest.x >= 0: anda_dest(p, dt)
+		else: p.v *= exp((-6.0 if p.down > 0 else -3.0) * dt)
+		p.p += p.v * dt
+# os expulsos saem do campo a pé, até ao banco
+func _saidas(dt: float) -> void:
+	for ti in 2:
+		var k := 0
+		for p in players:
+			if p.team != ti or not p.off: continue
+			var alvo := Vector2(W / 2 + (-3 - k * 1.7 if ti == 0 else 3 + k * 1.7), H + 1.75)
+			k += 1
+			if p.sai_p.x < -0.5: p.sai_p = p.p
+			if p.sai_p.distance_to(alvo) > 0.05: p.sai_p = p.sai_p.move_toward(alvo, 3.2 * dt)
 
 func lane_open(a: Vector2, b: Vector2, opps: Array) -> float:
 	var m := 99.0
@@ -994,6 +1036,10 @@ func ai_step(dt: float) -> void:
 			dbg["esp_n"] = dbg.get("esp_n", 0) + 1; dbg["esp_sum"] = dbg.get("esp_sum", 0.0) + sm / maxf(ms.size(), 1)
 			dbg["perto_sum"] = dbg.get("perto_sum", 0.0) + perto
 	bp_lento += (bp - bp_lento) * minf(1.0, dt / maxf(A("m2_lag_bola", 0.0), 0.01))
+	if espera_todos >= 0.0:
+		espera_todos += dt
+		if parado_dono and a_caminho() and espera_todos < 10.0: parado_dono.cd = maxf(parado_dono.cd, 0.5)
+		else: espera_todos = -1.0
 	tat_cd -= dt
 	if tat_cd <= 0: tat_cd = 1.0; tat_update()
 	if dbg_on and owner:
@@ -1009,7 +1055,7 @@ func ai_step(dt: float) -> void:
 		if owner_team == ti: continue
 		if owner == null and target and target.team == ti and target.down <= 0 and not target.off:
 			chasers.append(target); continue
-		var field: Array = act.filter(func(p): return p.team == ti and p.role != "gk" and p.down <= 0 and p.reage <= 0)
+		var field: Array = act.filter(func(p): return p.team == ti and p.role != "gk" and p.down <= 0 and p.reage <= 0 and p.dest.x < 0)
 		var c: Pl = nearest(field, bp + bv * 0.35)[0]
 		if c == null: continue
 		# só vai à pressão onde a tática manda: bloco baixo espera no seu meio-campo, a pressão alta vai a todo o lado
@@ -1031,6 +1077,12 @@ func ai_step(dt: float) -> void:
 			if rng.randf() < dt * 0.55 * rk: p.run = rand(1.4, 2.2)
 		if p.down > 0:
 			p.down -= dt; p.v *= 0.9; continue
+		if p.dest.x >= 0:
+			if parado_dono == null and espera_todos < 0.0: p.dest = Vector2(-1, -1)     # a bola já está em jogo: volta a jogar
+			else:
+				anda_dest(p, dt)
+				if p == parado_dono: p.cd = maxf(p.cd, 0.3)           # só bate quando chega à bola
+				continue
 		if parado_dono != null and parado_dono.penalty and owner == parado_dono and p != owner:
 			p.v *= 0.5; continue
 		if owner == p and (gk_chance(p, dt) or gk_out_check(p, dt)): return
@@ -1226,14 +1278,16 @@ func tackle(def: Pl, att: Pl) -> void:
 # ---------- física ----------
 func physics(dt: float) -> void:
 	var act := active()
-	for p in act: p.p += p.v * dt
+	for p in act:
+		p.v = p.v.limit_length(9.6)          # ninguém corre mais do que um velocista
+		p.p += p.v * dt
 	for i in act.size():
 		for j in range(i + 1, act.size()):
 			var a: Pl = act[i]; var c: Pl = act[j]
 			var d := c.p - a.p
 			var dl := d.length()
-			if dl < 1.6 and dl > 0.001:
-				var push := (1.6 - dl) / 2
+			if dl < 1.6 and dl > 0.001 and a.dest.x < 0 and c.dest.x < 0:
+				var push := minf((1.6 - dl) / 2, 0.15)       # separam-se aos poucos (sem saltos)
 				var n := d / dl
 				a.p -= n * push; c.p += n * push
 	for p in act: p.p = Vector2(clamp(p.p.x, -1.5, W + 1.5), clamp(p.p.y, -1.5, H + 1.5))
@@ -1246,16 +1300,17 @@ func physics(dt: float) -> void:
 			if absf(q.p.x - own_goal_x(q.team)) < 0.8 and absf(q.p.y - H / 2) < GOAL_W / 2 + 0.5: continue   # na linha de golo, entre os postes (Lei 13)
 			var dq: Vector2 = q.p - bp
 			var dl: float = dq.length()
-			if dl < dmin:
+			if dl < dmin and q.dest.x < 0:
+				# afasta-se a correr para fora da distância (sem ser empurrado de repente)
 				var away: Vector2 = dq / dl if dl > 0.01 else Vector2(0, 1)
-				q.p += away * minf(dmin - dl, (q.spd + 2.0) * maxf(dt, 0.016))
+				var fora: Vector2 = bp + away * (dmin + 0.6)
+				q.dest = Vector2(clampf(fora.x, 0.5, W - 0.5), clampf(fora.y, 0.5, H - 0.5)); q.dest_t = 0.0
 		if pb_baliza >= 0 and owner.team == pb_baliza:
 			var fx: float = abs_x(pb_baliza, BOX_D + 0.8)
 			for q in act:
-				if q.team == pb_baliza or q == gk_intruso or not in_own_box(pb_baliza, q.p): continue
-				var st: float = (q.spd + 1.0) * maxf(dt, 0.016)
-				q.p.x += clampf(fx - q.p.x, -st, st)
-			if gk_intruso: gk_intruso.p = gk_intruso_p; gk_intruso.v = Vector2.ZERO
+				if q.team == pb_baliza or q == gk_intruso or not in_own_box(pb_baliza, q.p) or q.dest.x >= 0: continue
+				q.dest = Vector2(fx, q.p.y); q.dest_t = 0.0          # sai da área a correr
+			if gk_intruso and gk_intruso.dest.x < 0: gk_intruso.v = Vector2.ZERO        # já lá está: fica parado dentro da área
 		return
 	parado_dono = null
 	if owner:
@@ -1420,7 +1475,7 @@ func throw_in() -> void:
 	var p: Pl = nearest(active().filter(func(q): return q.team == team and q.role != "gk"), at)[0]
 	reset_ball(at)
 	if p:
-		p.p = at; p.v = Vector2.ZERO; owner = p; p.cd = 0.7; p.set_piece = true; last = team; parado_dono = p
+		vai(p, at); owner = p; p.cd = 0.7; p.set_piece = true; last = team; parado_dono = p
 	pause = 0.7
 	if p and mode == "play" and training.is_empty() and not tut and not var_mode and lanc_n < 1 and rng.randf() < 0.35:
 		lanc_n += 1
@@ -1460,7 +1515,7 @@ func goal_kick(side: int, sem_intruso := false) -> void:
 		if p.team == side and p.role == "gk": gk = p
 	reset_ball(Vector2(own_goal_x(side) + dirs(side) * 4.0, H / 2))
 	if gk:
-		gk.p = Vector2(own_goal_x(side) + dirs(side) * 3.0, H / 2); owner = gk; gk.cd = 1.2; gk.set_piece = true; last = side; parado_dono = gk
+		vai(gk, Vector2(own_goal_x(side) + dirs(side) * 3.0, H / 2)); owner = gk; gk.cd = 1.2; gk.set_piece = true; last = side; parado_dono = gk
 		stall_check(gk)
 	pause = 0.9
 	pb_baliza = side; gk_intruso = null
@@ -1469,7 +1524,7 @@ func goal_kick(side: int, sem_intruso := false) -> void:
 		var fw: Array = active().filter(func(q): return q.team != side and q.line == "f")
 		if fw.size():
 			gk_intruso = pick(fw); intrusos += 1
-			gk_intruso.p = Vector2(abs_x(side, rand(12.5, 15.0)), H / 2 + rand(-9, 9)); gk_intruso.v = Vector2.ZERO; gk_intruso_p = gk_intruso.p
+			gk_intruso_p = Vector2(abs_x(side, rand(12.5, 15.0)), H / 2 + rand(-9, 9)); vai(gk_intruso, gk_intruso_p)
 			gk.cd = 1.8
 
 func corner(team: int, y: float) -> void:
@@ -1478,7 +1533,7 @@ func corner(team: int, y: float) -> void:
 	var p: Pl = nearest(active().filter(func(q): return q.team == team and q.role != "gk"), Vector2(x, y))[0]
 	reset_ball(Vector2(x, y))
 	if p:
-		p.p = Vector2(x + (-0.6 if x < 1 else 0.6), y); owner = p; p.cd = 1.1; p.set_piece = true; last = team; parado_dono = p
+		vai(p, Vector2(x + (-0.6 if x < 1 else 0.6), y)); owner = p; p.cd = 1.1; p.set_piece = true; last = team; parado_dono = p
 	toast("Canto para " + art_t(team), 1.4)
 	est.cantos[team] += 1
 	pause = 1.1
@@ -1493,17 +1548,16 @@ func corner_setup(team: int, tk: Pl) -> void:
 	# enquanto a área se enche o árbitro também tem tempo de chegar: se ficou muito longe, vai para a
 	# entrada da área do lado contrário ao canto (onde se colocam os árbitros)
 	var rs := Vector2(gx - dir * 17.5, H / 2 + (8.0 if bp.y < H / 2 else -8.0))
-	if ref.distance_to(rs) > 22.0: ref = rs; ref_target = null
+	if ref.distance_to(rs) > 22.0 and move_in == Vector2.ZERO: ref_target = rs; sprint = true   # corre para lá (sem saltar)
 	for p in active():
 		if p == tk: continue
-		p.v = Vector2.ZERO
 		if p.role == "gk":
-			if p.team != team: p.p = Vector2(gx - dir * 0.8, H / 2 + rand(-0.8, 0.8))
+			if p.team != team: vai(p, Vector2(gx - dir * 0.8, H / 2 + rand(-0.8, 0.8)))
 			continue
 		var mine: bool = p.team == team
 		if mine and p.line == "d" and p.role != "lcb" and p.role != "rcb": continue
 		if not mine and p.line == "a" and rng.randf() < 0.6: continue   # um ou dois ficam à espera do contra-ataque
-		p.p = Vector2(gx - dir * (rand(6, 14) if mine else rand(2.5, 10)), H / 2 + rand(-9, 9))
+		vai(p, Vector2(gx - dir * (rand(6, 14) if mine else rand(2.5, 10)), H / 2 + rand(-9, 9)))
 
 func goal(team: int) -> void:
 	if not desempate.is_empty(): pen_registo(true); return
@@ -1523,7 +1577,7 @@ func goal_award(team: int, festeja := false) -> void:
 	if festeja and mode == "play" and training.is_empty() and not tut and not var_mode and desempate.is_empty():
 		_festa_inicio(team, k if k and k.team == team and not k.off else null)
 	else:
-		kickoff(1 - team)
+		kickoff(1 - team, true)
 		pause = 2.2
 	if k and k.team == team and not k.off and training.is_empty() and not tut and rng.randf() < 0.14:
 		later(1.2, func(): if mode == "play" and not k.off: _festejo(k))
@@ -1558,7 +1612,7 @@ func _festa_step(dt: float) -> void:
 		p.p += p.v * dt
 	if festa.t > 4.8:
 		festa = {}
-		kickoff(1 - team)
+		kickoff(1 - team, true)
 
 # ---------- fora de jogo ----------
 func offside_snap(p: Pl, m: Pl) -> void:
@@ -1587,7 +1641,7 @@ func flag_offside(oi: Dictionary) -> void:
 	var p: Pl = nearest(active().filter(func(q): return q.team == def_t and q.role != "gk"), at)[0]
 	reset_ball(at)
 	if p:
-		p.p = at - Vector2(dirs(def_t) * 0.8, 0); owner = p; last = def_t; p.cd = 0.9; p.set_piece = true; parado_dono = p
+		vai(p, at - Vector2(dirs(def_t) * 0.8, 0)); owner = p; last = def_t; p.cd = 0.9; p.set_piece = true; parado_dono = p
 	offsides += 1
 	feed("Bandeira no ar: fora de jogo " + de_t(oi.team) + ".", "info")
 	toast("Fora de jogo: bandeira do assistente", 1.8)
@@ -1714,11 +1768,11 @@ func pen_seguinte() -> void:
 		p.v = Vector2.ZERO; p.penalty = false; p.set_piece = false; p.down = 0; p.dribble = Vector2.ZERO
 		if p == tk: continue
 		if p.role == "gk":
-			if p.team == ti: p.p = Vector2(W - BOX_D - 1.5, H / 2 + BOX_W / 2 - 1.5)   # o colega espera fora da área
+			if p.team == ti: vai(p, Vector2(W - BOX_D - 1.5, H / 2 + BOX_W / 2 - 1.5))   # o colega espera fora da área
 			else: D.gk = p.id
 			continue
 		var a := k * TAU / 19.0 + (0.0 if p.team == 0 else PI / 19.0)
-		p.p = Vector2(W / 2, H / 2) + Vector2(cos(a), sin(a)) * (4.5 if p.team == 0 else 7.0); k += 1
+		vai(p, Vector2(W / 2, H / 2) + Vector2(cos(a), sin(a)) * (4.5 if p.team == 0 else 7.0)); k += 1
 	D.a_bater = true; D.tk = tk.id
 	toast("Penálti %d %s: bate o %d" % [int(D.n[ti]) + 1, de_t(ti), tk.num], 1.8)
 	penalty(tk, true)
@@ -1880,7 +1934,9 @@ func tick(dt: float) -> void:
 			_protest_step(dt); physics(0)
 
 func _play_step(dt: float) -> void:
-	t += dt
+	# enquanto quem vai bater caminha para a bola (ou as equipas voltam ao meio-campo) o relógio do jogo comprimido
+	# para: o jogo dura o mesmo tempo útil de antes
+	if not (troca_gr.size() > 0 or (parado_dono != null and (parado_dono.dest.x >= 0 or espera_todos >= 0.0))): t += dt
 	if owner: est.posse[owner.team] += dt
 	if not desempate.is_empty():
 		desempate_step(dt); return
@@ -1918,8 +1974,12 @@ func _play_step(dt: float) -> void:
 	if dbg_on:
 		var ks := "e_pausa" if pause > 0 else ("e_parado" if parado_dono != null else ("e_dono" if owner else ("e_voo" if ult_passe else "e_solta")))
 		dbg[ks] = dbg.get(ks, 0.0) + dt
+	_saidas(dt)
+	if troca_gr.is_empty(): gr_expulso_check()
+	if not troca_gr.is_empty():
+		_troca_gr_step(dt); pause = maxf(pause, 0.1)
 	if pause > 0:
-		pause -= dt; physics(0)
+		pause -= dt; _pausa_mov(dt); physics(0)
 	else:
 		if parado_dono == null: util += dt
 		ai_step(dt)
@@ -2696,7 +2756,7 @@ func _decide_scene(L: Dictionary, d: String, timed_out: bool) -> void:
 		m = "Penálti para " + art_t(atk_t) + (" por mão na bola" if kind_of(L) == "mao" else ""); against = def_t; sev = 0.5
 	elif d == "mao" or d == "maoAmarelo":
 		var tk: Pl = nearest(active().filter(func(p): return p.team == atk_t and p.role != "gk"), L.P)[0]
-		bp = L.P; tk.p = L.P - Vector2(dirs(atk_t) * 0.8, 0); owner = tk; last = atk_t; tk.cd = 0.9; tk.set_piece = true; parado_dono = tk
+		bp = L.P; vai(tk, L.P - Vector2(dirs(atk_t) * 0.8, 0)); owner = tk; last = atk_t; tk.cd = 0.9; tk.set_piece = true; parado_dono = tk
 		m = "Mão na bola: livre para " + art_t(atk_t); against = def_t; fk_check(tk)
 	else:
 		var keep := def
@@ -2803,12 +2863,12 @@ func _decide_atraso(L: Dictionary, d: String, timed_out: bool) -> void:
 		var tk: Pl = nearest(mates, at)[0]
 		bp = at
 		if tk:
-			tk.p = at + Vector2(di * 0.8, 0); owner = tk; last = atk; tk.cd = 1.4; tk.set_piece = true; parado_dono = tk
+			vai(tk, at + Vector2(di * 0.8, 0)); owner = tk; last = atk; tk.cd = 1.4; tk.set_piece = true; parado_dono = tk
 		# a defesa pode ficar em cima da linha de golo, entre os postes, mesmo a menos de 9,15 m
 		var n := 0
 		for q in active():
 			if q.team == team and q.p.distance_to(at) < 9.15:
-				q.p = Vector2(float(L.gx) + di * 0.3, H / 2 + (n - 3) * 1.0); n += 1
+				vai(q, Vector2(float(L.gx) + di * 0.3, H / 2 + (n - 3) * 1.0)); n += 1
 		m = "Atraso ao guarda-redes: livre indireto " + de_t(atk) + " dentro da área"; against = team
 		sfx("whistle", "short")
 	else:
@@ -2849,7 +2909,7 @@ func _decide_pen(L: Dictionary, d: String, timed_out: bool) -> void:
 			var defs: Array = active().filter(func(q): return q.team != team and q.role != "gk")
 			var dp: Pl = nearest(defs, L.P)[0]
 			if dp == null: dp = gk
-			dp.p = L.P - Vector2(-float(L.dir_in) * 0.8, 0)
+			vai(dp, L.P - Vector2(-float(L.dir_in) * 0.8, 0))
 			bp = L.P; owner = dp; last = dp.team; dp.cd = 0.9; dp.set_piece = true; parado_dono = dp
 			m = "Livre indireto para " + art_t(1 - team); against = team
 			if L.infr == "paradinha":
@@ -2877,8 +2937,7 @@ func goal_verdict(L: Dictionary, allowed: bool) -> String:
 		if d0.off:
 			for p in active():
 				if p.team == d0.team and p.role != "gk": tk = p; break
-		tk.p = Vector2(clamp(L.C.x, 1, W - 1), clamp(L.C.y, 1, H - 1))
-		bp = tk.p; owner = tk; last = tk.team; tk.cd = 0.9; tk.set_piece = true; parado_dono = tk
+		bp = Vector2(clamp(L.C.x, 1, W - 1), clamp(L.C.y, 1, H - 1)); vai(tk, bp); owner = tk; last = tk.team; tk.cd = 0.9; tk.set_piece = true; parado_dono = tk
 		return "Golo anulado: falta do %d %s" % [L.att.num, de_t(team)]
 	var gk: Pl = players[L.def.id]
 	gk.p = Vector2(L.gx - L.dir_in * 1.2, L.B.y)
@@ -2920,14 +2979,14 @@ func penalty(att: Pl, cena := true) -> void:
 				if p.team == team and p.role != "gk": taker = p; break
 	for p in active():
 		if p.role == "gk" and p.team != team:
-			p.p = Vector2(opp_goal_x(team) - dir * 0.6, H / 2); continue
+			vai(p, Vector2(opp_goal_x(team) - dir * 0.6, H / 2)); continue
 		if p == taker: continue
 		if in_own_box(1 - team, p.p) or p.p.distance_to(Vector2(spot_x, H / 2)) < 9:
-			p.p = Vector2(opp_goal_x(team) - dir * (BOX_D + rand(1, 4)), H / 2 + rand(-10, 10))
+			vai(p, Vector2(opp_goal_x(team) - dir * (BOX_D + rand(1, 4)), H / 2 + rand(-10, 10)))
 	# o marcador recua para a corrida; a bola fica na marca até ao pontapé
-	taker.p = Vector2(spot_x - dir * 3.0, H / 2 + rand(-1.2, 1.2)); taker.v = Vector2.ZERO
+	vai(taker, Vector2(spot_x - dir * 3.0, H / 2 + rand(-1.2, 1.2)))
 	# o árbitro coloca-se ao lado, entre a marca e a entrada da área (o assistente fica na linha de golo)
-	ref = Vector2(spot_x - dir * 5.5, H / 2 + (7.0 if ref.y > H / 2 else -7.0)); ref_target = null
+	if move_in == Vector2.ZERO: ref_target = Vector2(spot_x - dir * 5.5, H / 2 + (7.0 if ref.y > H / 2 else -7.0)); sprint = ref.distance_to(ref_target) > 10.0
 	reset_ball(Vector2(spot_x, H / 2))
 	owner = taker; last = team; taker.cd = 1.8; taker.penalty = true; parado_dono = taker
 	pause = 1.8
@@ -3138,7 +3197,7 @@ func _novo_marcador() -> void:
 	var c: Array = active().filter(func(q): return q.team == tm and q.role != "gk")
 	if c.is_empty(): parado_dono = null; return
 	var p: Pl = nearest(c, bp)[0]
-	p.p = bp - (Vector2(opp_goal_x(tm), H / 2) - bp).normalized() * 0.8; p.v = Vector2.ZERO
+	vai(p, bp - (Vector2(opp_goal_x(tm), H / 2) - bp).normalized() * 0.8)
 	owner = p; p.set_piece = true; p.cd = 0.9; parado_dono = p; last = tm
 func molho_txt_it(certo: String) -> String: return "agrediu um adversário" if certo == "vermelho" else "empurrou/agarrou um adversário"
 
@@ -3415,6 +3474,7 @@ func stall_step(dt: float) -> void:
 	var p: Pl = players[St.id]
 	if owner != p or p.off:
 		stall = {}; return
+	if p.dest.x >= 0: return
 	St.t += dt; p.cd = max(p.cd, 0.5)
 	if St.t < 3.2 or pause > 0: return
 	var team: int = St.team
@@ -3525,7 +3585,7 @@ func _bola_arbitro_res(c: String, tm: int, muda: bool) -> void:
 	var cand2: Array = active().filter(func(q): return q.team == ti and q.role != "gk")
 	if cand2.is_empty(): return
 	var p2: Pl = nearest(cand2, at)[0]
-	reset_ball(at); p2.p = at - Vector2(dirs(ti) * 0.8, 0); p2.v = Vector2.ZERO
+	reset_ball(at); vai(p2, at - Vector2(dirs(ti) * 0.8, 0))
 	owner = p2; p2.cd = 0.9; p2.set_piece = true; last = ti; parado_dono = p2
 	pause = maxf(pause, 0.8)
 
@@ -3658,7 +3718,7 @@ func livre_em(team: int, at: Vector2) -> void:
 	var p: Pl = nearest(active().filter(func(q): return q.team == team and q.role != "gk"), at)[0]
 	reset_ball(at)
 	if p:
-		p.p = at - Vector2(dirs(team) * 0.8, 0); p.v = Vector2.ZERO; owner = p; last = team; p.cd = 0.9; p.set_piece = true; parado_dono = p
+		vai(p, at - Vector2(dirs(team) * 0.8, 0)); owner = p; last = team; p.cd = 0.9; p.set_piece = true; parado_dono = p
 	pause = 0.8
 
 func _intruso_res(c: String, side: int, q: Pl) -> void:
@@ -3708,6 +3768,7 @@ func _substitui(ti: int, quantos: int) -> void:
 		var j := 0
 		for k in bq.size():
 			if bq[k].line == p.line: j = k; break
+		if str(bq[j].get("line", "")) == "g": break          # o guarda-redes suplente só entra para a baliza
 		var s: Dictionary = bq[j]
 		bq.remove_at(j)
 		trocas.append([p.num, int(s.num)])
@@ -3728,6 +3789,74 @@ func _substitui(ti: int, quantos: int) -> void:
 		S.lento = true
 		var n0: int = trocas[0][0]
 		later(0.6, func(): if mode == "play": _sai_devagar(ti, n0))
+# Lei 3: guarda-redes expulso. Sai um jogador de campo (vai a pé até à linha do meio-campo) e entra o
+# guarda-redes suplente; sem substituições disponíveis, o defesa mais recuado veste a camisola de guarda-redes
+func gr_expulso_check() -> void:
+	if not training.is_empty() or not desempate.is_empty() or mode != "play": return
+	for ti in 2:
+		var tem := false
+		var campo: Array = []
+		for p in active():
+			if p.team != ti: continue
+			if p.role == "gk": tem = true
+			else: campo.append(p)
+		if tem or campo.size() < 2: continue
+		var S: Dictionary = subs[ti]
+		var gb := -1
+		for k in banco[ti].size():
+			if str(banco[ti][k].get("line", "")) == "g": gb = k
+		var g_casa := Vector2(own_goal_x(ti) + dirs(ti) * 1.5, H / 2)
+		if int(S.n) < 5 and gb >= 0:
+			var porta := Vector2(W / 2 + (-1.5 if ti == 0 else 1.5), H + 0.6)
+			var sai: Pl = null
+			var bv := -1e9
+			for q in campo:
+				if q == parado_dono: continue
+				# sai um avançado, de preferência o que está mais perto do banco
+				var v: float = (25.0 if q.line == "f" else 0.0) - q.p.distance_to(porta) * 0.4 - q.rel * 0.3
+				if v > bv: bv = v; sai = q
+			if sai == null: continue
+			var g: Dictionary = banco[ti][gb]
+			banco[ti].remove_at(gb)
+			S.n += 1; added += 0.4
+			troca_gr = {"ti": ti, "p": sai.id, "fase": "sai", "g": g, "n0": sai.num, "porta": porta}
+			vai(sai, porta)
+			feed("Sem guarda-redes %s: sai o %d e entra o guarda-redes suplente, o %d." % [de_t(ti), sai.num, int(g.num)], "info")
+			toast("Guarda-redes expulso: %s troca o %d pelo guarda-redes suplente" % [art_t(ti), sai.num], 2.6)
+			radio("4.º árbitro", "Substituição %s: sai o %d, entra o guarda-redes %d." % [de_t(ti), sai.num, int(g.num)])
+		else:
+			var q: Pl = null
+			var bd := 1e9
+			for c in campo:
+				var dq: float = c.p.distance_to(g_casa) + (0.0 if c.line == "d" else 15.0)
+				if dq < bd: bd = dq; q = c
+			q.role = "gk"; q.line = "g"; q.lane = H / 2; q.rel = maxf(q.rel - 25.0, 30.0)
+			troca_gr = {"ti": ti, "p": q.id, "fase": "entra"}
+			vai(q, g_casa)
+			feed("Sem substituições %s: o %d veste a camisola de guarda-redes." % [de_t(ti), q.num], "info")
+			toast("Sem substituições: o %d %s vai para a baliza" % [q.num, de_t(ti)], 2.6)
+		return
+func _troca_gr_step(dt: float) -> void:
+	var T := troca_gr
+	var p: Pl = players[int(T.p)]
+	var ti: int = T.ti
+	if p.off: troca_gr = {}; return
+	if T.fase == "sai":
+		if p.dest.x < 0 or p.p.distance_to(T.porta) < 0.8:
+			# a troca faz-se na linha do meio-campo: quem sai fica no banco e o guarda-redes entra por ali
+			var g: Dictionary = T.g
+			p.name = g.name; p.short = g.short; p.num = int(g.num); p.ovr = float(g.ovr); p.tr = []
+			p.yellow = 0; p.fouls = 0; p.grudge = false; p.reserve = false; p.banned = ""; p.entrou = true
+			p.role = "gk"; p.line = "g"; p.lane = H / 2; p.mark = null; p.run = 0
+			atributos(p, sub_base[ti], Carreira.Seeded.new(Carreira.hash_s(str(teams[ti].name)) + p.num * 97))
+			p.rel = clampf(float(g.ovr), 30.0, 95.0)
+			placa = {"t": 3.0, "team": ti, "trocas": [[int(T.n0), p.num]]}
+			T.fase = "entra"
+			var pen := parado_dono != null and parado_dono.penalty
+			vai(p, Vector2(own_goal_x(ti) + dirs(ti) * (0.6 if pen else 1.5), H / 2))
+	elif p.dest.x < 0:
+		troca_gr = {}
+
 func _sai_devagar(ti: int, n0: int) -> void:
 	ask_open("%s ganha e o %d que vai sair atravessa o campo todo, a passo, até ao banco." % [cap_t(ti), n0], "Substituição",
 		[{"d": "esperar", "label": "Esperar", "small": "é o tempo dele"}, {"d": "linha", "label": "Linha mais próxima", "small": "sai por onde está"},
@@ -3954,7 +4083,7 @@ func bola_ao_solo(team: int, at: Vector2, gr := false) -> void:
 	if p == null: p = nearest(active().filter(func(q): return q.team == team and q.role != "gk"), at)[0]
 	reset_ball(at)
 	if p:
-		p.p = at - Vector2(dirs(team) * 0.6, 0); p.v = Vector2.ZERO; owner = p; last = team; p.cd = 0.8; p.set_piece = true; parado_dono = p
+		vai(p, at - Vector2(dirs(team) * 0.6, 0)); owner = p; last = team; p.cd = 0.8; p.set_piece = true; parado_dono = p
 	bola_solo = true
 	pause = maxf(pause, 0.8)
 	toast("Bola ao solo para " + art_t(team), 1.8)
@@ -4019,18 +4148,19 @@ func fk_check(tk: Pl) -> void:
 		var mates: Array = active().filter(func(p): return p.team == team and p.role != "gk" and p != tk)
 		var a: Pl = nearest(mates, ponta)[0]
 		if a: fk.enc = true; fk.enc_id = a.id
-	tk.p = spot - to_g * 1.0; tk.v = Vector2.ZERO; tk.cd = 99
+	vai(tk, spot - to_g * 1.0); tk.cd = 99
 	fk_place()
-func fk_place() -> void:
+func fk_place(dt := 0.0) -> void:
+	# a barreira forma-se com os jogadores a ir para o lugar (no máximo 6,5 m/s), sem saltos
 	var n: int = fk.wall.size()
 	for i in n:
 		var p: Pl = players[fk.wall[i]]
 		if p.off: continue
 		var dd: float = fk.wd - (fk.creep_d if fk.creep_id == p.id else 0.0)
-		p.p = fk.spot + fk.to_g * dd + fk.perp * (i - (n - 1) / 2.0) * 0.85; p.v = Vector2.ZERO
+		p.p = p.p.move_toward(fk.spot + fk.to_g * dd + fk.perp * (i - (n - 1) / 2.0) * 0.85, 6.5 * dt); p.v = Vector2.ZERO; p.dest = Vector2(-1, -1)
 	if fk.enc_id >= 0:
 		var a: Pl = players[fk.enc_id]
-		if not a.off: a.p = fk.spot + fk.to_g * fk.wd + fk.perp * fk.enc_s * ((n - 1) / 2.0 * 0.85 + fk.enc_d); a.v = Vector2.ZERO
+		if not a.off: a.p = a.p.move_toward(fk.spot + fk.to_g * fk.wd + fk.perp * fk.enc_s * ((n - 1) / 2.0 * 0.85 + fk.enc_d), 6.5 * dt); a.v = Vector2.ZERO; a.dest = Vector2(-1, -1)
 func fk_step(dt: float) -> void:
 	if fk.is_empty(): return
 	var F := fk
@@ -4041,7 +4171,7 @@ func fk_step(dt: float) -> void:
 	F.wd += clamp(F.tgt - F.wd, -2.5 * dt, 2.5 * dt)
 	if F.creep_id >= 0 and F.creep_d < 1.2: F.creep_d += dt * 0.8
 	F.enc_d += clampf(F.enc_tgt - F.enc_d, -1.2 * dt, 1.2 * dt)
-	fk_place()
+	fk_place(dt)
 	if F.phase == "set" and F.t > 1.6:
 		F.phase = "ask"
 		ask_open("Livre direto " + de_t(F.team) + " a %d m da baliza. Olha para a barreira: está a 9,15 m?" % int(round(F.d)), "Livre direto",

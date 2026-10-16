@@ -221,10 +221,20 @@ func _draw() -> void:
 		var k := 0
 		for p in jogo.players:
 			if p.team != ti or not p.off: continue
-			var c := w2s(Vector2(W / 2 + (-3 - k * 1.7 if ti == 0 else 3 + k * 1.7), H + 1.75))
+			var lugar := Vector2(W / 2 + (-3 - k * 1.7 if ti == 0 else 3 + k * 1.7), H + 1.75)
+			k += 1
+			if p.sai_p.x > -0.5 and p.sai_p.distance_to(lugar) > 0.3:
+				# ainda a caminho do banco, a pé
+				var tmx: Dictionary = jogo.teams[p.team]
+				var cs: Vector2 = w2s(p.sai_p)
+				var colx: Color = tmx.gk if p.role == "gk" else tmx.color
+				_carica(cs, sc * 1.45, colx.darkened(0.25), (tmx.dark as Color), false, false)
+				draw_string(font, cs + Vector2(-sc * 1.45, int(max(9.0, sc * 1.6)) * 0.36), str(p.num), HORIZONTAL_ALIGNMENT_CENTER, sc * 2.9, int(max(9.0, sc * 1.6)), Color(1, 1, 1, 0.8))
+				draw_rect(Rect2(cs + Vector2(sc * 0.9, -sc * 1.9), Vector2(sc * 0.55, sc * 0.8)), Color("d8322f"))
+				continue
+			var c := w2s(lugar)
 			draw_rect(Rect2(c - Vector2(0.5, 0.7) * sc, Vector2(1.0, 1.4) * sc), Color("d8322f"))
 			draw_string(font, c + Vector2(-sc, sc * 0.35), str(p.num), HORIZONTAL_ALIGNMENT_CENTER, sc * 2, int(max(8.0, sc * 0.9)), Color.WHITE)
-			k += 1
 	# o que o árbitro vê: cone até à bola (verde perto, amarelo, vermelho longe) e quem está a tapar (as mesmas regras da nota)
 	var tapam: Array = []
 	if jogo.mode == "play":

@@ -77,6 +77,12 @@ static func bench_for(name: String, rating: float) -> Array:
 		used[nm] = 1
 		var ovr := clampf(round(rating - 3 + (r.next() + r.next() - 1.0) * 8), 35.0, 92.0)
 		out.append({"name": nm, "short": nm.split(" ")[1], "ovr": ovr, "num": nums[i], "line": lines[i]})
+	# guarda-redes suplente (entra se o titular for expulso)
+	var ng := ""
+	while true:
+		ng = FIRST[int(r.next() * FIRST.size())] + " " + LAST[int(r.next() * LAST.size())]
+		if not used.has(ng): break
+	out.append({"name": ng, "short": ng.split(" ")[1], "ovr": clampf(round(rating - 6 + (r.next() - 0.5) * 8), 35.0, 90.0), "num": 12, "line": "g"})
 	return out
 
 static func hash_s(t: String) -> int:
