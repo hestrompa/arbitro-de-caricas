@@ -487,6 +487,8 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 
 # lista do que mudou nas últimas versões (para quem testa saber o que procurar)
 const NOVIDADES := [
+	["Equipas desniveladas", "nos jogos amigáveis a diferença entre equipas pode ser muito maior, e a força conta mais em campo; cada equipa tem uma estrela e um elo mais fraco, e quem lê mal o jogo escolhe pior"],
+	["Cabeça e respiração", "nos lances 3D os jogadores seguem a bola com a cabeça e o peito respira, mais fundo depois de correr"],
 	["Sem saltos", "nas bolas paradas e depois dos golos as caricas vão a correr para o lugar, travam aos poucos nas paragens e ninguém salta de sítio; o relógio para enquanto se preparam"],
 	["Guarda-redes expulso", "sai um jogador de campo a pé e entra o guarda-redes suplente pela linha do meio-campo; sem substituições, um defesa veste a camisola"],
 	["Expulsos", "saem do campo a pé até ao banco"],

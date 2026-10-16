@@ -101,7 +101,8 @@ static func club_index(name: String, tier: int) -> int:
 static func club_rating(name: String, tier: int) -> int:
 	var i := club_index(name, tier)
 	var r := Seeded.new(hash_s(name) + 11).next()
-	return int(round(clamp(52 + tier * 6.5 + (6 if i >= 0 and i < 2 else 0) + (r - 0.5) * 12, 40, 92)))
+	# dentro da mesma divisão há clubes claramente melhores do que outros (os dois primeiros são os grandes)
+	return int(round(clamp(52 + tier * 6.5 + (9 if i >= 0 and i < 2 else 0) + (r - 0.5) * 20, 40, 94)))
 # estilo de jogo do clube (fixo): posse, jogo direto, pressão alta ou bloco baixo e contra-ataque
 static func estilo_of(name: String) -> String:
 	return ["posse", "direto", "pressao", "contra"][(hash_s(name) / 3) % 4]
@@ -111,6 +112,7 @@ static func squad_for(name: String, rating: float) -> Array:
 	var star_i := 7 + int(r.next() * 4)
 	var sim_i := 5 + int(r.next() * 6)
 	var hard_i := 1 + int(r.next() * 6)
+	var fraco_i := 1 + int(r.next() * 9)      # o elo mais fraco da equipa
 	var used := {}
 	var out: Array = []
 	for i in 11:
@@ -119,17 +121,18 @@ static func squad_for(name: String, rating: float) -> Array:
 			nm = FIRST[int(r.next() * FIRST.size())] + " " + LAST[int(r.next() * LAST.size())]
 			if not used.has(nm): break
 		used[nm] = 1
-		var ovr := int(round(clamp(rating + g.call() * 6 + (11 if i == star_i else 0), 35, 95)))
+		var ovr := int(round(clamp(rating + g.call() * 8 + (14 if i == star_i else 0) - (11 if i == fraco_i and i != star_i else 0), 35, 97)))
 		var tr: Array = []
 		if i == star_i: tr.append("estrela")
 		if i == sim_i and r.next() < 0.75: tr.append("simulador")
 		if i == hard_i and r.next() < 0.8: tr.append("duro")
+		if i == fraco_i and i != star_i: tr.append("fraco")
 		out.append({"name": nm, "short": nm.split(" ")[1], "ovr": float(ovr), "tr": tr, "num": NUMS[i]})
 	# a força do clube é a média do plantel (sem contar a estrela): o sorteio dos nomes não pode fazer um clube melhor do que é
 	var soma := 0.0
 	for q in out:
-		if not "estrela" in q.tr: soma += q.ovr
-	var ajuste := rating - soma / 10.0
+		if not "estrela" in q.tr and not "fraco" in q.tr: soma += q.ovr
+	var ajuste := rating - soma / 9.0
 	for q in out: q.ovr = clampf(round(q.ovr + ajuste), 35.0, 95.0)
 	return out
 
@@ -147,8 +150,8 @@ static func kit_of(club: Array, alt: bool) -> Dictionary:
 static func default_teams() -> Array:
 	var r := randf()
 	return [
-		{"name": "Azuis", "art": "os", "color": Color("3569dc"), "dark": Color("1d3f8f"), "sock": Color("1d3f8f"), "shorts": Color("f1f1f1"), "text": Color.WHITE, "gk": Color("2fa36b"), "pat": 0.0, "shirt2": Color("f1f1f1"), "rating": round(64 + r * 14), "dir": 1},
-		{"name": "Laranjas", "art": "os", "color": Color("ee7d2c"), "dark": Color("a4521a"), "sock": Color("ee7d2c"), "shorts": Color("23242a"), "text": Color.WHITE, "gk": Color("8a5bd6"), "pat": 1.0, "shirt2": Color("23242a"), "rating": round(78 - r * 14 + randf_range(-3, 3)), "dir": -1},
+		{"name": "Azuis", "art": "os", "color": Color("3569dc"), "dark": Color("1d3f8f"), "sock": Color("1d3f8f"), "shorts": Color("f1f1f1"), "text": Color.WHITE, "gk": Color("2fa36b"), "pat": 0.0, "shirt2": Color("f1f1f1"), "rating": round(58 + r * 26), "dir": 1},
+		{"name": "Laranjas", "art": "os", "color": Color("ee7d2c"), "dark": Color("a4521a"), "sock": Color("ee7d2c"), "shorts": Color("23242a"), "text": Color.WHITE, "gk": Color("8a5bd6"), "pat": 1.0, "shirt2": Color("23242a"), "rating": round(84 - r * 26 + randf_range(-3, 3)), "dir": -1},
 	]
 # equipas de um jogo da carreira: equipamento alternativo quando as cores chocam
 static func teams_for(h: Array, a: Array, tier: int) -> Array:

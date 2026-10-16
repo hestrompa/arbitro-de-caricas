@@ -35,6 +35,7 @@ func _initialize():
 	js[2].node.visible = true
 	var bola := C + Vector2(10, 0)
 	m.ball.position = Vector3(bola.x, 0.11, bola.y)
+	Jogador.bola3 = m.ball.position
 	var dt := 1.0 / 30.0
 	var t := 0.0
 	var k := 0

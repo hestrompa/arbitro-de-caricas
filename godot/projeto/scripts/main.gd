@@ -823,6 +823,7 @@ func _scene_process(delta: float) -> void:
 	elif lance != 9 and lance != 11: _extras_idle(dt)
 	var all: Array = [att, def] + extras
 	all = all.filter(func(p): return p.node.visible)
+	Jogador.bola3 = b3
 	for p in all:
 		p.update(dt, t)
 		p.ground()

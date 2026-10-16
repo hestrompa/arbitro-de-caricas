@@ -386,7 +386,7 @@ func nearest(list: Array, q: Vector2) -> Array:
 	return [best, d]
 
 # ---------- plantéis: cada carica recebe o seu jogador ----------
-const CONTRASTE := 0.45
+const CONTRASTE := 0.7
 func squad_setup() -> void:
 	var base: float = (float(teams[0].get("rating", 70)) + float(teams[1].get("rating", 70))) / 2.0
 	for ti in 2:
@@ -688,7 +688,7 @@ func on_ball(p: Pl, dt: float) -> void:
 	var T := tat(p.team)
 	# cada opção vale o perigo onde a bola fica (se correr bem) menos o perigo de a perder ali (se correr mal);
 	# o ruído é a "visão": quem decide mal escolhe muitas vezes uma opção pior
-	var ruido := (0.005 + (100.0 - p.dec) / 100.0 * 0.03) * A("ruido_k", 1.0)
+	var ruido := (0.004 + (100.0 - p.dec) / 100.0 * A("ruido_dec", 0.045)) * A("ruido_k", 1.0)
 	var base_v := A("base_v", 0.03)  # ter a bola já vale alguma coisa
 	if m2(): base_v = A("m2_base_v", 0.03)
 	var caut: float = T.cautela

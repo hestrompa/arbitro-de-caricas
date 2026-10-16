@@ -43,6 +43,7 @@ const LOCO_DIR := ["jog", "jog_fr", "jog_fl", "jog_r", "jog_l", "jog_br", "jog_b
 const LOCO_CICLO := ["walk", "jog", "run", "jog_fr", "jog_fl", "jog_r", "jog_l", "jog_br", "jog_bl", "jog_b"]
 static var clip_vel := {}         # ciclo -> velocidade no chão no referencial do corpo (x = lado, y = frente), m/s
 static var clip_fase := {}        # ciclo -> fase (0..1) com o pé esquerdo mais em baixo: troca de ciclo sem trocar de pé
+static var bola3 := Vector3.INF   # onde está a bola (os jogadores seguem-na com a cabeça)
 static var natural := true        # testes: false volta ao trote/corrida só para a frente, sem pés presos
 static var clip_pe := {}          # ciclo -> {pé: altura mínima}: abaixo disto (+3 cm) o pé está apoiado
 
@@ -106,6 +107,8 @@ var loco_req := ""                # o que quem chama pediu (idle, walk, jog, run
 var vel_obs := Vector2.ZERO       # velocidade real, medida pelas posições (suavizada)
 var pos_upd := Vector2.INF
 var want_yaw := 0.0
+var olhar_yp := Vector2.ZERO      # cabeça: para onde está a olhar agora (rodar, inclinar), segue a bola com atraso
+var resp_t := 0.0                  # respiração (mais funda depois de correr)
 var olha_bola := false            # está a recuar ou a andar de lado de frente para a bola
 var loco_t := 0.0                 # tempo desde a última troca de ciclo (não trocar a cada frame numa viragem)
 var pe_lock := {}                 # pé apoiado -> [onde ficou no chão (global), peso]: não escorrega enquanto apoia
@@ -453,6 +456,37 @@ func update(dt: float, t: float) -> void:
 	_pes(dt)
 	_balance(dt)
 	_gesto(dt)
+	_olhar(dt)
+
+# detalhes humanos: a cabeça segue a bola (pescoço e cabeça repartem a rotação, com limites e algum atraso)
+# e o peito respira, mais depressa e mais fundo depois de correr
+func _olhar(dt: float) -> void:
+	if not natural or gesto != "": return
+	var fol: float = clampf(vel_obs.length() / 7.0, 0.0, 1.0)
+	resp_t += dt * (1.5 + 2.2 * fol)
+	var rb: float = sin(resp_t + float(get_instance_id() % 97)) * (0.012 + 0.02 * fol)
+	var i3: int = bi["spine03"]
+	skel.set_bone_pose_rotation(i3, skel.get_bone_pose_rotation(i3) * Quaternion.from_euler(Vector3(rb, 0, 0)))
+	if bola3 == Vector3.INF: return
+	var h: Vector3 = bone_world("head")
+	var d: Vector3 = bola3 - h
+	var dh := Vector2(d.x, d.z)
+	if dh.length() < 0.5: return
+	var yaw: float = clampf(dir.angle_to(dh), -1.15, 1.15)
+	var pit: float = clampf(atan2(d.y, dh.length()), -0.45, 0.3)
+	# se a bola está mesmo atrás, não torce o pescoço: olha em frente
+	if absf(dir.angle_to(dh)) > 2.2: yaw = 0.0; pit = 0.0
+	olhar_yp = olhar_yp.lerp(Vector2(yaw, pit), 1.0 - exp(-dt * 5.0))
+	var sg := skel.global_transform.basis
+	var fw := Vector3(dh.x, 0, dh.y).normalized()
+	var eixo_p := fw.cross(Vector3.UP).normalized()
+	for b in [["neck01", 0.4, 0.3], ["head", 0.6, 0.7]]:
+		var i: int = bi[b[0]]
+		var par: int = skel.get_bone_parent(i)
+		var pb: Basis = sg * (skel.get_bone_global_pose(par).basis if par >= 0 else Basis())
+		var inv := pb.inverse()
+		var q := Quaternion((inv * Vector3.UP).normalized(), -olhar_yp.x * float(b[1])) * Quaternion((inv * eixo_p).normalized(), olhar_yp.y * float(b[2]))
+		skel.set_bone_pose_rotation(i, q * skel.get_bone_pose_rotation(i))
 
 # pé apoiado fica preso ao chão (IK da perna) e solta-se quando a captura o levanta: os pés não deslizam
 # quando a velocidade não bate certo com a passada, nas trocas de ciclo e nas viragens
