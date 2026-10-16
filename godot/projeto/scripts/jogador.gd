@@ -461,7 +461,7 @@ func update(dt: float, t: float) -> void:
 # detalhes humanos: a cabeça segue a bola (pescoço e cabeça repartem a rotação, com limites e algum atraso)
 # e o peito respira, mais depressa e mais fundo depois de correr
 func _olhar(dt: float) -> void:
-	if not natural or gesto != "": return
+	if not natural or gesto != "" or state.begins_with("q_"): return
 	var fol: float = clampf(vel_obs.length() / 7.0, 0.0, 1.0)
 	resp_t += dt * (1.5 + 2.2 * fol)
 	var rb: float = sin(resp_t + float(get_instance_id() % 97)) * (0.012 + 0.02 * fol)
@@ -562,6 +562,7 @@ func _gesto(dt: float) -> void:
 	gesto_t += dt
 	if gesto_t < 0.0: return
 	if gesto_t > gesto_dur: gesto = ""; return
+	if state.begins_with("q_"): return   # o corpo todo já faz o gesto (animação da Quaternius)
 	var w: float = clampf(gesto_t / 0.25, 0.0, 1.0) * clampf((gesto_dur - gesto_t) / 0.35, 0.0, 1.0)
 	w = w * w * (3.0 - 2.0 * w)
 	var sl := bone_world("upperarm01_L"); var sr := bone_world("upperarm01_R")

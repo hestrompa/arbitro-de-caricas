@@ -487,6 +487,7 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 
 # lista do que mudou nas últimas versões (para quem testa saber o que procurar)
 const NOVIDADES := [
+	["Gestos com o corpo todo", "nos lances 3D, quem protesta abana a cabeça ou fala com os braços, no fim do jogo há quem descanse com as mãos nos joelhos e quem marca o penálti festeja (animações grátis da Quaternius); os outros jogadores voltam a reagir em todos os lances, e não só no primeiro"],
 	["Equipas desniveladas", "nos jogos amigáveis a diferença entre equipas pode ser muito maior, e a força conta mais em campo; cada equipa tem uma estrela e um elo mais fraco, e quem lê mal o jogo escolhe pior"],
 	["Cabeça e respiração", "nos lances 3D os jogadores seguem a bola com a cabeça e o peito respira, mais fundo depois de correr"],
 	["Sem saltos", "nas bolas paradas e depois dos golos as caricas vão a correr para o lugar, travam aos poucos nas paragens e ninguém salta de sítio; o relógio para enquanto se preparam"],

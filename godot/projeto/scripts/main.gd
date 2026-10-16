@@ -707,6 +707,9 @@ func _restart() -> void:
 	for i in extras.size():
 		var e: Jogador = extras[i]
 		e.set_meta("cur", e.get_meta("spot"))
+		# a reação é escolhida de novo em cada lance (antes ficava a do primeiro lance para sempre)
+		for k in ["reac", "qclip"]:
+			if e.has_meta(k): e.remove_meta(k)
 	refj.node.visible = modo != "treino"
 	refj.play("idle", 0.0)
 
@@ -905,7 +908,16 @@ func _extras_step(dt: float) -> void:
 			if not e.has_meta("reac"): e.set_meta("reac", _reacao(e, to.length()))
 			if e.gesto != "" and e.gesto_t > 0.0 and sp < 1.2 and (REF - cu).length() > 0.5: face = (REF - cu).normalized()
 		e.move(cu, face, sp)
-		e.play("run" if sp > 4.2 else ("jog" if sp > 0.7 else "idle"), 0.3)
+		var nm := "run" if sp > 4.2 else ("jog" if sp > 0.7 else "idle")
+		# parado a reagir: o corpo todo faz o gesto (animações da Quaternius), não só os braços
+		if nm == "idle" and e.gesto != "" and e.gesto_t > 0.0:
+			if not e.has_meta("qclip"): e.set_meta("qclip", _qclip(e.gesto))
+			if e.get_meta("qclip") != "": nm = e.get_meta("qclip")
+		e.play(nm, 0.3)
+func _qclip(g: String) -> String:
+	match g:
+		"abre": return "q_nao" if rng.randf() < 0.55 else "q_fala"
+	return ""
 func _reacao(e: Jogador, dist: float) -> String:
 	if not (lance <= 4 or lance == 6) or dist > 28.0: return ""
 	var r := rng.randf()
@@ -936,7 +948,10 @@ func _extras_idle(dt: float) -> void:
 		e.set_meta("cur", cu)
 		var to := Vector2(b3.x, b3.z) - cu
 		e.move(cu, to.normalized() if to.length() > 0.1 else Vector2(0, 1), v.length() * 0.6 if t < TC + 0.6 else 0.0)
-		e.play("jog" if v.length() > 1.0 and t < TC + 0.6 else "idle", 0.4)
+		var nm := "jog" if v.length() > 1.0 and t < TC + 0.6 else "idle"
+		# no fim do jogo há quem aproveite a paragem para descansar, mãos nos joelhos
+		if nm == "idle" and i % 3 == 1 and t > TC + 1.2 and modo != "treino" and jogo != null and jogo.t > Partida.MATCH_SECONDS * 0.72: nm = "q_cansado"
+		e.play(nm, 0.5)
 
 # ---------- o 3D continua as caricas ----------
 # em que instante da cena estava o jogo 2D quando parou (o flash); antes disso os outros repetem o rasto 2D
@@ -2945,6 +2960,8 @@ func _penalty(dt: float) -> void:
 				var k: float = clampf((t - t_corre) / (TC - t_corre), 0.0, 1.0)
 				att.move(ini.lerp(fim, k), dirc, 3.0)
 				att.play("kick" if t > TC - 0.35 else "run", 0.1)
+		elif bool(sc.golo) and t > TC + 0.75 and att.speed < 1.0:
+			att.move(att.pos, att.dir, 0.0); att.play("q_festa", 0.35)   # golo: festeja (animação da Quaternius)
 		else: _settle(att, dt, A)
 	# guarda-redes: na linha até ao pontapé (no "gr" adianta-se antes do pontapé) e depois atira-se
 	var linha := Vector2(gx - di * 0.15, H / 2)

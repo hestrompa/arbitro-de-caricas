@@ -438,6 +438,19 @@ func tat_update() -> void:
 		var mm: float = ment[ti]
 		tats[ti] = {"cautela": e.cautela * (1.0 - 0.3 * mm), "direto": e.direto * (1.0 + 0.15 * maxf(mm, 0.0)), "linha": e.linha + mm * (6.0 if mm > 0 else 4.0),
 			"press": clampf(e.press + 0.35 * maxf(mm, 0.0), 0.0, 1.2), "runs": e.runs * (1.0 + 0.7 * mm), "remate": e.remate + 0.03 * maxf(mm, 0.0)}
+		# grande contra pequeno: o mais forte sobe as linhas e pressiona; o mais fraco fecha-se atrás e sai em contra-ataque
+		var fz: float = clampf(gap, -2.0, 2.0) * A("grande_k", 0.0)
+		var T0: Dictionary = tats[ti]
+		T0.linha = float(T0.linha) + 3.0 * fz
+		T0.press = clampf(float(T0.press) + 0.15 * fz, 0.0, 1.2)
+		if A("grande_v", 1.0) < 0.5:
+			T0.runs = float(T0.runs) * clampf(1.0 - 0.2 * fz, 0.5, 1.6)
+			T0.cautela = float(T0.cautela) * (1.0 + 0.15 * maxf(-fz, 0.0))
+		elif fz > 0.0:
+			T0.cautela = float(T0.cautela) * (1.0 + 0.1 * fz)   # o forte gere a bola com calma
+		else:
+			T0.direto = float(T0.direto) * (1.0 - 0.15 * fz)   # o fraco despacha para a frente
+			T0.runs = float(T0.runs) * (1.0 - 0.2 * fz)
 # perigo de uma posição para a equipa ti: probabilidade aproximada de aquela posse acabar em golo
 func amea(ti: int, q: Vector2) -> float:
 	var d := q.distance_to(Vector2(opp_goal_x(ti), H / 2))
