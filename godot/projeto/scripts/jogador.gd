@@ -110,6 +110,7 @@ var want_yaw := 0.0
 var olhar_yp := Vector2.ZERO      # cabeça: para onde está a olhar agora (rodar, inclinar), segue a bola com atraso
 var resp_t := 0.0                  # respiração (mais funda depois de correr)
 var olha_bola := false            # está a recuar ou a andar de lado de frente para a bola
+var corre_frente := false          # rumo(): já virado para onde corre (depressa)
 var loco_t := 0.0                 # tempo desde a última troca de ciclo (não trocar a cada frame numa viragem)
 var pe_lock := {}                 # pé apoiado -> [onde ficou no chão (global), peso]: não escorrega enquanto apoia
 var last_yaw := 0.0
@@ -349,20 +350,28 @@ func _local_dir() -> Vector2:
 # escolhe o ciclo pela velocidade e pela direção em que o corpo anda em relação a para onde está virado
 func _loco_pick(blend: float) -> void:
 	var nm := "idle"
-	if not natural and loco_req != "idle" and speed > 0.25: nm = "run" if loco_req == "run" else "jog"
-	elif loco_req != "idle" and speed > 0.25:
-		var lv := _local_dir()
-		if (loco_req == "run" or speed > 4.2) and lv.y > 0.5: nm = "run"
-		elif speed < 1.8 and lv.y > 0.6 and clip_vel.has("walk"): nm = "walk"
-		else:
-			var bd := -2.0
-			for c in LOCO_DIR:
-				if not clip_vel.has(c): continue
-				var d: float = (clip_vel[c] as Vector2).normalized().dot(lv) + (0.08 if c == state else 0.0)
-				if d > bd: bd = d; nm = c
+	if not natural:
+		if loco_req != "idle" and speed > 0.25: nm = "run" if loco_req == "run" else "jog"
+	else:
+		# margens (histerese): perto de um limite a velocidade sobe e desce e o ciclo não pode trocar a cada frame
+		var em_mov: bool = state == "walk" or state == "run" or state in LOCO_DIR
+		var lim_para: float = 0.3 if em_mov else (0.55 if loco_req == "idle" else 0.25)
+		if speed > lim_para:
+			var lv := _local_dir()
+			var lim_corre: float = 3.8 if state == "run" else 4.4
+			var lim_anda: float = 2.05 if state == "walk" else 1.6
+			if speed > lim_corre and lv.y > 0.5: nm = "run"
+			elif speed < lim_anda and lv.y > 0.6 and clip_vel.has("walk"): nm = "walk"
+			else:
+				var bd := -2.0
+				for c in LOCO_DIR:
+					if not clip_vel.has(c): continue
+					var d: float = (clip_vel[c] as Vector2).normalized().dot(lv) + (0.2 if c == state else 0.0)
+					if d > bd: bd = d; nm = c
 	if gr and nm == "idle": nm = "gk_idle"
-	# numa viragem a direção passa por várias: só se troca de ciclo de trote passado um bocadinho
-	if state != nm and state in LOCO_DIR and nm in LOCO_DIR and loco_t < 0.25: nm = state
+	# cada ciclo fica pelo menos um bocadinho (numa viragem ou a travar passa por vários); arrancar de parado é logo
+	var ciclo := func(c: String) -> bool: return c in LOCO_DIR or c in ["idle", "gk_idle", "walk", "run"]
+	if state != nm and ciclo.call(state) and ciclo.call(nm) and loco_t < 0.3 and not (state in ["idle", "gk_idle"] and speed > 1.2): nm = state
 	if state != nm:
 		loco_t = 0.0
 		var era := state
@@ -389,7 +398,10 @@ func rumo(mov: Vector2, sp_: float, alvo: Vector2) -> Vector2:
 	var b := alvo - pos
 	if mov.length() < 0.01 or sp_ < 0.3: return b.normalized() if b.length() > 0.3 else dir
 	var m := mov.normalized()
-	if b.length() < 1.5 or sp_ > 4.2: olha_bola = false; return m
+	if b.length() < 1.5: olha_bola = false; return m
+	# depressa ninguém recua nem anda de lado: vira-se e corre (com margem, para não andar a virar-se a cada frame)
+	corre_frente = sp_ > (3.0 if corre_frente else 3.6)
+	if corre_frente: olha_bola = false; return m
 	var c := m.dot(b.normalized())
 	olha_bola = c < (0.45 if olha_bola else 0.2)
 	return b.normalized() if olha_bola else m

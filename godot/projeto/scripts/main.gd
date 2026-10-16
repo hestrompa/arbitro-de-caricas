@@ -708,7 +708,7 @@ func _restart() -> void:
 		var e: Jogador = extras[i]
 		e.set_meta("cur", e.get_meta("spot"))
 		# a reação é escolhida de novo em cada lance (antes ficava a do primeiro lance para sempre)
-		for k in ["reac", "qclip"]:
+		for k in ["reac", "qclip", "sp_s", "parou"]:
 			if e.has_meta(k): e.remove_meta(k)
 	refj.node.visible = modo != "treino"
 	refj.play("idle", 0.0)
@@ -898,8 +898,14 @@ func _extras_step(dt: float) -> void:
 				vel *= exp(-dt * 2.5)
 			else:
 				var want := Vector2.ZERO
-				if to.length() > stop: want = to.normalized() * min(5.5 - float(i) * 0.5, (to.length() - stop) * 2.0)
+				# chega e pára de vez (sem ficar a arrastar os pés a meio metro por segundo); só volta a andar se o lance se afastar
+				var parado: bool = e.get_meta("parou", false)
+				var falta: float = to.length() - stop
+				if falta > (1.6 if parado else 0.6): want = to.normalized() * clampf(falta * 2.0, 1.2, 5.5 - float(i) * 0.5); parado = false
+				else: parado = parado or vel.length() < 1.0
+				e.set_meta("parou", parado)
 				vel = vel.lerp(want, clamp(dt * 3.0, 0.0, 1.0))
+				if want == Vector2.ZERO and vel.length() < 0.3: vel = Vector2.ZERO
 			cu += vel * dt
 			e.set_meta("cur", cu); e.set_meta("vel", vel)
 			sp = vel.length()
@@ -910,7 +916,8 @@ func _extras_step(dt: float) -> void:
 		e.move(cu, face, sp)
 		var nm := "run" if sp > 4.2 else ("jog" if sp > 0.7 else "idle")
 		# parado a reagir: o corpo todo faz o gesto (animações da Quaternius), não só os braços
-		if nm == "idle" and e.gesto != "" and e.gesto_t > 0.0:
+		# (com margem: quem já está no gesto não o larga por um passo pequeno)
+		if e.gesto != "" and e.gesto_t > 0.0 and (sp < 0.5 or (e.state.begins_with("q_") and sp < 0.9)):
 			if not e.has_meta("qclip"): e.set_meta("qclip", _qclip(e.gesto))
 			if e.get_meta("qclip") != "": nm = e.get_meta("qclip")
 		e.play(nm, 0.3)
@@ -982,9 +989,14 @@ func _segue_2d(e: Jogador) -> bool:
 	var id := int(e.get_meta("pid", -1))
 	var a = _hist_pos(id, t - t2d)
 	if a == null: return false
-	var b = _hist_pos(id, minf(t - t2d + 0.15, 0.0))
-	var vel: Vector2 = ((b as Vector2) - (a as Vector2)) / maxf(minf(0.15, t2d - t), 0.02)
-	var sp := vel.length()
+	# velocidade numa janela centrada de meio segundo: o rasto das caricas é guardado a cada 0,1 s e, ponto a ponto,
+	# a velocidade salta (5,5 / 3,5 / 5,4 m/s), o que punha o jogador a travar e a arrancar a cada passo
+	var tau := t - t2d
+	var t0 := tau - 0.25
+	var t1 := minf(tau + 0.25, 0.0)
+	var vel: Vector2 = ((_hist_pos(id, t1) as Vector2) - (_hist_pos(id, t0) as Vector2)) / maxf(t1 - t0, 0.05)
+	var sp: float = lerpf(float(e.get_meta("sp_s", vel.length())), vel.length(), 1.0 - exp(-get_process_delta_time() * 5.0))
+	e.set_meta("sp_s", sp)
 	var face: Vector2 = e.rumo(vel, sp, Vector2(b3.x, b3.z)) if sp > 0.6 else e.dir
 	e.set_meta("cur", a); e.set_meta("vel", vel)
 	e.move(a, face, sp)
