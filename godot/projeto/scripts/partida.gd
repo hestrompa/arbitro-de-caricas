@@ -692,6 +692,8 @@ func on_ball(p: Pl, dt: float) -> void:
 	p.cd = rand(0.45, 0.9) * (1.15 - p.dec / 250.0)     # quem lê melhor o jogo decide mais depressa
 	p.desde = 0.0
 	if p.penalty:
+		# Lei 14: só se bate o penálti com toda a gente fora da área, a 9,15 m da marca e atrás da bola
+		if pen_espera(p): p.cd = 0.25; return
 		p.penalty = false
 		if pen_3d: pen_3d = false; start_pen_scene(p); return
 		shoot(p, true); return
@@ -2821,7 +2823,7 @@ func start_pen_scene(tk: Pl) -> void:
 		if inv:
 			# o invasor espera à entrada da área, como os outros, e arranca antes do tempo
 			# do lado contrário ao árbitro, para entrar no campo de visão dele
-			inv.p = Vector2(gx - dir * (BOX_D + 1.6), H / 2 + (-1.0 if ref.y > H / 2 else 1.0) * rand(3.0, 7.0))
+			inv.p = Vector2(gx - dir * (BOX_D + 1.6), H / 2 + (-1.0 if ref.y > H / 2 else 1.0) * rand(6.6, 9.0))   # fora da meia-lua
 			L0.inv = pinfo(inv); L0.inv_p = inv.p
 	start_scene(L0, Vector2(dir, 0), [tk, gk], str(L0.flash))
 
@@ -2978,7 +2980,28 @@ func _decide_goal(L: Dictionary, d: String, timed_out: bool) -> void:
 	feed_decision(L, d, m)
 	_finish(L, d, m, func(): protest_after(against, 0.4 if allowed else 0.5, pts < 1))
 
+# posição legal para esperar um penálti: fora da área, fora da meia-lua (9,15 m da marca) e atrás da bola
+func pen_fora(team: int) -> Vector2:
+	var dir := dirs(team)
+	return Vector2(opp_goal_x(team) - dir * (BOX_D + rand(1, 4)), H / 2 + (1.0 if rng.randf() < 0.5 else -1.0) * rand(7.5, 14.0))
+func pen_mal(team: int, q: Vector2) -> bool:
+	var dir := dirs(team)
+	var spot := Vector2(opp_goal_x(team) - dir * SPOT, H / 2)
+	return in_own_box(1 - team, q) or q.distance_to(spot) < 9.15 or (q.x - spot.x) * dir > 0.0
+# ainda há alguém mal colocado? espera-se (no máximo 9 s; depois são postos no sítio)
+var pen_esp := 0.0
+func pen_espera(tk: Pl) -> bool:
+	var mal: Array = active().filter(func(q): return q != tk and not (q.role == "gk" and q.team != tk.team) and pen_mal(tk.team, q.p))
+	if mal.is_empty(): pen_esp = 0.0; return false
+	pen_esp += 0.25
+	for q in mal:
+		if pen_esp > 9.0: q.p = q.dest if q.dest.x >= 0.0 and not pen_mal(tk.team, q.dest) else pen_fora(tk.team); q.dest = Vector2(-1, -1); q.v = Vector2.ZERO
+		elif q.dest.x < 0.0 or pen_mal(tk.team, q.dest): vai(q, pen_fora(tk.team))
+	if pen_esp > 9.0: pen_esp = 0.0; return false
+	return true
+
 func penalty(att: Pl, cena := true) -> void:
+	pen_esp = 0.0
 	pen_3d = cena and training.is_empty() and not tut and rng.randf() < 0.75
 	var team := att.team
 	var dir := dirs(team)
@@ -2994,8 +3017,7 @@ func penalty(att: Pl, cena := true) -> void:
 		if p.role == "gk" and p.team != team:
 			vai(p, Vector2(opp_goal_x(team) - dir * 0.6, H / 2)); continue
 		if p == taker: continue
-		if in_own_box(1 - team, p.p) or p.p.distance_to(Vector2(spot_x, H / 2)) < 9:
-			vai(p, Vector2(opp_goal_x(team) - dir * (BOX_D + rand(1, 4)), H / 2 + rand(-10, 10)))
+		if pen_mal(team, p.p): vai(p, pen_fora(team))
 	# o marcador recua para a corrida; a bola fica na marca até ao pontapé
 	vai(taker, Vector2(spot_x - dir * 3.0, H / 2 + rand(-1.2, 1.2)))
 	# o árbitro coloca-se ao lado, entre a marca e a entrada da área (o assistente fica na linha de golo)
