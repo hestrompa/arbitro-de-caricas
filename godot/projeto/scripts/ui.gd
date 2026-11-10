@@ -111,7 +111,7 @@ func _ready() -> void:
 	ask = _center_panel(560); ask_v = ask.get_meta("v")
 	half = _center_panel(860, true); half_v = half.get_meta("v")
 	report = _center_panel(980, true); report_v = report.get_meta("v")
-	menu = _center_panel(560); menu_v = menu.get_meta("v")
+	menu = _center_panel(560); menu_v = menu.get_meta("v"); menu_v.add_theme_constant_override("separation", 5)
 	career = _center_panel(980, true); career_v = career.get_meta("v")
 	# tutorial
 	tut_p = _panel(Color(0.1, 0.12, 0.2, 0.94)); tut_p.anchor_left = 0.5; tut_p.anchor_right = 0.5; tut_p.offset_left = -330; tut_p.offset_right = 330; tut_p.offset_top = 58
