@@ -89,6 +89,7 @@ var drive_anim := "dive"
 var drive_k := 0.55
 var hurt := 0.0                   # 0 = nada, 1 = muito queixoso
 var hurt_leg := "R"
+var levantou := false            # já se levantou do chão neste lance
 var groundT := 0.0
 var getupT := 0.0
 var getup_anim := ""
@@ -975,6 +976,7 @@ func _kin_step(dt: float) -> void:
 
 # ---------- levantar-se ----------
 func get_up() -> void:
+	if phase == "chao_k" or phase == "chao": levantou = true
 	if phase == "chao_k":
 		var rw: Vector3 = skel.global_transform * skel.get_bone_global_pose(0).origin
 		kin("standup", 0.0, Vector2(sin(node.rotation.y), cos(node.rotation.y)), Vector2(rw.x, rw.z), 1.0, "anim", 0.4)
@@ -1033,7 +1035,7 @@ func reset() -> void:
 	for ab in proxies: ab.collision_layer = L_PROXY
 	slide_v = 0.0; snap = true; body_lean = Vector3.ZERO; stum_t = 0.0; last_speed = 0.0
 	state = ""; off = Vector2.ZERO; lift = 0.0; jump = 0.0; sp = Vector3.ZERO; sv = Vector3.ZERO
-	stag = Vector2.ZERO; stagv = Vector2.ZERO; ik.clear(); layer = ""; layer_w = 0.0; toque = ""; lean = Vector3.ZERO; hurt = 0.0; gesto = ""
+	stag = Vector2.ZERO; stagv = Vector2.ZERO; ik.clear(); layer = ""; layer_w = 0.0; toque = ""; lean = Vector3.ZERO; hurt = 0.0; gesto = ""; levantou = false
 	loco_req = ""; vel_obs = Vector2.ZERO; pos_upd = Vector2.INF; olha_bola = false; pe_lock.clear()
 	if has_meta("reac"): remove_meta("reac")
 

@@ -1,7 +1,7 @@
 """Clips do Mixamo (Soccer Game Pack) para o esqueleto do jogo.
 O Godot importa os FBX e grava as poses globais (fbxdump/dump.json); aqui junta-se a pose T de repouso
 como frame 0 (é a referência que o retarget dos CMU usa) e reaproveita-se retarget.py tal como está."""
-import json, numpy as np, retarget as rt
+import json, re, numpy as np, retarget as rt
 
 D = json.load(open('../fbxdump/dump.json'))
 REN = {'Spine': 'LowerBack', 'Spine1': 'Spine', 'Spine2': 'Spine1', 'Neck': 'Neck1'}
@@ -14,7 +14,8 @@ def q2m(q):
 def src(name):
     mirror = name.endswith('@m')          # "clip@m": versão espelhada (esquerda <-> direita)
     r = D[name.replace('@m', '')]
-    names = [REN.get(n.replace('mixamorig_', ''), n.replace('mixamorig_', '')) for n in r['names']]
+    base = [re.sub(r'^mixamorig\d*_', '', n) for n in r['names']]   # o prefixo muda com a personagem (mixamorig_, mixamorig12_...)
+    names = [REN.get(n, n) for n in base]
     pos = np.array([r['rest_p']] + r['pos'])
     rot = np.array([[q2m(q) for q in r['rest_q']]] + [[q2m(q) for q in f] for f in r['rot']])
     if mirror:

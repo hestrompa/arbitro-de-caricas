@@ -5,3 +5,4 @@ __pycache__/
 !godot/projeto/assets/*.png
 godot/desk/
 godot/web/
+tools/fbxdump

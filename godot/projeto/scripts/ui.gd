@@ -487,6 +487,7 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 
 # lista do que mudou nas últimas versões (para quem testa saber o que procurar)
 const NOVIDADES := [
+	["Protestos e dores a sério", "nos lances 3D há quem discuta de braços abertos e quem aponte o dedo ao árbitro; quem se levanta magoado fica agarrado à perna, e o golo de penálti pode ser festejado de braços ao céu (capturas novas do Mixamo)"],
 	["Apontar e esperar", "nos lances 3D há quem aponte para o árbitro a pedir falta e quem fique longe à espera da decisão de braços cruzados; os gestos só começam depois de o jogador chegar e parar, e ninguém passa por cima de quem está no chão"],
 	["Toques e levantar", "num toque de ombro sem queda, o tronco reage ao sítio do toque (o ombro roda, o peito vai para trás); quem cai de costas e não ficou magoado levanta-se num gesto só, como um atleta"],
 	["Sem tremer a correr", "nos lances 3D os jogadores já não trocam de animação várias vezes por segundo quando abrandam ou aceleram; quem vai depressa vira-se e corre em vez de recuar de costas, e quem chega ao lance pára de vez"],

@@ -932,8 +932,14 @@ func _extras_step(dt: float) -> void:
 		e.play(nm, 0.3)
 func _qclip(g: String) -> String:
 	match g:
-		"abre": return "q_nao" if rng.randf() < 0.55 else "q_fala"
-		"braco": return "q_sim" if rng.randf() < 0.35 else ""   # aponta para o árbitro em vez de levantar o braço
+		"abre":
+			# protesto de corpo inteiro: abanar a cabeça, falar (Quaternius) ou discutir de braços abertos (Mixamo)
+			var r := rng.randf()
+			return "q_nao" if r < 0.3 else ("q_fala" if r < 0.5 else ("q_mx_discute" if r < 0.75 else "q_mx_discute2"))
+		"braco":
+			# aponta para o árbitro (três maneiras) em vez de levantar o braço
+			var r := rng.randf()
+			return "q_sim" if r < 0.2 else ("q_mx_aponta" if r < 0.4 else ("q_mx_aponta_z" if r < 0.55 else ""))
 	return ""
 func _reacao(e: Jogador, dist: float) -> String:
 	if not (lance <= 4 or lance == 6) or dist > 28.0: return ""
@@ -2481,7 +2487,8 @@ func _settle(p: Jogador, dt: float, _d: Vector2) -> void:
 	var d := p.dir
 	var v: float = max(0.0, p.speed - 3.0 * dt)
 	p.move(p.pos + d * v * dt, d, v)
-	if v < 1.0: p.play("idle", 0.4)
+	# quem se levantou magoado fica agarrado à perna em vez de esperar como se nada fosse (Mixamo)
+	if v < 1.0: p.play("q_mx_lesao" if p.hurt > 0.25 and p.levantou else "idle", 0.4)
 	elif v < 3.5: p.play("jog", 0.3)
 
 # 1) entrada: a força e o ângulo do toque decidem o que acontece ao atacante; ou simula
@@ -2983,7 +2990,9 @@ func _penalty(dt: float) -> void:
 				att.move(ini.lerp(fim, k), dirc, 3.0)
 				att.play("kick" if t > TC - 0.35 else "run", 0.1)
 		elif bool(sc.golo) and t > TC + 0.75 and att.speed < 1.0:
-			att.move(att.pos, att.dir, 0.0); att.play("q_festa", 0.35)   # golo: festeja (animação da Quaternius)
+			# golo: festeja (Quaternius) ou levanta os braços ao céu (Mixamo); a escolha fica para o lance todo
+			if not sc.has("festa"): sc.festa = "q_festa" if rng.randf() < 0.5 else "q_mx_vitoria"
+			att.move(att.pos, att.dir, 0.0); att.play(sc.festa, 0.35)
 		else: _settle(att, dt, A)
 	# guarda-redes: na linha até ao pontapé (no "gr" adianta-se antes do pontapé) e depois atira-se
 	var linha := Vector2(gx - di * 0.15, H / 2)
