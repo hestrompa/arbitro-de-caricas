@@ -1,8 +1,10 @@
 #!/bin/bash
 # uso: motor.sh [jogos por processo] [processos] -> resumo das métricas do motor
-cd "$(dirname "$0")/arbitro44"
+# GODOT=/caminho/para/godot; AF='{"motor2":1}' escolhe o motor novo e muda afinações
+cd "$(dirname "$0")/../../godot/projeto"
+G=${GODOT:-godot}
 N=${1:-4}; P=${2:-4}
-for i in $(seq 1 $P); do AF="$AF" N=$N RA=${RA:-70} RB=${RB:-70} timeout 900 ../Godot_v4.4.1-stable_linux.x86_64 --headless --path . -s t_motor.gd > /tmp/motor_${TAG}_$i.txt 2>&1 & done; wait
+for i in $(seq 1 $P); do AF="$AF" N=$N RA=${RA:-70} RB=${RB:-70} timeout 900 $G --headless --path . -s ../testes/t_motor.gd > /tmp/motor_${TAG}_$i.txt 2>&1 & done; wait
 cat /tmp/motor_${TAG}_*.txt | grep "^JSON " | sed 's/^JSON //' | python3 -c "
 import json,sys
 rs=[json.loads(l) for l in sys.stdin]

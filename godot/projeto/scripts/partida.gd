@@ -690,6 +690,7 @@ func on_ball(p: Pl, dt: float) -> void:
 		return
 	if dbg_on and not dbg_ps.is_empty() and str(dbg_ps[0]) == "dribble" and dbg_ps[2] == p: calib_add(true)
 	p.cd = rand(0.45, 0.9) * (1.15 - p.dec / 250.0)     # quem lê melhor o jogo decide mais depressa
+	if m2(): p.cd *= A("m2_cd", 1.0)
 	p.desde = 0.0
 	if p.penalty:
 		# Lei 14: só se bate o penálti com toda a gente fora da área, a 9,15 m da marca e atrás da bola
@@ -710,7 +711,7 @@ func on_ball(p: Pl, dt: float) -> void:
 	if dg < 32 and p.role != "gk" and not p.set_piece:
 		var q := xg(p, opps, press)
 		# jogo comprimido (90 minutos em 3): remata-se mais do que num jogo real, sobretudo de fora da área
-		var vs := q + (A("bias_perto", 0.035) if dg < 22 else A("bias_longe", 0.0)) + float(T.remate) + (0.02 if "estrela" in p.tr else 0.0)
+		var vs := q + (A("bias_perto", 0.035) if dg < 22 else A("bias_longe", 0.03 if m2() else 0.0)) + float(T.remate) + (0.02 if "estrela" in p.tr else 0.0)
 		if press < 1.3: vs += 0.01          # apertado e sem saída: remata
 		choices.append({"type": "shoot", "q": q, "sc": vs + gauss() * ruido})
 	var was_set := p.set_piece

@@ -477,7 +477,7 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 	hb.add_child(_btn("Voz ligada" if voz else "Voz desligada", func(): main.on_ui("voz", null), Color(), 0, 16))
 	hb.add_child(_btn("Público ligado" if publico else "Público desligado", func(): main.on_ui("publico", null), Color(), 0, 16))
 	hb.add_child(_btn("Todo o som ligado" if som else "Todo o som desligado", func(): main.on_ui("som", null), Color(), 0, 16))
-	menu_v.add_child(_btn("Motor das caricas: novo (em teste)" if motor_novo else "Motor das caricas: atual", func(): main.on_ui("motor", null), Color("4a3a6a") if motor_novo else Color(), 500, 16))
+	menu_v.add_child(_btn("Motor das caricas: novo" if motor_novo else "Motor das caricas: antigo", func(): main.on_ui("motor", null), Color("4a3a6a") if motor_novo else Color(), 500, 16))
 	if best != "": menu_v.add_child(_lbl("Melhor nota: " + best, 15, DIM))
 	menu_v.add_child(_wrap("Teclas: WASD/setas mover · Shift correr · 1–6 decidir · R rever · C câmara · Espaço pausa · Esc menu", 13, DIM, 500))
 	var vb := HBoxContainer.new(); vb.add_theme_constant_override("separation", 10); menu_v.add_child(vb)
@@ -487,6 +487,7 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 
 # lista do que mudou nas últimas versões (para quem testa saber o que procurar)
 const NOVIDADES := [
+	["Motor novo de série", "o motor novo das caricas (mais passes, tabelas e desmarcações) passa a ser o do jogo; remata-se mais de fora da área, cerca de 13 remates por jogo em vez de 10; o antigo continua no menu"],
 	["Penálti só com a área vazia", "o penálti só é batido quando todos os outros jogadores estão fora da área, fora da meia-lua e atrás da bola (Lei 14); antes, quem ainda ia a sair aparecia dentro da área no lance 3D"],
 	["Protestos e dores a sério", "nos lances 3D há quem discuta de braços abertos e quem aponte o dedo ao árbitro; quem se levanta magoado fica agarrado à perna, e o golo de penálti pode ser festejado de braços ao céu (capturas novas do Mixamo)"],
 	["Apontar e esperar", "nos lances 3D há quem aponte para o árbitro a pedir falta e quem fique longe à espera da decisão de braços cruzados; os gestos só começam depois de o jogador chegar e parar, e ninguém passa por cima de quem está no chão"],

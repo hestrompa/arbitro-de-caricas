@@ -151,11 +151,11 @@ var kp := {}               # capturas planeadas por jogador (cabeceamento, remat
 var min_contact := 99.0    # menor distância entre as pernas do defesa e as do atacante à volta do contacto
 var contact_checked := false
 
-var motor_novo := false       # motor 2 das caricas (em teste): escolhido no menu, guardado em user://motor.cfg
+var motor_novo := true        # motor 2 das caricas (em teste): escolhido no menu, guardado em user://motor.cfg
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
 	var cfm := ConfigFile.new()
-	if cfm.load("user://motor.cfg") == OK: motor_novo = bool(cfm.get_value("j", "motor_novo", false))
+	if cfm.load("user://motor.cfg") == OK: motor_novo = bool(cfm.get_value("j", "motor_novo", true))
 	hi_q = RenderingServer.get_current_rendering_method() != "gl_compatibility"
 	rng.randomize()
 	_world()
