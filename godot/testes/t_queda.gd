@@ -1,7 +1,7 @@
 extends SceneTree
 # Quedas de perto: imagens de TC-0.1 até TC+2.4, para julgar se parecem naturais. CASOS, CAM, DT.
 var m
-const OUT = "/tmp/claude-0/-home-claude/03cb57f4-a453-5d33-87b7-2efcd6ebbd73/scratchpad/godot/t/q/"
+var OUT: String = OS.get_environment("OUT") if OS.get_environment("OUT") != "" else "/tmp/t_queda/"
 var CASES = [
 	["falta", {"lance": 0, "force": 1.0, "side": 1.0, "sim": false, "clean": false, "phi": 50.0, "vD": 8.0}],
 	["forte", {"lance": 0, "force": 1.4, "side": -1.0, "sim": false, "clean": false, "phi": 35.0, "vD": 9.2}],
