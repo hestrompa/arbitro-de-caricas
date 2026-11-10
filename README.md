@@ -86,3 +86,6 @@ O jogo está a passar para o Godot 4. O primeiro lance 3D já corre em Godot e p
 - Código: licença MIT (ver `LICENSE`).
 - Corpo humano e texturas de pele: [MakeHuman](http://www.makehuman.org), a partir do pacote npm `makehuman-data`. Os ficheiros de origem indicam a licença AGPL3 do MakeHuman, que declara os modelos exportados como CC0. Esta licença deve ser confirmada antes de uma distribuição comercial.
 - Animações: [CMU Graphics Lab Motion Capture Database](http://mocap.cs.cmu.edu), financiada pela NSF EIA-0196217. Uso livre, incluindo comercial; não se pode revender a base de dados em si.
+- Animações de futebol (corrida lenta, carrinho, rasteira, levantar, guarda-redes): [Mixamo](https://www.mixamo.com) da Adobe, "Soccer Game Pack". Uso livre em jogos, sem atribuição obrigatória; os ficheiros FBX originais não podem ser redistribuídos e por isso não estão neste repositório.
+- Animações de reação (protestos, cansaço, festejos, toques, levantar de costas): [Quaternius](https://quaternius.com), Universal Animation Library 1 e 2, licença CC0.
+- Vozes do rádio, do árbitro e do relato: vozes neurais Piper de português de Portugal, licença CC BY-NC-SA 4.0 (não comercial). Ver `godot/projeto/assets/voz/LICENCA-VOZES.md`. Enquanto estas vozes estiverem no jogo, ele não pode ser vendido.

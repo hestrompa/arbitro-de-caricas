@@ -1,5 +1,5 @@
 #!/bin/bash
-# exporta o projeto Godot 4.3 para jogar-godot/ (precisa do Godot 4.3 e dos modelos de exportação Web)
+# exporta o projeto Godot 4.4.1 para jogar-godot/ (precisa do Godot 4.4.1 e dos modelos de exportação Web)
 # uso: GODOT=/caminho/para/godot bash godot/exportar.sh
 set -e
 cd "$(dirname "$0")/projeto"
