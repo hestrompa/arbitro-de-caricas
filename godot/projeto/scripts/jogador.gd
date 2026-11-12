@@ -39,6 +39,7 @@ const PTS := [["root", 0.15, 0.0], ["spine01", 0.16, 0.0], ["head", 0.11, 0.0], 
 
 static var clip_speed := {}       # velocidade a que cada ciclo de corrida anda no chão (para os pés não deslizarem)
 # locomoção: trote em 8 direções com o corpo virado para a frente (recuar e andar de lado a olhar para a bola)
+const BRACOS_IK := false
 const LOCO_DIR := ["jog", "jog_fr", "jog_fl", "jog_r", "jog_l", "jog_br", "jog_bl", "jog_b"]
 const LOCO_CICLO := ["walk", "jog", "run", "jog_fr", "jog_fl", "jog_r", "jog_l", "jog_br", "jog_bl", "jog_b"]
 static var clip_vel := {}         # ciclo -> velocidade no chão no referencial do corpo (x = lado, y = frente), m/s
@@ -685,7 +686,8 @@ func _aim(i: int, from: Vector3, to: Vector3) -> void:
 # quando o pé contrário vai à frente, mão atrás da anca quando vai atrás (cotovelo dobrado).
 var swing_w := 0.0
 func _arm_swing(dt: float) -> void:
-	var want := 1.0 if state == "run" else 0.0
+	# a corrida do Mixamo já traz o balanço dos braços; o IK só fica para clips que não o tenham
+	var want := 1.0 if state == "run" and BRACOS_IK else 0.0
 	swing_w = move_toward(swing_w, want, dt * 4.0)
 	var w := swing_w * clampf(1.0 - layer_w * 2.0, 0.0, 1.0) * 0.9
 	if w <= 0.01: return

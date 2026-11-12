@@ -234,6 +234,7 @@ func show_dec(choices: Array, extra: String) -> void:
 		var d: String = c
 		var campo: bool = main.modo == "var" and str(main.L.get("var_campo", "")) == d
 		var txt: String = "%d  %s%s" % [i, Partida.DEC_LABEL[d], "  (campo)" if campo else ""]
+		if main.L.get("ja_dado", false): txt = "%d  %s" % [i, "Fora de jogo: anular o golo" if d == "fora" else "Em jogo: o golo conta"]
 		if main.modo == "var" and main.jogo and main.jogo.var_mode:
 			# protocolo: check completo (fica a decisão de campo), revisão no monitor ou revisão só do VAR (decisões de facto)
 			if campo: txt = "%d  Confirmar: %s" % [i, Partida.DEC_LABEL[d]]
@@ -487,6 +488,9 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 
 # lista do que mudou nas últimas versões (para quem testa saber o que procurar)
 const NOVIDADES := [
+	["Golo, festejo e VAR", "nos jogos com VAR, num fora de jogo duvidoso em ataque claro o assistente guarda a bandeira e a jogada segue; se der golo, o golo conta e festeja-se, o VAR avisa que está a verificar e chama-te ao monitor: com as linhas, confirmas o golo ou tiras-o do marcador. Se não der golo, a bandeira sobe no fim da jogada"],
+	["Ida ao monitor em 3D", "quando o VAR te chama já não se salta logo para o ecrã: vê-se o árbitro de mão no auricular, a desenhar o ecrã com as mãos e a correr até ao monitor na linha lateral, onde o espera o 4.º árbitro; depois de rever, volta a desenhar o ecrã antes de anunciar a decisão (Espaço ou clique salta)"],
+	["Corrida nova em 3D", "os jogadores correm com uma captura de sprint a sério (Mixamo): tronco inclinado, passada larga e os braços a acompanhar, em vez dos braços rígidos à frente do corpo"],
 	["Contra-ataques", "quem recupera a bola com seis ou mais adversários apanhados à frente lança logo a equipa: os avançados arrancam para o espaço, quem leva a bola corre com ela em campo aberto e solta-a antes do desarme; o relato avisa \"Contra-ataque!\""],
 	["Motor novo de série", "o motor novo das caricas (mais passes, tabelas e desmarcações) passa a ser o do jogo; remata-se mais de fora da área, cerca de 13 remates por jogo em vez de 10; o antigo continua no menu"],
 	["Penálti só com a área vazia", "o penálti só é batido quando todos os outros jogadores estão fora da área, fora da meia-lua e atrás da bola (Lei 14); antes, quem ainda ia a sair aparecia dentro da área no lance 3D"],

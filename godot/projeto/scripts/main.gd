@@ -492,6 +492,7 @@ func _dress(j: Jogador, info: Dictionary) -> void:
 	var tm := int(info.team)
 	j.set_kit(_kit(tm, str(info.get("role", ""))), int(info.num), tm)
 	j.set_meta("pid", int(info.get("id", -1)))
+	j.set_meta("veste", info)
 	j.gr = str(info.get("role", "")) == "gk"
 	j.label.modulate = jogo.teams[tm].get("text", Color(0.97, 0.97, 0.95)) if jogo else Color(0.97, 0.97, 0.95)
 	j.mat.set_shader_parameter("numcol", j.label.modulate)
@@ -725,6 +726,8 @@ func _process(delta: float) -> void:
 			_scene_process(delta)
 		"gesto":
 			_gesture_process(delta)
+		"ir_var":
+			_ir_var_process(delta)
 		_:
 			get_tree().paused = false; Engine.time_scale = 1.0
 			_menu_cam(delta)
@@ -740,7 +743,7 @@ var fan_nivel := 0       # 0 todos, 1 metade, 2 sem adeptos
 func _fans_step(delta: float) -> void:
 	if fan_mat == null or not visible: return
 	# computador fraco: menos adeptos (metade, depois nenhum) para o lance não ficar aos soluços
-	if fan_nivel < 2 and Engine.get_frames_per_second() < 24 and modo in ["lance", "var", "rever", "gesto", "menu"]:
+	if fan_nivel < 2 and Engine.get_frames_per_second() < 24 and modo in ["lance", "var", "rever", "gesto", "ir_var", "menu"]:
 		fan_lento += delta
 		if fan_lento > 4.0:
 			fan_lento = 0.0; fan_nivel += 1
@@ -1681,7 +1684,7 @@ func _fumo_tex() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 # aplica o tempo do jogo ao lance 3D (sem jogo, tudo limpo)
 func _clima_3d(limpo := false) -> void:
-	var ativo: bool = jogo != null and not limpo and modo in ["lance", "var", "rever", "gesto", "flash"]
+	var ativo: bool = jogo != null and not limpo and modo in ["lance", "var", "rever", "gesto", "ir_var", "flash"]
 	var c: String = jogo.clima if ativo else ""
 	env.fog_enabled = c == "chuva" or c == "nevoeiro"
 	env.fog_density = 0.04 if c == "nevoeiro" else 0.009
@@ -1819,9 +1822,14 @@ func _ev(n: String, d: Dictionary) -> void:
 			L = d.L
 			if jogo.var_mode:
 				_var_sala(); return
+			if L.get("ja_dado", false):
+				# golo já festejado: o VAR chamou, vê-se o árbitro a ir ao monitor e a revisão abre lá
+				_ir_var(true); return
 			ui.flash(L.get("flash", "Lance!")); som.alerta()
 			flash_t = 0.7; modo = "flash"
-		"var": _enter_var()
+		"var":
+			if d.L.get("training", false) or jogo.var_mode: _enter_var()
+			else: _ir_var(false)
 		"decided":
 			if jogo.var_mode and d.L.get("ia", false): jogo.call_deferred("finish_after")
 			else: _start_gesture(d)
@@ -1932,7 +1940,7 @@ func _lance_ui(delta: float) -> void:
 		if lance == 9 and sc.has("lines"):
 			var gap: float = (var_line[0] - var_line[1]) * float(sc.dir)
 			sub = "Linhas: Tab troca (vermelha = atacante, azul = penúltimo defesa) · setas mexem · C câmara · atacante %s %d cm %s" % ["", int(round(absf(gap) * 100)), "à frente" if gap > 0 else "atrás"]
-		ui.info(("SALA DO VAR · CHECK · %d' · " % L.minute + str(L.get("var_tit", ""))) if jogo.var_mode else ("MONITOR DO VAR · %d'" % L.minute), sub)
+		ui.info(("SALA DO VAR · CHECK · %d' · " % L.minute + str(L.get("var_tit", ""))) if jogo.var_mode else ("MONITOR DO VAR · %d'%s" % [L.minute, " · golo em verificação: fora de jogo no passe?" if L.get("ja_dado", false) else ""]), sub)
 	if dec_shown:
 		# no monitor do VAR não há relógio: vês o lance as vezes que precisares
 		if modo == "var":
@@ -2019,6 +2027,204 @@ func _cam_next() -> void:
 	cam_mode = (cam_mode + 1) % 5
 	ui.toast(["A tua vista", "Vista ideal", "Atrás do lance", "De perto", "Câmara de televisão"][cam_mode], 1.2)
 
+# ---------- ida ao monitor do VAR em 3D ----------
+# Em vez de saltar da decisão para o monitor: o árbitro ouve o VAR com a mão no ouvido, desenha o ecrã,
+# corre até ao monitor na linha lateral (onde o espera o 4.º árbitro) e só então abre a revisão.
+var IV := {}
+var monitor: Node3D
+const IV_OUVE := 1.2      # mão no ouvido
+const IV_SINAL := 2.5     # fim do sinal do ecrã
+const IV_PARTE := 3.6     # fim da corrida vista de dentro do campo (corte para o monitor)
+const IV_FIM := 6.6
+
+func _monitor_node() -> void:
+	monitor = Node3D.new(); add_child(monitor)
+	var escuro := StandardMaterial3D.new(); escuro.albedo_color = Color(0.07, 0.075, 0.09); escuro.roughness = 0.6
+	var caixas := [[Vector3(0.7, 0.05, 0.55), Vector3(0, 0.025, 0)], [Vector3(0.09, 1.1, 0.09), Vector3(0, 0.6, -0.04)], [Vector3(0.94, 0.62, 0.1), Vector3(0, 1.42, -0.06)],
+		[Vector3(1.02, 0.03, 0.42), Vector3(0, 1.745, 0.12)], [Vector3(0.03, 0.64, 0.42), Vector3(0.495, 1.43, 0.12)], [Vector3(0.03, 0.64, 0.42), Vector3(-0.495, 1.43, 0.12)]]
+	for c in caixas:
+		var mi := MeshInstance3D.new(); var bx := BoxMesh.new(); bx.size = c[0]; mi.mesh = bx; mi.material_override = escuro; mi.position = c[1]; monitor.add_child(mi)
+	# ecrã: o relvado com as duas linhas do fora de jogo
+	var img := Image.create(96, 56, false, Image.FORMAT_RGB8)
+	for x in 96:
+		for y in 56: img.set_pixel(x, y, Color(0.16, 0.5, 0.22) if (x / 12) % 2 == 0 else Color(0.13, 0.44, 0.19))
+	img.fill_rect(Rect2i(0, 8, 96, 1), Color(0.9, 0.9, 0.9)); img.fill_rect(Rect2i(70, 8, 1, 48), Color(0.9, 0.9, 0.9))
+	img.fill_rect(Rect2i(38, 0, 1, 56), Color(1.0, 0.25, 0.2)); img.fill_rect(Rect2i(44, 0, 1, 56), Color(0.2, 0.5, 1.0))
+	img.fill_rect(Rect2i(36, 26, 5, 9), Color(0.93, 0.5, 0.18)); img.fill_rect(Rect2i(43, 30, 5, 9), Color(0.2, 0.4, 0.85))
+	var em := StandardMaterial3D.new(); em.albedo_texture = ImageTexture.create_from_image(img); em.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	em.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	var ecra := MeshInstance3D.new(); var qm := QuadMesh.new(); qm.size = Vector2(0.84, 0.5); ecra.mesh = qm; ecra.material_override = em; ecra.position = Vector3(0, 1.42, 0.0)
+	monitor.add_child(ecra)
+	var tx := Label3D.new(); tx.text = "VAR"; tx.font_size = 96; tx.pixel_size = 0.0028; tx.outline_size = 0; tx.modulate = Color(0.95, 0.95, 0.97); tx.position = Vector3(0, 1.93, 0.1)
+	monitor.add_child(tx)
+	monitor.visible = false
+
+# sinal do ecrã: as duas mãos desenham um retângulo à frente do peito (s = 0..1)
+func _sinal_tv(j: Jogador, face: Vector2, s: float, w: float) -> void:
+	var fwd := Vector3(face.x, 0, face.y)
+	var rgt := Vector3(-face.y, 0, face.x)
+	var shR := j.bone_world("upperarm01_R")
+	var shL := j.bone_world("upperarm01_L")
+	if (shR - shL).dot(rgt) < 0: rgt = -rgt
+	var c := (shR + shL) * 0.5 + fwd * 0.4 + Vector3.UP * 0.02
+	var hw := 0.27
+	var hh := 0.16
+	var d: float = clampf(s, 0.0, 1.0) * (2.0 * hw + 2.0 * hh)
+	var x := 0.05
+	var y := hh
+	if d < hw: x = maxf(0.05, d)
+	elif d < hw + 2.0 * hh: x = hw; y = hh - (d - hw)
+	else: x = maxf(0.05, hw - (d - hw - 2.0 * hh)); y = -hh
+	j.ik = {"wrist_R": [c + rgt * x + Vector3.UP * y, w], "wrist_L": [c - rgt * x + Vector3.UP * y, w]}
+
+func _ir_var(direto: bool) -> void:
+	if monitor == null: _monitor_node()
+	if not tv.is_empty(): _tv_end()
+	modo = "ir_var"
+	ui.dec.visible = false; ui.var_frame.visible = false; dec_shown = false
+	radar.visible = false; pip_box.visible = false
+	if fp_vig: fp_vig.visible = false
+	paused = false; speed = 1.0
+	get_tree().paused = false; Engine.time_scale = 1.0
+	_to_3d(); _clima_3d()
+	_limpa_brilhos()
+	for m in var_mesh: m.visible = false
+	ball.visible = false; card.visible = false
+	lab1.text = ""; lab2.text = ""
+	# o que cada boneco tinha vestido no lance, para repor quando a revisão abrir
+	var roupa: Array = []
+	for j in [att, def] + extras: roupa.append([j, j.get_meta("veste", {}), j.node.visible, j.gr])
+	var R: Vector2 = jogo.ref
+	R = Vector2(clampf(R.x, 3.0, W - 3.0), clampf(R.y, 3.0, H - 3.0))
+	var cima: bool = R.y < H / 2
+	var M := Vector2(W / 2 - 6.0, -3.1 if cima else H + 3.1)
+	var n := Vector2(0, 1.0 if cima else -1.0)                 # do monitor para dentro do campo
+	var m := (M - R).normalized()
+	monitor.position = Vector3(M.x, 0, M.y); monitor.rotation.y = 0.0 if cima else PI; monitor.visible = true
+	IV = {"t": 0.0, "direto": direto, "roupa": roupa, "R": R, "M": M, "n": n, "m": m, "fase": 0, "lado": 1.0 if (R - M).x >= 0 else -1.0}
+	for j in [att, def, refj] + extras: j.reset(); j.gr = false; j.node.visible = false
+	refj.set_kit(_ref_kit(), 0, 2); refj.node.visible = true
+	refj.move(R, m, 0.0); refj.play("idle", 0.0)
+	# os jogadores mais perto esperam à volta dele (nunca entre ele e a câmara)
+	var perto: Array = jogo.active().filter(func(q): return q.p.distance_to(R) < 22.0)
+	perto.sort_custom(func(a, b): return a.p.distance_to(R) < b.p.distance_to(R))
+	var bonecos: Array = [att, def] + extras
+	var gente: Array = []
+	for i in mini(perto.size(), bonecos.size()):
+		var q = perto[i]
+		var j: Jogador = bonecos[i]
+		var v: Vector2 = q.p - R
+		if v.length() < 0.5: v = Vector2(-m.y, m.x)
+		if v.length() < 2.4 + 0.5 * (i % 3): v = v.normalized() * (2.4 + 0.5 * (i % 3))
+		if v.normalized().dot(m) > 0.35: v = v - m * 2.0 * v.dot(m)          # passa para trás dele
+		_dress(j, jogo.pinfo(q))
+		j.move(R + v, (-v).normalized(), 0.0)
+		var clip := "idle"
+		if i < 3 and rng.randf() < 0.75: clip = _qclip("abre")
+		if clip == "": clip = "idle"
+		j.play(clip, 0.0)
+		if clip == "idle" and rng.randf() < 0.5: j.reage("abre" if rng.randf() < 0.5 else "bracos", 0.3 + rng.randf() * 1.2, 1.2 + rng.randf())
+		gente.append(j)
+	IV.gente = gente
+	if grass_mi: grass_mi.position = Vector3(R.x, 0, R.y)
+	som.whistle("short")
+	ui.info("O VAR CHAMA O ÁRBITRO AO MONITOR", "Golo em verificação · Espaço ou clique para saltar" if direto else "Revisão no monitor · Espaço ou clique para saltar")
+	_ir_var_process(0.0)
+
+func _ir_var_process(delta: float) -> void:
+	if IV.is_empty(): return
+	get_tree().paused = false; Engine.time_scale = 1.0
+	IV.t += delta
+	var tt: float = IV.t
+	var R: Vector2 = IV.R
+	var M: Vector2 = IV.M
+	var n: Vector2 = IV.n
+	var m: Vector2 = IV.m
+	var tang := Vector2(float(IV.lado), 0)
+	var rp := R
+	var face := m
+	var v := 0.0
+	refj.ik = {}
+	if tt < IV_PARTE:
+		# dentro do campo: ouve, desenha o ecrã e arranca para a linha lateral
+		if tt < IV_OUVE + 0.15:
+			var w: float = smoothstep(0.0, 1.0, tt / 0.3) * smoothstep(0.0, 1.0, (IV_OUVE + 0.15 - tt) / 0.25)
+			var h := refj.bone_world("head")
+			var lft := Vector3(m.y, 0, -m.x)
+			if (refj.bone_world("upperarm01_L") - refj.bone_world("upperarm01_R")).dot(lft) < 0: lft = -lft
+			refj.ik = {"wrist_L": [h + lft * 0.12 + Vector3(m.x, 0, m.y) * 0.03 - Vector3.UP * 0.02, w]}
+		elif tt < IV_SINAL:
+			var k: float = tt - IV_OUVE - 0.15
+			var dur: float = IV_SINAL - IV_OUVE - 0.15
+			_sinal_tv(refj, m, (k - 0.25) / (dur - 0.5), smoothstep(0.0, 1.0, k / 0.25) * smoothstep(0.0, 1.0, (dur - k) / 0.2))
+		else:
+			var tr: float = tt - IV_SINAL
+			var dmax: float = maxf(R.distance_to(M) - 3.0, 0.0)
+			rp = R + m * minf(3.4 * tr * tr, dmax); v = minf(6.8 * tr, 6.5)
+		refj.move(rp, face, v); refj.play("run" if v > 3.5 else ("jog" if v > 0.6 else "idle"), 0.25)
+		var cabeca := Vector3(rp.x, 1.6, rp.y)
+		for j in IV.gente:
+			var to: Vector2 = rp - j.pos
+			if to.length() > 0.5: j.move(j.pos, to.normalized(), 0.0)
+		Jogador.bola3 = cabeca
+		# câmara à frente dele, do lado do monitor: quando arranca, passa por ela
+		var sd := Vector2(-m.y, m.x)
+		var c := R + m * 5.2 + sd * 2.1
+		cam.fov = 40
+		cam.look_at_from_position(Vector3(c.x, 1.55, c.y), Vector3(lerpf(R.x, rp.x, 0.85), 1.3, lerpf(R.y, rp.y, 0.85)))
+	else:
+		if int(IV.fase) == 0:
+			# corte para a linha lateral: só o árbitro e o 4.º árbitro, ao pé do monitor
+			IV.fase = 1
+			for j in IV.gente: j.node.visible = false
+			def.reset(); def.set_kit(_ref_kit(), 0, 2); def.node.visible = true
+			def.move(M + tang * -2.1 + n * 0.5, n, 0.0); def.play("idle", 0.0)
+			refj.reset()
+			if grass_mi: grass_mi.position = Vector3(M.x, 0, M.y)
+		var tb: float = tt - IV_PARTE
+		var S: Vector2 = M + n * 9.0 + tang * 2.6
+		var E: Vector2 = M + n * 1.05
+		var u: float = clampf(tb / 1.5, 0.0, 1.0)
+		rp = S.lerp(E, 1.0 - (1.0 - u) * (1.0 - u))
+		v = S.distance_to(E) * 2.0 * (1.0 - u) / 1.5
+		face = (E - S).normalized() if u < 0.9 else (E - S).normalized().lerp(-n, (u - 0.9) / 0.1).normalized()
+		refj.move(rp, face, v); refj.play("run" if v > 4.2 else ("jog" if v > 0.7 else "idle"), 0.3)
+		def.update(delta, tt); def.ground()
+		var ecra := Vector3(M.x, 1.42, M.y)
+		Jogador.bola3 = ecra
+		# câmara: de lado enquanto chega, depois por cima do ombro até o ecrã encher a imagem
+		var k2: float = smoothstep(0.0, 1.0, (tb - 1.5) / 1.3)
+		var c0: Vector2 = M + tang * 3.6 + n * 3.2
+		var c1: Vector2 = M + n * 2.1 + tang * 0.85
+		var cp: Vector2 = c0.lerp(c1, k2)
+		var l0 := Vector3(lerpf(M.x, rp.x, 0.3), 1.25, lerpf(M.y, rp.y, 0.3))
+		cam.fov = lerpf(46.0, 26.0, k2)
+		cam.look_at_from_position(Vector3(cp.x, lerpf(1.5, 1.72, k2), cp.y), l0.lerp(ecra, k2))
+	refj.update(delta, tt); refj.ground()
+	if int(IV.fase) == 0:
+		for j in IV.gente: j.update(delta, tt); j.ground()
+	if tt >= IV_FIM: _ir_var_fim()
+
+func _ir_var_fim() -> void:
+	if IV.is_empty(): return
+	var direto: bool = IV.direto
+	var roupa: Array = IV.roupa
+	IV = {}
+	monitor.visible = false
+	refj.ik = {}
+	ui.info("", "")
+	if direto:
+		_enter_lance()
+	else:
+		# repõe os jogadores do lance tal como estavam vestidos (a cena repete-se igual no monitor)
+		for r in roupa:
+			var j: Jogador = r[0]
+			j.reset()
+			if not (r[1] as Dictionary).is_empty(): _dress(j, r[1])
+			j.node.visible = r[2]; j.gr = r[3]
+		ball.visible = true
+	_enter_var()
+
 # ---------- gestos do árbitro ----------
 func _start_gesture(d: Dictionary) -> void:
 	modo = "gesto"
@@ -2028,6 +2234,8 @@ func _start_gesture(d: Dictionary) -> void:
 	var g: Dictionary = d.gest
 	if g.type == "card": som.whistle("short")
 	G = {"g": g, "t": 0.0, "dur": float(g.dur), "d": d.d}
+	# depois de ir ao monitor, o árbitro volta a desenhar o ecrã antes de anunciar a decisão
+	G.pre = 1.3 if (L.get("var_review", false) or L.get("ofr", false)) and not L.get("training", false) else 0.0
 	paused = false; speed = 1.0
 	get_tree().paused = false; Engine.time_scale = 1.0
 	_to_3d()
@@ -2051,16 +2259,18 @@ func _start_gesture(d: Dictionary) -> void:
 func _gesture_process(delta: float) -> void:
 	if G.is_empty(): return
 	G.t += delta
+	var pre: float = G.get("pre", 0.0)
+	var gt: float = maxf(G.t - pre, 0.0)
 	var g: Dictionary = G.g
 	var rp: Vector2 = G.R
 	var face: Vector2 = -G.u
 	var running := false
 	if g.type == "point" and g.get("run", false):
 		var dc: Vector2 = (g.to - G.R).normalized()
-		var m: float = minf(G.t, 1.6) * 1.3
-		rp = G.R + dc * m; face = face.lerp(dc, 0.6).normalized(); running = G.t < 1.6
+		var m: float = minf(gt, 1.6) * 1.3
+		rp = G.R + dc * m; face = face.lerp(dc, 0.6).normalized(); running = G.t >= pre and gt < 1.6
 	refj.move(rp, face, 1.3 if running else 0.0); refj.play("jog" if running else "idle", 0.3)
-	var w: float = smoothstep(0.0, 1.0, (G.t - 0.15) / 0.4)
+	var w: float = smoothstep(0.0, 1.0, (gt - 0.15) / 0.4)
 	var fwd := Vector3(face.x, 0, face.y)
 	var rgt := Vector3(-face.y, 0, face.x)
 	var upv := Vector3.UP
@@ -2068,12 +2278,14 @@ func _gesture_process(delta: float) -> void:
 	var shL := refj.bone_world("upperarm01_L")
 	if (shR - shL).dot(rgt) < 0: rgt = -rgt
 	card.visible = false
-	match g.type:
+	if G.t < pre:
+		_sinal_tv(refj, face, (G.t - 0.25) / (pre - 0.5), smoothstep(0.0, 1.0, G.t / 0.25) * smoothstep(0.0, 1.0, (pre - G.t) / 0.2))
+	else: match g.type:
 		"card", "up":
 			refj.ik = {"wrist_R": [shR + upv * 0.62 + fwd * 0.08 + rgt * 0.05, w]}
 			if g.type == "card":
 				card.visible = w > 0.3
-				var red: bool = g.get("col", "") == "red" or (g.get("second", false) and G.t > 1.6)
+				var red: bool = g.get("col", "") == "red" or (g.get("second", false) and gt > 1.6)
 				(card.material_override as StandardMaterial3D).albedo_color = Color("d8322f") if red else Color("f2cf3a")
 		"adv":
 			refj.ik = {"wrist_R": [shR + fwd * 0.6 + rgt * 0.12, w], "wrist_L": [shL + fwd * 0.6 - rgt * 0.12, w]}
@@ -2084,7 +2296,7 @@ func _gesture_process(delta: float) -> void:
 			var right := v3.dot(rgt) >= 0
 			refj.ik = {("wrist_R" if right else "wrist_L"): [(shR if right else shL) + v3 * 0.62, w]}
 		_:
-			refj.ik = {"wrist_R": [shR + fwd * 0.45 + rgt * 0.2 + upv * (-0.3 + 0.25 * sin(G.t * 5.0)), w]}
+			refj.ik = {"wrist_R": [shR + fwd * 0.45 + rgt * 0.2 + upv * (-0.3 + 0.25 * sin(gt * 5.0)), w]}
 	for j in [att, refj]:
 		if j.node.visible: j.update(delta, G.t); j.ground()
 	if card.visible: _card_in_hand(fwd)
@@ -2100,7 +2312,7 @@ func _gesture_process(delta: float) -> void:
 		look = refj.node.position + Vector3(0, 1.25, 0)
 	cam.fov = 42
 	cam.look_at_from_position(Vector3(clamp(c.x, -3, W + 3), 1.6, clamp(c.y, -3, H + 3)), look)
-	if G.t >= G.dur: _end_gesture()
+	if G.t >= G.dur + pre: _end_gesture()
 
 # cartão entre o polegar e os dedos: na direção da mão (antebraço -> pulso), virado para a frente
 func _card_in_hand(fwd: Vector3) -> void:
@@ -2405,6 +2617,8 @@ func _unhandled_input(e: InputEvent) -> void:
 				elif kc == KEY_S: speed = 0.3 if speed > 0.5 else 1.0
 			"gesto":
 				if kc == KEY_SPACE or kc == KEY_ENTER: _end_gesture()
+			"ir_var":
+				if kc == KEY_SPACE or kc == KEY_ENTER: _ir_var_fim()
 			"jogo":
 				if jogo.mode == "pergunta" and kc >= KEY_1 and kc <= KEY_4: jogo.ask_pick(kc - KEY_1)
 				elif jogo.mode == "protesto" and kc >= KEY_1 and kc <= KEY_5: jogo.resolve_protest(["ignorar", "afastar", "capitao", "so_capitao", "amarelo"][kc - KEY_1])
@@ -2426,9 +2640,11 @@ func _unhandled_input(e: InputEvent) -> void:
 					KEY_N: next_lance()
 	if e is InputEventMouseButton and e.pressed:
 		if modo == "gesto": _end_gesture()
+		elif modo == "ir_var": _ir_var_fim()
 		elif modo == "treino": cam_mode = (cam_mode + 1) % 4
 	if e is InputEventScreenTouch and e.pressed:
 		if modo == "gesto": _end_gesture()
+		elif modo == "ir_var": _ir_var_fim()
 		elif modo == "treino":
 			if e.position.x > get_viewport().get_visible_rect().size.x * 0.75: next_lance()
 			else: cam_mode = (cam_mode + 1) % 4

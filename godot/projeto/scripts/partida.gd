@@ -1423,6 +1423,15 @@ func physics(dt: float) -> void:
 			atraso_band = {"oi": oi, "flag": assistant_call(oi), "team": oi.team, "t": t}
 			atrasos_n += 1
 			oi = {}
+	# com VAR: fora de jogo apertado num ataque claro. O assistente guarda a bandeira e a jogada segue;
+	# se der golo, festeja-se e o VAR verifica depois (golo_segue)
+	if segue_ok() and not oi.is_empty() and best.id == oi.receiver and not best.off and atraso_band.is_empty() \
+			and oi.margin > -0.8 and oi.margin <= 1.2 and rel(oi.team, best.p.x) > W * 0.6 and rng.randf() < A("segue_p", 0.85):
+		atraso_band = {"oi": oi, "flag": assistant_call(oi), "team": oi.team, "t": t}
+		atrasos_n += 1
+		radio("Assistente", "Dúvida de fora de jogo. Deixo seguir a jogada.")
+		if dbg_on: dbg["segue_n"] = dbg.get("segue_n", 0) + 1
+		oi = {}
 	if not oi.is_empty() and best.id == oi.receiver and oi.margin > -1.8 and oi.margin <= 1.2 and not best.off:
 		last_off = {"oi": oi, "t": t, "n": incidents.size(), "o": offsides}
 	if not oi.is_empty() and best.id == oi.receiver and oi.margin > -1.0 and not best.off:
@@ -1620,6 +1629,7 @@ func corner_setup(team: int, tk: Pl) -> void:
 func goal(team: int) -> void:
 	if not desempate.is_empty(): pen_registo(true); return
 	if var_mode and goal_var(team): return
+	if not var_mode and golo_segue(team): return
 	if goal_check(team): return
 	goal_award(team, true)
 	if not no_var and training.is_empty():
@@ -1638,7 +1648,7 @@ func goal_award(team: int, festeja := false) -> void:
 		kickoff(1 - team, true)
 		pause = 2.2
 	if k and k.team == team and not k.off and training.is_empty() and not tut and rng.randf() < 0.14:
-		later(1.2, func(): if mode == "play" and not k.off: _festejo(k))
+		later(1.2, func(): if mode == "play" and not k.off and golo_pend.is_empty(): _festejo(k))
 
 # festejos no 2D: quem marcou corre para a bandeirola de canto, os colegas vão atrás dele,
 # quem sofreu volta devagar para o seu meio-campo; depois todos regressam e há pontapé de saída
@@ -1668,9 +1678,51 @@ func _festa_step(dt: float) -> void:
 			elif k: tg = k.p + (p.p - k.p).normalized() * (1.0 + 0.25 * (p.id % 4)); sp = 7.2
 		move_to(p, tg, sp, dt)
 		p.p += p.v * dt
+	if not golo_pend.is_empty():
+		# golo em verificação: o VAR avisa a meio do festejo e depois chama o árbitro ao monitor
+		var gp := golo_pend
+		if not gp.dito and festa.t > 2.6:
+			gp.dito = true
+			sfx("beep")
+			radio("VAR", "Golo em verificação: possível fora de jogo no passe.")
+			toast("O VAR está a verificar o golo: possível fora de jogo", 2.8)
+			feed("O VAR verifica o golo %s: possível fora de jogo no passe." % de_t(team), "var")
+		if festa.t > 5.6:
+			festa = {}; golo_pend = {}
+			golo_revisao(gp)
+		return
 	if festa.t > 4.8:
 		festa = {}
 		kickoff(1 - team, true)
+
+# ---------- golo que segue com dúvida de fora de jogo (jogos com VAR) ----------
+var golo_pend := {}               # golo já festejado à espera da verificação do VAR
+func segue_ok() -> bool: return not var_mode and not no_var and training.is_empty() and not tut and desempate.is_empty()
+# o golo conta e festeja-se; a verificação do fora de jogo vem depois, no monitor
+func golo_segue(team: int) -> bool:
+	var ab := atraso_band
+	atraso_band = {}
+	if not segue_ok() or mode != "play" or bpen: return false
+	var oi := {}
+	var flag := false
+	if not ab.is_empty() and int(ab.team) == team and t - float(ab.t) < 9.0:
+		oi = ab.oi; flag = ab.flag
+	elif not last_off.is_empty() and t - float(last_off.t) < 6.0 and int(last_off.oi.team) == team and int(last_off.n) == incidents.size() and int(last_off.o) == offsides and lance_cd <= 9 and rng.randf() < 0.85:
+		oi = last_off.oi
+	if oi.is_empty(): return false
+	last_off = {}
+	goal_award(team, true)
+	if festa.is_empty(): return true
+	golo_pend = {"oi": oi, "team": team, "flag": flag, "dito": false}
+	if dbg_on: dbg["golo_var_n"] = dbg.get("golo_var_n", 0) + 1
+	return true
+func golo_revisao(gp: Dictionary) -> void:
+	start_offside(gp.oi, false)
+	lance.merge({"flag": gp.flag, "goal": gp.team, "goal_ctx": true, "ja_dado": true, "atrasada": true, "dflt": "emjogo",
+		"var_done": true, "var_review": true, "decide_t": 20.0, "radioed": true}, true)
+	var_n += 1; added += 0.7
+	feed("O VAR chama o árbitro ao monitor para ver o golo %s." % de_t(int(gp.team)), "var")
+	emit("lance", {"L": lance})
 
 # ---------- fora de jogo ----------
 func offside_snap(p: Pl, m: Pl) -> void:
@@ -1692,7 +1744,7 @@ func assistant_call(oi: Dictionary) -> bool:
 	var truth: bool = oi.margin > 0
 	return truth if rng.randf() < acc else not truth
 
-func flag_offside(oi: Dictionary) -> void:
+func flag_offside(oi: Dictionary, calado := false) -> void:
 	var def_t: int = 1 - oi.team
 	ast_flag[1 if dirs(oi.team) > 0 else 0] = 1.8
 	var at := Vector2(clamp(oi.recv.x, 1, W - 1), clamp(oi.recv.y, 1, H - 1))
@@ -1701,9 +1753,10 @@ func flag_offside(oi: Dictionary) -> void:
 	if p:
 		vai(p, at - Vector2(dirs(def_t) * 0.8, 0)); owner = p; last = def_t; p.cd = 0.9; p.set_piece = true; parado_dono = p
 	offsides += 1
+	pause = 1.2
+	if calado: return
 	feed("Bandeira no ar: fora de jogo " + de_t(oi.team) + ".", "info")
 	toast("Fora de jogo: bandeira do assistente", 1.8)
-	pause = 1.2
 
 func ast_step(dt: float) -> void:
 	for i in 2:
@@ -1716,7 +1769,7 @@ func ast_step(dt: float) -> void:
 		ast[i].x += clamp((tx - ast[i].x) * 3, -7.5, 7.5) * dt
 		if ast_flag[i] > 0: ast_flag[i] -= dt
 
-func start_offside(oi: Dictionary) -> void:
+func start_offside(oi: Dictionary, emite := true) -> void:
 	lance_cd = rand(11, 16) * lance_k
 	var mis: float = absf(oi.ast.x - oi.line_x)
 	var flag := assistant_call(oi)
@@ -1727,7 +1780,7 @@ func start_offside(oi: Dictionary) -> void:
 		"in_box": false, "flash": "Fora de jogo?", "P": oi.recv}
 	mode = "lance"
 	for p in players: p.v *= 0.2
-	emit("lance", {"L": lance})
+	if emite: emit("lance", {"L": lance})
 
 # ---------- árbitro ----------
 # ---------- taça: prolongamento (2 x 15 minutos) e desempate por penáltis ----------
@@ -2513,7 +2566,7 @@ func start_var(L: Dictionary, d: String) -> void:
 func decide(d: String, timed_out := false) -> void:
 	var L := lance
 	var vm: bool = var_mode and L.has("var_campo") and mode == "lance" and not L.has("decided")
-	if var_mode and not L.get("goal_ctx", false): atraso_band = {}
+	if not L.get("goal_ctx", false): atraso_band = {}
 	var final := d
 	if vm and not L.get("ia", false):
 		var_avalia(L, d)
@@ -2768,7 +2821,7 @@ func _decide_offside(L: Dictionary, d: String, timed_out: bool) -> void:
 		m = "Hesitaste: o jogo seguiu" if timed_out else "Em jogo, siga"
 	if L.get("training", false): m = ("Certo · " if ok else "Errado, era " + str(LABEL[L.truth]).to_lower() + " por " + ("%.2f" % absf(L.oi.margin)).replace(".", ",") + " m · ") + m
 	elif L.has("var_first"): m = ("Corrigido com o VAR · " if ok else "Mantiveste contra o VAR · ") + m
-	elif not timed_out and not no_var: m += " · VAR confirmou"
+	elif not timed_out and not no_var and not L.get("ja_dado", false): m += " · VAR confirmou"
 	if d == "fora": sfx("whistle", "short")
 	var against: int = L.oi.team if d == "fora" else 1 - L.oi.team
 	L.against = against
@@ -2983,6 +3036,17 @@ func _decide_pen(L: Dictionary, d: String, timed_out: bool) -> void:
 func goal_verdict(L: Dictionary, allowed: bool) -> String:
 	var team: int = L.goal
 	reset_ball(bp)
+	if L.get("ja_dado", false):
+		# o golo já estava no marcador e festejado: o VAR confirma-o ou tira-o
+		if allowed:
+			kickoff(1 - team, true); pause = 1.6
+			feed("Golo %s confirmado pelo VAR. %d–%d." % [de_t(team), score[0], score[1]], "var")
+			return "Golo confirmado pelo VAR"
+		score[team] = maxi(0, score[team] - 1); anulados += 1
+		crowd = clamp(crowd + (18 if team == HOME else -8), 0, 100)
+		flag_offside(L.oi, true)
+		feed("Golo %s anulado pelo VAR por fora de jogo. Volta a estar %d–%d." % [de_t(team), score[0], score[1]], "var")
+		return "Golo anulado pelo VAR: fora de jogo"
 	if allowed:
 		goal_award(team)
 		return "A bola entrou toda: golo " + de_t(team) if kind_of(L) == "linha" and L.get("save", false) else "Golo validado"
@@ -3761,7 +3825,7 @@ func coach_step(dt: float) -> void:
 # ---------- reinícios: substituições (Lei 3), pontapé de baliza (Lei 16), festejos (Lei 12) ----------
 func regras_step(dt: float) -> void:
 	sub_cd -= dt
-	if var_mode: atraso_step()
+	atraso_step()
 	gk8_step(dt)
 	if mode != "play": return
 	lesao_step(dt)
@@ -4540,7 +4604,7 @@ func feed_decision(L: Dictionary, d: String, msg_: String) -> void:
 
 # ---------- o árbitro comunica a decisão ----------
 func ref_says(L: Dictionary, d: String) -> String:
-	var tag := "Vi as imagens. " if L.has("var_first") and L.var_first != d else ""
+	var tag := "Vi as imagens. " if (L.has("var_first") and L.var_first != d) or L.get("ja_dado", false) else ""
 	var p: Pl = players[L.def.id] if L.has("def") and int(L.def.id) >= 0 else null
 	var second := p != null and p.off and (d == "amarelo" or d == "maoAmarelo")
 	var k := kind_of(L)

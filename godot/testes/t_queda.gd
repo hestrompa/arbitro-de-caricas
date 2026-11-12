@@ -27,7 +27,7 @@ func _initialize():
 		m._restart()
 		m.cam_mode = int(OS.get_environment("CAM")) if OS.get_environment("CAM") != "" else 1
 		var k := 0
-		var dt := -0.1
+		var dt := float(OS.get_environment("INI")) if OS.get_environment("INI") != "" else -0.1
 		while dt <= fim:
 			while m.t < m.TC + dt: await process_frame
 			await process_frame
