@@ -4887,8 +4887,8 @@ const TUT := [
 	{"txt": "Boa. Quando há um lance, o jogo para e vês o momento em 3D a partir de onde estás. Perto e com bom ângulo vês melhor. Vamos ver um.", "btn": "Ver o lance", "go": "falta"},
 	{"txt": "Vê o lance e decide: 1 siga, 2 falta, 3 amarelo, 4 vermelho, 5 simulação. Depois da 1.ª vez podes rever (R) e mudar de câmara (C).", "until": "feito"},
 	{"txt": "O árbitro comunica a decisão aos jogadores. Nos lances no limite (falta ou amarelo, por exemplo) as duas decisões contam como certas, mas o observador vê se tens o mesmo critério o jogo todo.", "btn": "Seguinte"},
-	{"txt": "Foras de jogo: vês o passe pelos olhos do assistente. Quando há dúvida, o VAR chama-te ao monitor: arrastas as linhas no relvado até às partes do corpo que contam e decides.", "btn": "Ver um fora de jogo", "go": "fora"},
-	{"txt": "Arrasta as duas linhas até aos pés, ombros ou cabeça do atacante e do penúltimo defesa. Tab troca de linha, as setas afinam.", "until": "feito"},
+	{"txt": "Foras de jogo: vês o passe pelos olhos do assistente. Quando há dúvida, o VAR chama-te ao monitor, onde as linhas mostram a parte do corpo mais adiantada de cada um, e decides.", "btn": "Ver um fora de jogo", "go": "fora"},
+	{"txt": "O VAR traça as duas linhas na parte do corpo mais adiantada do atacante e do penúltimo defesa: pé, joelho, ombro ou cabeça. Braços e mãos não contam. Vê quem está à frente e decide.", "until": "feito"},
 	{"txt": "Em cima tens o controlo do jogo, a tua energia, a pressão do público e os nervos. Erros e protestos mal geridos baixam o controlo: abaixo de 10 o jogo é interrompido. Ao intervalo revês os lances da 1.ª parte.", "btn": "Seguinte"},
 	{"txt": "Estás pronto. Na carreira começas nos distritais e sobes até ao Mundial. No auricular ouves o VAR, os assistentes e o 4.º árbitro.", "btn": "Ir para o menu", "go": "fim"},
 ]

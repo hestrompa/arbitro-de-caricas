@@ -1087,9 +1087,14 @@ func _vcache() -> Dictionary:
 		for j in 4:
 			if arm[bs[i * 4 + j]]: aw += ws[i * 4 + j]
 		if aw < 0.5: keep.append(i)
-	_vc = {"vs": vs, "bs": bs, "ws": ws, "skin": skin, "bind_bone": bind_bone, "keep": keep}
+	var nomes: Array = []
+	for k in skin.get_bind_count(): nomes.append(String(skin.get_bind_name(k)))
+	_vc = {"vs": vs, "bs": bs, "ws": ws, "skin": skin, "bind_bone": bind_bone, "keep": keep, "nomes": nomes}
 	return _vc
 
+# Lei 11: contam a cabeça, o tronco (com o ombro até à axila) e as pernas e pés; braços e mãos não contam.
+# Devolve o ponto mais adiantado na direção dv; ext_parte fica com o nome da parte do corpo a que pertence.
+var ext_parte := ""
 func extreme(dv: Vector3) -> Vector3:
 	var c := _vcache()
 	var skin: Skin = c.skin
@@ -1103,6 +1108,7 @@ func extreme(dv: Vector3) -> Vector3:
 	var ws: PackedFloat32Array = c.ws
 	var best := -INF
 	var bp := Vector3.ZERO
+	var bi_best := -1
 	for i in c.keep:
 		var v := vs[i]
 		var p := Vector3.ZERO
@@ -1110,7 +1116,18 @@ func extreme(dv: Vector3) -> Vector3:
 			var w := ws[i * 4 + j]
 			if w > 0.0: p += (M[bs[i * 4 + j]] as Transform3D) * v * w
 		var d := p.dot(dv)
-		if d > best: best = d; bp = p
+		if d > best: best = d; bp = p; bi_best = i
+	if bi_best >= 0:
+		var wm := -1.0
+		var nm := ""
+		for j in 4:
+			if ws[bi_best * 4 + j] > wm: wm = ws[bi_best * 4 + j]; nm = c.nomes[bs[bi_best * 4 + j]]
+		if nm.begins_with("foot"): ext_parte = "pé"
+		elif nm.begins_with("lowerleg"): ext_parte = "perna"
+		elif nm.begins_with("upperleg"): ext_parte = "coxa"
+		elif nm.begins_with("clavicle") or nm.begins_with("upperarm"): ext_parte = "ombro"
+		elif nm in ["head", "neck01"]: ext_parte = "cabeça"
+		else: ext_parte = "tronco"
 	# chuteiras (caixas presas aos pés)
 	for f in ["foot_L", "foot_R"]:
 		var g := gt * skel.get_bone_global_pose(bi[f])
@@ -1119,5 +1136,5 @@ func extreme(dv: Vector3) -> Vector3:
 				for cz in [0.05 - 0.135, 0.05 + 0.135]:
 					var p2 := g * Vector3(cx, cy, cz)
 					var d2 := p2.dot(dv)
-					if d2 > best: best = d2; bp = p2
+					if d2 > best: best = d2; bp = p2; ext_parte = "pé"
 	return bp

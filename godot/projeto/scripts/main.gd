@@ -189,6 +189,17 @@ func _ready() -> void:
 		mm.no_depth_test = true
 		lm.material_override = mm; lm.position = Vector3(0, 0.02, H / 2); lm.visible = false
 		add_child(lm); var_mesh.append(lm)
+	# poste do chão até à parte do corpo que define cada linha, e uma bolinha nesse ponto
+	for i in 4:
+		var pm := MeshInstance3D.new()
+		if i < 2:
+			var pb := BoxMesh.new(); pb.size = Vector3(0.018, 1.0, 0.018); pm.mesh = pb
+		else:
+			var ps := SphereMesh.new(); ps.radius = 0.04; ps.height = 0.08; pm.mesh = ps
+		var pmat := StandardMaterial3D.new(); pmat.albedo_color = Color("ff3b2f") if i % 2 == 0 else Color("2a7dff"); pmat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		pmat.no_depth_test = true
+		pm.material_override = pmat; pm.visible = false
+		add_child(pm); var_mesh.append(pm)
 	cam = Camera3D.new(); cam.fov = 55; cam.near = 0.05; cam.far = 600
 	add_child(cam); cam.current = true
 	_labels()
@@ -804,9 +815,6 @@ func _scene_process(delta: float) -> void:
 	if snap_tc: t = TC
 	# VAR no fora de jogo: a imagem para no momento do passe
 	if modo == "var" and lance == 9 and t >= TC:
-		if not sc.has("lines"):
-			sc.lines = true
-			var_line = [att.node.position.x, def.node.position.x]; var_sel = 0
 		t = TC; dt = 0.0
 	if t > DUR:
 		if modo == "treino": cur = {}
@@ -838,6 +846,10 @@ func _scene_process(delta: float) -> void:
 	if lance <= 4 and t > TC - 0.4 and t < TC + 1.3: _track_contact()
 	if lance <= 4 and t >= TC + 1.3 and not contact_checked: _check_contact()
 	if lance == 9 and is_equal_approx(t, TC) and sc.get("measured_t", -1.0) != t: _measure_offside()
+	# VAR: as linhas são traçadas pela medição no corpo (pé, joelho, ombro ou cabeça mais adiantados; os braços não contam)
+	if modo == "var" and lance == 9 and t >= TC and not sc.has("lines") and sc.has("true_lines"):
+		sc.lines = true
+		var_line = (sc.true_lines as Array).duplicate(); var_sel = 0
 	# o árbitro corre para o sítio do lance (só se vê fora da tua vista)
 	_ref_step(dt)
 	if refj.node.visible:
@@ -1392,18 +1404,41 @@ func _pip_step() -> void:
 # do atacante (sem braços) contra a do penúltimo defesa (o guarda-redes conta-se como último) e a bola.
 func _measure_offside() -> void:
 	sc.measured_t = t
-	var dv := Vector3(float(sc.dir), 0, 0)
-	var ax: float = att.extreme(dv).x * float(sc.dir)
-	var dx := -INF
+	var sd := float(sc.dir)
+	var dv := Vector3(sd, 0, 0)
+	var pa := att.extreme(dv)
+	var ax: float = pa.x * sd
+	var parte_a := att.ext_parte
+	# Lei 11: a linha é o penúltimo adversário (o guarda-redes também conta), a bola ou o meio-campo, o que estiver mais à frente
+	var adv: Array = []            # [x na direção do ataque, ponto, parte, boneco]
 	for e in sc.list:
 		var s: Dictionary = e[1]
-		if int(s.team) == int(L.oi.team) or s.role == "gk": continue
-		var x: float = (e[0] as Jogador).extreme(dv).x * float(sc.dir)
-		if x > dx: dx = x; sc.line_j = e[0]
-	var bx: float = b3.x * float(sc.dir)
-	var line: float = maxf(dx, bx)
+		if int(s.team) == int(L.oi.team): continue
+		var j: Jogador = e[0]
+		var pt := j.extreme(dv)
+		adv.append([pt.x * sd, pt, j.ext_parte, j])
+	# quem não está na cena 3D (quase sempre o guarda-redes) entra pela posição das caricas
+	var em_cena: Array = sc.list.map(func(e): return int(e[1].id))
+	for s in L.oi.snap:
+		if int(s.team) == int(L.oi.team) or int(s.id) in em_cena: continue
+		adv.append([(float(s.p.x) + 0.25 * sd) * sd, Vector3(float(s.p.x) + 0.25 * sd, 0.0, float(s.p.y)), "", null])
+	adv.sort_custom(func(a, b): return a[0] > b[0])
+	var dx := -INF
+	var pd := Vector3.ZERO
+	var parte_d := ""
+	if adv.size() > 1:
+		dx = adv[1][0]; pd = adv[1][1]; parte_d = adv[1][2]
+		if adv[1][3] != null: sc.line_j = adv[1][3]
+	var bx: float = b3.x * sd
+	var mx: float = W / 2 * sd
+	var line: float = maxf(maxf(dx, bx), mx)
+	var que := "penúltimo defesa"
+	if line == bx and bx > dx: que = "bola"; pd = Vector3(b3.x, 0.0, b3.z); parte_d = ""
+	elif line == mx and mx > dx: que = "meio-campo"; pd = Vector3(W / 2, 0.0, pa.z); parte_d = ""
 	var m: float = ax - line
-	sc.true_lines = [ax * float(sc.dir), line * float(sc.dir)]
+	sc.true_lines = [ax * sd, line * sd]
+	sc.true_pts = [pa, pd]
+	sc.true_txt = ["atacante: " + parte_a, que + (": " + parte_d if parte_d != "" else "")]
 	if L.is_empty() or L.has("decided"): return
 	L.oi.margin = m
 	L.truth = "fora" if m > 0 else "emjogo"
@@ -1646,7 +1681,15 @@ func _var_lines() -> void:
 			var_mesh[i].position = Vector3(float(sc.true_lines[i]), 0.02, H / 2); var_mesh[i].scale = Vector3(1.6, 1, 1)
 		elif on:
 			var_mesh[i].position = Vector3(var_line[i], 0.02, H / 2)
-			var_mesh[i].scale = Vector3(2.2 if i == var_sel else 1.0, 1, 1)
+			var_mesh[i].scale = Vector3(1.6, 1, 1)
+		# de que parte do corpo sai a linha: poste na vertical e bolinha no ponto medido
+		var pt: Vector3 = (sc.true_pts[i] as Vector3) if (on or real) and sc.has("true_pts") else Vector3.ZERO
+		var alto: bool = (on or real) and sc.has("true_pts") and pt.y > 0.06
+		var_mesh[2 + i].visible = alto
+		var_mesh[4 + i].visible = (on or real) and sc.has("true_pts")
+		if alto:
+			var_mesh[2 + i].position = Vector3(pt.x, pt.y * 0.5, pt.z); var_mesh[2 + i].scale = Vector3(1, pt.y, 1)
+		var_mesh[4 + i].position = pt
 
 # ---------- noites difíceis em 3D: chuva, nevoeiro, fumo das tochas e apagão ----------
 func _clima_nodes() -> void:
@@ -1939,7 +1982,8 @@ func _lance_ui(delta: float) -> void:
 				sub = "Medido: %s · %s · %d km/h · Campo: %s · check há %d s" % ["carrinho" if g.slide else "de pé", jogo.grav_dir(float(g.phi)), int(round(float(g.vel))), campo_txt(), int(L.get("var_t", 0.0))]
 		if lance == 9 and sc.has("lines"):
 			var gap: float = (var_line[0] - var_line[1]) * float(sc.dir)
-			sub = "Linhas: Tab troca (vermelha = atacante, azul = penúltimo defesa) · setas mexem · C câmara · atacante %s %d cm %s" % ["", int(round(absf(gap) * 100)), "à frente" if gap > 0 else "atrás"]
+			var tx: Array = sc.get("true_txt", ["atacante", "penúltimo defesa"])
+			sub = "Linhas do VAR · vermelha = %s · azul = %s · braços e mãos não contam · C câmara · atacante %d cm %s" % [tx[0], tx[1], int(round(absf(gap) * 100)), "à frente" if gap > 0 else "atrás"]
 		ui.info(("SALA DO VAR · CHECK · %d' · " % L.minute + str(L.get("var_tit", ""))) if jogo.var_mode else ("MONITOR DO VAR · %d'%s" % [L.minute, " · golo em verificação: fora de jogo no passe?" if L.get("ja_dado", false) else ""]), sub)
 	if dec_shown:
 		# no monitor do VAR não há relógio: vês o lance as vezes que precisares
@@ -2604,11 +2648,6 @@ func _unhandled_input(e: InputEvent) -> void:
 				elif kc == KEY_T: tv_start()
 				elif kc == KEY_SPACE: paused = not paused
 				elif kc == KEY_S: speed = 0.3 if speed > 0.5 else (0.75 if modo == "var" else 1.0)
-				elif modo == "var" and sc.has("lines"):
-					var stp := 0.01 if e.shift_pressed else 0.05
-					if kc == KEY_TAB: var_sel = 1 - var_sel
-					elif kc == KEY_LEFT or kc == KEY_A: var_line[var_sel] -= stp
-					elif kc == KEY_RIGHT or kc == KEY_D: var_line[var_sel] += stp
 			"rever":
 				if kc == KEY_T: tv_start()
 				elif kc == KEY_R: _replay()
