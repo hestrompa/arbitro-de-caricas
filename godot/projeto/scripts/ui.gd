@@ -487,6 +487,7 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 
 # lista do que mudou nas últimas versões (para quem testa saber o que procurar)
 const NOVIDADES := [
+	["Contra-ataques", "quem recupera a bola com seis ou mais adversários apanhados à frente lança logo a equipa: os avançados arrancam para o espaço, quem leva a bola corre com ela em campo aberto e solta-a antes do desarme; o relato avisa \"Contra-ataque!\""],
 	["Motor novo de série", "o motor novo das caricas (mais passes, tabelas e desmarcações) passa a ser o do jogo; remata-se mais de fora da área, cerca de 13 remates por jogo em vez de 10; o antigo continua no menu"],
 	["Penálti só com a área vazia", "o penálti só é batido quando todos os outros jogadores estão fora da área, fora da meia-lua e atrás da bola (Lei 14); antes, quem ainda ia a sair aparecia dentro da área no lance 3D"],
 	["Protestos e dores a sério", "nos lances 3D há quem discuta de braços abertos e quem aponte o dedo ao árbitro; quem se levanta magoado fica agarrado à perna, e o golo de penálti pode ser festejado de braços ao céu (capturas novas do Mixamo)"],
