@@ -489,6 +489,8 @@ func xg_em(p: Pl, at: Vector2, opps: Array, press: float) -> float:
 	if press < 1.6: g *= 0.7
 	# recarga: com o guarda-redes ainda no chão depois de defender, a baliza está aberta
 	if gk_chao and m2(): g = minf(g * A("recarga_xg", 1.8) + 0.05, 0.75)
+	# área cheia depois de uma bola parada: há sempre uma perna no caminho do remate
+	if m2() and t - ensaio_t < A("ensaio_cheia_t", 5.0) and at.distance_to(goal) < 20.0: g *= A("ensaio_cheia", 0.45)
 	# a estrela remata colocado: de fora da área é muito mais perigosa do que um jogador normal
 	var ek := est_k(p)
 	var dgo := at.distance_to(goal)
@@ -532,6 +534,7 @@ func formation_pos(p: Pl) -> Vector2:
 
 func reset_ball(at: Vector2) -> void:
 	bp = at; bv = Vector2.ZERO; bz = 0; bvz = 0; target = null; off_info = {}; trail = []; bpen = false; cruz_q = Vector2(-1, -1)
+	ensaio = {}; ensaio_voo = {}; so_gr_t = 0.0
 	hist = []   # bola parada: os jogadores foram reposicionados, o rasto anterior já não serve
 func hist_step(dt: float) -> void:
 	hist_cd -= dt
@@ -748,6 +751,7 @@ func on_ball(p: Pl, dt: float) -> void:
 		p.penalty = false
 		if pen_3d: pen_3d = false; start_pen_scene(p); return
 		shoot(p, true); return
+	if p.set_piece and not ensaio.is_empty() and ensaio_bate(p): return
 	var to_goal := (goal - p.p).normalized()
 	var choices: Array = []
 	var dg := p.p.distance_to(goal)
@@ -1086,6 +1090,7 @@ func shoot(p: Pl, pen: bool, q := -1.0, opps: Array = []) -> void:
 		else: gy = H / 2 + s_lado * (GOAL_W / 2 + rand(0.4, 3.0))
 	var n := (Vector2(gx, gy) - bp).normalized()
 	var sp := 22.0 if pen else rand(19, 26) + (p.fin - 70) * 0.05
+	if dbg_on and af.has("rem_log"): print("REM t+%.1f q=%.2f %s d=%.1f ressalto=%.1f tipo=%s" % [t - ensaio_t, q, p.role, p.p.distance_to(Vector2(gx, H / 2)), t - ressalto_t, remate_tipo])
 	if not pen:
 		est.remates[p.team] += 1
 		if dbg_on and em_contra(p.team):
@@ -1272,6 +1277,11 @@ func ai_step(dt: float) -> void:
 				anda_dest(p, dt)
 				if p == parado_dono: p.cd = maxf(p.cd, 0.3)           # só bate quando chega à bola
 				continue
+		# bola da jogada ensaiada no ar: quem marcava o alvo corre para onde ela vai cair, do lado da baliza
+		if owner == null and cruz_q.x >= 0 and not ensaio_voo.is_empty() and ensaio_voo.get("marcador") == p:
+			move_to(p, cruz_q + (Vector2(own_goal_x(p.team), H / 2) - cruz_q).normalized() * 0.7, vel(p), dt); continue
+		if parado_dono != null and not ensaio.is_empty() and p != parado_dono and ensaio.pos.has(p.id):
+			move_to(p, ensaio.pos[p.id], vel(p) * 0.6, dt); continue       # jogada ensaiada: cada um espera no seu sítio
 		if parado_dono != null and parado_dono.penalty and owner == parado_dono and p != owner:
 			p.v *= 0.5; continue
 		if owner == p and (gk_chance(p, dt) or gk_out_check(p, dt)): return
@@ -1558,6 +1568,7 @@ func physics(dt: float) -> void:
 	else: no_pick = null
 	if no_pick_b_t > 0: no_pick_b_t -= dt
 	else: no_pick_b = null
+	if so_gr_t > 0: so_gr_t -= dt
 	if owner == null and bz < 1.6 and sp > 6.0 and bp.distance_to(ref) < 0.55 and arb_toque_n < 1 and mode == "play" and training.is_empty() and not tut and not var_mode and desempate.is_empty():
 		_bola_arbitro(); return
 	if bp.y < 0 or bp.y > H:
@@ -1576,6 +1587,7 @@ func physics(dt: float) -> void:
 	var bd := 1e9
 	for p in act:
 		if p == no_pick or p == no_pick_b or p.down > 0: continue
+		if so_gr_t > 0 and p.role != "gk": continue          # cabeceamento ou alívio por cima de toda a gente
 		var d: float = p.p.distance_to(bp)
 		var gk: bool = p.role == "gk" and in_own_box(p.team, p.p)
 		var reach := 1.9 if gk else ((0.8 if sp > 17 else 1.3) if p.team == last else (0.5 if sp > 17 else (0.7 if sp > 9 else 1.1)))
@@ -1631,7 +1643,8 @@ func physics(dt: float) -> void:
 			no_pick = best; no_pick_t = 0.5; return
 		if sp > A("parry_v", 13.5) and rng.randf() < A("parry_p", 0.7):
 			# defesa para o lado: muitas vezes para fora, pela linha de fundo (canto)
-			var fora := rng.randf() < (A("parry_fora", 0.5) if m2() else 0.65)
+			# com a área cheia (bola parada) o guarda-redes não arrisca: desvia para fora
+			var fora := rng.randf() < ((A("ensaio_fora", 0.75) if t - ensaio_t < A("ensaio_cheia_t", 5.0) else A("parry_fora", 0.5)) if m2() else 0.65)
 			var lado := -1.0 if rng.randf() < 0.5 else 1.0
 			if dbg_on: dbg["parada_fora" if fora else "parada"] = dbg.get("parada_fora" if fora else "parada", 0) + 1
 			var n := Vector2(signf(bv.x) * 0.5, lado).normalized() if fora else Vector2(-bv.x * 0.3, lado * 8).normalized()
@@ -1649,6 +1662,17 @@ func physics(dt: float) -> void:
 	if best.role != "gk" and bz > 0.6 and kicker != null and kicker.team != best.team and in_own_box(best.team, best.p) and mode == "play" and rng.randf() < A("canto_cab", 0.4):
 		ult_passe = false
 		corner(1 - best.team, 0.5 if bp.y < H / 2 else H - 0.5)
+		return
+	# bola parada: com a área cheia, o defesa que chega primeiro à bola dentro da sua área não a domina, alivia logo
+	if m2() and best.role != "gk" and t - ensaio_t < A("ensaio_cheia_t", 5.0) and kicker != null and kicker.team != best.team and in_own_box(best.team, best.p) and mode == "play":
+		ensaio_voo = {}; ult_passe = false; target = null
+		if dbg_on: dbg["ens_corta"] = dbg.get("ens_corta", 0) + 1
+		if rng.randf() < A("ensaio_corta_canto", 0.3):
+			corner(1 - best.team, 0.5 if bp.y < H / 2 else H - 0.5)
+			return
+		var lado_a: float = (1.0 if best.p.y > H / 2 else -1.0) * rand(4.0, 22.0)
+		kick(best, Vector2(abs_x(best.team, rel(best.team, best.p.x) + rand(26.0, 42.0)), clampf(best.p.y + lado_a, 2.0, H - 2.0)), true)
+		so_gr_t = 0.9
 		return
 	# passe cortado perto da linha lateral: o defesa só lhe chega com a ponta da bota e a bola sai (lançamento)
 	var dlat: float = minf(bp.y, H - bp.y)
@@ -1689,6 +1713,10 @@ func physics(dt: float) -> void:
 		if pr_rec < A("m2_pr_rec", 6.0): best.cd = rand(0.15, 0.45) * (1.15 - best.dec / 250.0)
 		else: best.cd *= A("m2_cd_livre", 1.0)          # com espaço, conduz mais tempo (ganha metros a correr com a bola)
 	if best.role == "gk" and mode == "play": gk8_check(best)
+	if not ensaio_voo.is_empty():
+		var ev := ensaio_voo
+		ensaio_voo = {}
+		if best == ev.alvo and t - float(ev.t) < 5.0 and ensaio_remata(best, ev, z_rec): return
 	if primeira_check(best, z_rec, sp_rec, de_passe): return
 
 # remate de primeira (ou de cabeça) a um passe ou cruzamento perto da baliza: os defesas não têm tempo de fechar
@@ -1782,6 +1810,7 @@ func corner(team: int, y: float) -> void:
 	pause = 1.1
 	if p:
 		corner_setup(team, p)
+		ensaio_canto(team, p)
 		corner_check(team, p, false)
 
 # canto: a área enche-se antes do pontapé (quem ataca entre a marca e a pequena área, quem defende a marcar)
@@ -1799,8 +1828,303 @@ func corner_setup(team: int, tk: Pl) -> void:
 			continue
 		var mine: bool = p.team == team
 		if mine and p.line == "d" and p.role != "lcb" and p.role != "rcb": continue
-		if not mine and p.line == "a" and rng.randf() < 0.6: continue   # um ou dois ficam à espera do contra-ataque
+		if not mine and p.line == "f" and rng.randf() < 0.6: continue   # um ou dois ficam à espera do contra-ataque
 		vai(p, Vector2(gx - dir * (rand(6, 14) if mine else rand(2.5, 10)), H / 2 + rand(-9, 9)))
+
+# ---------- jogadas ensaiadas de bola parada (motor novo) ----------
+# cada canto e cada livre para a área leva uma jogada combinada: um alvo arranca para a zona onde a bola vai cair,
+# um colega planta-se no caminho do marcador dele (bloqueio) e outros dois arrastam a defesa para o lado contrário
+var ensaio := {}          # preparada, à espera do pontapé: tipo, team, tk, alvo, q, pos {id: sítio}, engodos [[jogador, corrida]], marcador, de
+var ensaio_voo := {}      # batida, com a bola a caminho do alvo: alvo, tipo, t, de
+var so_gr_t := 0.0        # a bola vai por cima de todos (cabeceamento à baliza, alívio): só o guarda-redes lhe chega
+var ensaio_t := -99.0     # quando foi batida a última (durante uns segundos a área está cheia)
+var ensaio_golo := {}     # a última que acabou em remate (para o relato do golo)
+const ENSAIO_NOME := {"primeiro": "ao primeiro poste", "segundo": "ao segundo poste", "marca": "para a marca de penálti", "entrada": "para a entrada da área", "curto": "curta"}
+
+func ensaio_ok() -> bool:
+	return m2() and A("ensaio_k", 1.0) > 0.0 and desempate.is_empty() and training.is_empty() and not tut and not var_mode
+
+func _ens_melhor(cands: Array, usados: Array, attr: String, linhas: Array = []) -> Pl:
+	var b: Pl = null
+	for q in cands:
+		if q in usados or (not linhas.is_empty() and not (q.line in linhas)): continue
+		if b == null or float(q.get(attr)) > float(b.get(attr)): b = q
+	if b == null and not linhas.is_empty(): return _ens_melhor(cands, usados, attr)
+	if b: usados.append(b)
+	return b
+
+# o defesa livre mais perto fica do lado da baliza de quem marca
+func _ens_marca(livres: Array, a: Pl, at: Vector2, gx: float, pos: Dictionary, folga := 1.3) -> Pl:
+	var d: Pl = nearest(livres, at)[0]
+	if d == null: return null
+	livres.erase(d)
+	var sitio: Vector2 = at + (Vector2(gx, H / 2) - at).normalized() * folga
+	vai(d, sitio); pos[d.id] = sitio; d.mark = a
+	return d
+
+# sítio na área: a "prof" metros da linha de golo e a "lado" metros do meio da baliza (positivo = lado da bola)
+func _ens_p(gx: float, dir: float, s: float, prof: float, lado: float) -> Vector2:
+	return Vector2(gx - dir * prof, H / 2 + s * lado)
+
+func ensaio_canto(team: int, tk: Pl) -> void:
+	ensaio = {}
+	if not ensaio_ok(): return
+	var dir := float(dirs(team))
+	var gx := opp_goal_x(team)
+	var s := -1.0 if bp.y < H / 2 else 1.0             # lado do canto
+	var mates: Array = active().filter(func(q): return q.team == team and q != tk and q.role != "gk" and q.down <= 0)
+	var livres: Array = active().filter(func(q): return q.team != team and q.role != "gk" and q.down <= 0)
+	if mates.size() < 6 or livres.size() < 5: return
+	var sobem: Array = mates.filter(func(q): return q.role != "lb" and q.role != "rb")
+	var tipo := str(af.get("ensaio_tipo", ""))
+	if tipo == "": tipo = pick_truth({"primeiro": 0.26, "segundo": 0.26, "marca": 0.18, "entrada": 0.14, "curto": 0.16})
+	var usados: Array = []
+	var pos := {}
+	var alvo: Pl = null
+	var q := Vector2.ZERO
+	var ini := Vector2.ZERO
+	var eg: Array = []        # engodos: [sítio, corrida]
+	match tipo:
+		"primeiro":
+			alvo = _ens_melhor(sobem, usados, "pac", ["f", "m"])
+			q = _ens_p(gx, dir, s, 5.2, 3.4); ini = _ens_p(gx, dir, s, 11.5, -0.5)
+			eg = [[_ens_p(gx, dir, s, 9.0, -3.0), _ens_p(gx, dir, s, 6.5, -4.8)], [_ens_p(gx, dir, s, 13.5, 2.5), _ens_p(gx, dir, s, 10.0, 0.0)]]
+		"segundo":
+			alvo = _ens_melhor(sobem.filter(func(m): return m.role == "lcb" or m.role == "rcb"), usados, "ovr")
+			if alvo == null: alvo = _ens_melhor(sobem, usados, "ovr")
+			q = _ens_p(gx, dir, s, 7.3, -4.6); ini = _ens_p(gx, dir, s, 12.5, 1.5)
+			eg = [[_ens_p(gx, dir, s, 8.5, 1.0), _ens_p(gx, dir, s, 5.5, 3.2)], [_ens_p(gx, dir, s, 12.0, -2.0), _ens_p(gx, dir, s, 9.5, 1.0)]]
+		"marca":
+			alvo = _ens_melhor(sobem, usados, "fin", ["f"])
+			q = _ens_p(gx, dir, s, 10.0, 0.4); ini = _ens_p(gx, dir, s, 16.8, -2.5)
+			eg = [[_ens_p(gx, dir, s, 8.0, 2.5), _ens_p(gx, dir, s, 5.5, 3.3)], [_ens_p(gx, dir, s, 8.5, -2.5), _ens_p(gx, dir, s, 6.0, -4.6)]]
+		"entrada":
+			alvo = _ens_melhor(sobem, usados, "fin", ["m"])
+			q = _ens_p(gx, dir, s, 18.5, 3.0); ini = _ens_p(gx, dir, s, 22.5, 0.5)
+			eg = [[_ens_p(gx, dir, s, 10.0, 1.5), _ens_p(gx, dir, s, 6.0, 2.5)], [_ens_p(gx, dir, s, 11.0, -2.0), _ens_p(gx, dir, s, 6.5, -3.6)]]
+		_:
+			tipo = "curto"
+			alvo = _ens_melhor(mates.filter(func(m): return m.role != "lcb" and m.role != "rcb"), usados, "pas", ["m", "d"])
+			q = Vector2(gx - dir * 6.5, bp.y - s * 8.0); ini = q
+	if alvo == null: return
+	vai(alvo, ini); pos[alvo.id] = ini
+	var marcador: Pl = null
+	var engodos: Array = []
+	# defesa à zona no primeiro poste: é ele o primeiro obstáculo de qualquer canto
+	var zp: Pl = nearest(livres, _ens_p(gx, dir, s, 3.0, 3.9))[0]
+	if zp:
+		livres.erase(zp); vai(zp, _ens_p(gx, dir, s, 3.0, 3.9)); pos[zp.id] = _ens_p(gx, dir, s, 3.0, 3.9)
+	if tipo == "curto":
+		# um defesa sai ao canto curto (a 9,15 m da bola até ela estar em jogo)
+		var dc: Pl = nearest(livres, q)[0]
+		if dc:
+			livres.erase(dc)
+			var sd: Vector2 = q + (Vector2(gx, H / 2) - q).normalized() * 2.5
+			if sd.distance_to(bp) < 9.8: sd = bp + (sd - bp).normalized() * 9.8
+			vai(dc, sd); pos[dc.id] = sd
+	else:
+		if tipo != "entrada": marcador = _ens_marca(livres, alvo, ini, gx, pos)
+		# o bloqueio: um colega planta-se à frente do alvo, no caminho de quem o marca
+		var bl: Pl = _ens_melhor(sobem, usados, "tck")
+		if bl:
+			var sb: Vector2 = ini + (q - ini).normalized() * 1.6 + (Vector2(gx, H / 2) - ini).normalized() * 0.7
+			if tipo == "entrada": sb = _ens_p(gx, dir, s, 14.0, 3.5)
+			vai(bl, sb); pos[bl.id] = sb
+			_ens_marca(livres, bl, sb, gx, pos)
+		for e in eg:
+			var c: Pl = _ens_melhor(sobem, usados, "ovr", ["f", "d"])
+			if c == null: break
+			vai(c, e[0]); pos[c.id] = e[0]
+			engodos.append([c, e[1]])
+			_ens_marca(livres, c, e[0], gx, pos)
+	# os outros esperam onde o canto os pôs (área cheia), sem andar a passear até a bola ser batida
+	for p in active():
+		if p != tk and p.dest.x >= 0 and not pos.has(p.id): pos[p.id] = p.dest
+	ensaio = {"tipo": tipo, "team": team, "tk": tk, "alvo": alvo, "q": q, "pos": pos, "engodos": engodos, "marcador": marcador, "de": "canto"}
+	espera_todos = 0.0
+
+# livre para a área (fora da zona do remate direto): a defesa faz a linha, quem ataca fica em jogo um metro atrás dela
+# e arranca quando a bola é batida
+func ensaio_livre(team: int, tk: Pl) -> void:
+	ensaio = {}
+	if not ensaio_ok() or not fk.is_empty() or tk == null or tk.off or owner != tk or mode == "fim": return
+	var dir := float(dirs(team))
+	var gx := opp_goal_x(team)
+	var db := absf(bp.x - gx)
+	if db > A("ensaio_livre_d", 42.0) or db < 14.0 or in_own_box(1 - team, bp): return
+	var s := -1.0 if bp.y < H / 2 else 1.0             # lado da bola
+	var mates: Array = active().filter(func(q): return q.team == team and q != tk and q.role != "gk" and q.down <= 0)
+	var livres: Array = active().filter(func(q): return q.team != team and q.role != "gk" and q.down <= 0)
+	if mates.size() < 6 or livres.size() < 6: return
+	var cb := Vector2(gx - dir * 13.0, H / 2)
+	var sobem: Array = mates.filter(func(q): return q.role != "lb" and q.role != "rb" and q.p.distance_to(cb) < A("ensaio_longe", 36.0))
+	if sobem.size() < 4: return
+	var ld := clampf(db - 7.0, 11.0, 18.0)             # a linha da defesa, em metros da linha de golo
+	var la := ld + 1.1                                 # a linha de quem ataca (em jogo)
+	var tipo := str(af.get("ensaio_tipo", ""))
+	if not (tipo in ["primeiro", "segundo", "marca"]): tipo = pick_truth({"segundo": 0.4, "marca": 0.35, "primeiro": 0.25})
+	var usados: Array = []
+	var pos := {}
+	var alvo: Pl = null
+	var q := Vector2.ZERO
+	var ini := Vector2.ZERO
+	var eg: Array = []
+	match tipo:
+		"primeiro":
+			alvo = _ens_melhor(sobem, usados, "pac", ["f", "m"])
+			q = _ens_p(gx, dir, s, 7.5, 4.2); ini = _ens_p(gx, dir, s, la, 7.5)
+			eg = [[_ens_p(gx, dir, s, la, 1.0), _ens_p(gx, dir, s, 8.0, -3.5)], [_ens_p(gx, dir, s, la, -6.0), _ens_p(gx, dir, s, 9.0, -6.0)]]
+		"segundo":
+			alvo = _ens_melhor(sobem.filter(func(m): return m.role == "lcb" or m.role == "rcb"), usados, "ovr")
+			if alvo == null: alvo = _ens_melhor(sobem, usados, "ovr")
+			q = _ens_p(gx, dir, s, 7.8, -5.0); ini = _ens_p(gx, dir, s, la, -8.5)
+			eg = [[_ens_p(gx, dir, s, la, 5.0), _ens_p(gx, dir, s, 7.0, 3.5)], [_ens_p(gx, dir, s, la, -1.5), _ens_p(gx, dir, s, 9.5, 1.0)]]
+		_:
+			alvo = _ens_melhor(sobem, usados, "fin", ["f"])
+			q = _ens_p(gx, dir, s, 10.5, -0.5); ini = _ens_p(gx, dir, s, la, 1.5)
+			eg = [[_ens_p(gx, dir, s, la, 6.5), _ens_p(gx, dir, s, 7.0, 4.0)], [_ens_p(gx, dir, s, la, -6.0), _ens_p(gx, dir, s, 7.5, -5.0)]]
+	if alvo == null: return
+	vai(alvo, ini); pos[alvo.id] = ini
+	var engodos: Array = []
+	var marcador: Pl = null
+	# a defesa em linha: cada um do lado da baliza de quem marca, todos à mesma altura
+	var em_linha := func(a: Pl, at: Vector2) -> Pl:
+		var d: Pl = nearest(livres, at)[0]
+		if d == null: return null
+		livres.erase(d)
+		var sd := Vector2(gx - dir * ld, at.y + (H / 2 - at.y) * 0.12)
+		vai(d, sd); pos[d.id] = sd; d.mark = a
+		return d
+	marcador = em_linha.call(alvo, ini)
+	var bl: Pl = _ens_melhor(sobem, usados, "tck")
+	if bl:
+		var sb: Vector2 = ini + Vector2(0, signf(q.y - ini.y) * 1.5)
+		vai(bl, sb); pos[bl.id] = sb
+		em_linha.call(bl, sb)
+	for e in eg:
+		var c: Pl = _ens_melhor(sobem, usados, "ovr", ["f", "d"])
+		if c == null: break
+		vai(c, e[0]); pos[c.id] = e[0]
+		engodos.append([c, e[1]])
+		em_linha.call(c, e[0])
+	# mais um defesa na linha (a sobra) e um à frente da bola, a 9,15 m
+	var sob: Pl = nearest(livres, _ens_p(gx, dir, s, ld, 0.0))[0]
+	if sob:
+		livres.erase(sob); vai(sob, _ens_p(gx, dir, s, ld, 3.0)); pos[sob.id] = _ens_p(gx, dir, s, ld, 3.0)
+	var bar: Pl = nearest(livres, bp)[0]
+	if bar:
+		var sbar: Vector2 = bp + (Vector2(gx, H / 2) - bp).normalized() * 9.8
+		livres.erase(bar); vai(bar, sbar); pos[bar.id] = sbar
+	# quem fica à entrada da área para a segunda bola
+	var e2: Pl = _ens_melhor(mates, usados, "fin", ["m"])
+	if e2:
+		var se: Vector2 = _ens_p(gx, dir, s, maxf(ld + 5.0, 21.0), 2.0)
+		vai(e2, se); pos[e2.id] = se
+	ensaio = {"tipo": tipo, "team": team, "tk": tk, "alvo": alvo, "q": q, "pos": pos, "engodos": engodos, "marcador": marcador, "de": "livre"}
+	espera_todos = 10.0 - A("ensaio_espera", 7.0)
+
+# o pontapé da jogada ensaiada
+func ensaio_bate(p: Pl) -> bool:
+	var E := ensaio
+	ensaio = {}
+	if E.is_empty() or E.tk != p: return false
+	var m: Pl = E.alvo
+	if m.off or m.down > 0 or m.team != p.team: return false
+	var tipo: String = E.tipo
+	var de: String = E.de
+	p.set_piece = false
+	if dbg_on:
+		dbg["ensaio"] = dbg.get("ensaio", 0) + 1
+		dbg["ens_" + de + "_" + tipo] = dbg.get("ens_" + de + "_" + tipo, 0) + 1
+	if tipo == "curto":
+		pass_to(p, m, false)
+		if mode == "play": toast("Canto curto", 1.2)
+		return true
+	var q: Vector2 = E.q
+	var err: Vector2 = pass_err(p, p.p.distance_to(q)) * A("ensaio_err", 0.8)
+	q += err
+	# bola alta que só desce na zona combinada (à altura da cabeça; à entrada da área, ao pé de quem remata)
+	var d := bp.distance_to(q)
+	var n := (q - bp).normalized()
+	var T := clampf(d / 16.0, 1.2, 2.3)
+	kick(p, q, true); target = m; cruz_q = q
+	bv = n * d * 0.15 / (1.0 - exp(-0.15 * T))
+	bvz = ((0.5 if tipo == "entrada" else 1.8) - bz + 0.5 * G * T * T) / T
+	est.passes[p.team] += 1; ult_passe = true; est.cruz[p.team] += 1
+	if de == "livre": offside_snap(p, m)
+	# o alvo arranca; o marcador dele fica preso no bloqueio; os engodos levam os outros defesas para o lado contrário
+	ensaio_voo = {"alvo": m, "tipo": tipo, "t": t, "de": de, "q": q}
+	var mk: Pl = E.marcador
+	if mk and not mk.off:
+		if de == "canto": mk.reage = maxf(mk.reage, rand(0.35, 0.65) * (1.35 - mk.dec / 200.0) * A("ensaio_bloq", 1.0))
+		else: mk.reage = maxf(mk.reage, rand(0.15, 0.45) * (1.35 - mk.dec / 200.0) * A("ensaio_reage_l", 1.0))     # num livre só o tempo de reação
+		ensaio_voo.marcador = mk
+	for e in E.engodos:
+		var c: Pl = e[0]
+		if c.off or c.down > 0: continue
+		c.corre = e[1]; c.run = 1.8
+	ensaio_t = t
+	if mode == "play": toast(("Canto ensaiado" if de == "canto" else "Livre ensaiado") + ": bola " + str(ENSAIO_NOME[tipo]), 1.5)
+	return true
+
+# a bola chegou ao alvo: remata de primeira (de cabeça se vier pelo ar)
+func ensaio_remata(p: Pl, ev: Dictionary, z: float) -> bool:
+	if mode != "play" or owner != p or p.role == "gk": return false
+	var goal := Vector2(opp_goal_x(p.team), H / 2)
+	var dg := p.p.distance_to(goal)
+	if dg > 30.0: return false
+	var opps: Array = active().filter(func(o): return o.team != p.team)
+	var press: float = nearest(opps, p.p)[1]
+	var cab := z > 0.9 and dg < 16.0
+	var tipo: String = ev.tipo
+	# só vale como jogada combinada se a bola lhe chega na zona combinada; se passou e ele a foi buscar, é uma segunda bola
+	if tipo != "lado" and p.p.distance_to(ev.q) > A("ensaio_zona", 3.0): return false
+	var livre: bool = str(ev.de) == "livre"
+	var q: float
+	if tipo == "lado": q = maxf(xg(p, opps, 3.0), A("ensaio_lado_xg", 0.09))
+	else:
+		# o remate combinado não leva o desconto da área cheia (esse é para as segundas bolas)
+		var cheia: float = A("ensaio_cheia", 0.45) if dg < 20.0 else 1.0
+		q = xg(p, opps, maxf(press, 1.6)) / maxf(cheia, 0.05) * (A("ensaio_cab", 0.75) if cab else 1.0) * (A("ensaio_xg_livre", 0.4) if livre else A("ensaio_xg_canto", 1.3))
+		q = minf(q, 0.6)
+	if q < 0.02: return false
+	# duelo no ar: com um defesa colado (que não ficou preso no bloqueio), muitas vezes é ele que ganha e alivia
+	if tipo != "lado" and tipo != "entrada":
+		var nd: Array = nearest(opps.filter(func(o): return o.role != "gk" and o.down <= 0 and o.reage <= 0), p.p)
+		var dq: Pl = nd[0]
+		# num livre a defesa está de frente para a bola e recua com quem ataca: ganha mais duelos do que num canto
+		if dq and float(nd[1]) < (A("ensaio_duelo_dl", 3.0) if livre else A("ensaio_duelo_d", 2.2)):
+			var pd := clampf((A("ensaio_duelo_l", 0.65) if livre else A("ensaio_duelo", 0.5)) + (dq.tck - p.ovr) / 120.0 - 0.2 * (float(nd[1]) - 1.0), 0.1, 0.8)
+			if rng.randf() < pd:
+				kick(dq, bp + Vector2(-dirs(p.team), rand(-0.9, 0.9)).normalized() * rand(14.0, 24.0), true)
+				bz = 1.8; ult_passe = false; target = null; so_gr_t = 0.8
+				if dbg_on: dbg["ens_alivio"] = dbg.get("ens_alivio", 0) + 1
+				if mode == "play": toast("A defesa ganha no ar e alivia", 1.2)
+				return true
+	est.primeira[p.team] += 1
+	if dbg_on:
+		dbg["ens_remate"] = dbg.get("ens_remate", 0) + 1
+		dbg["ens_xg"] = dbg.get("ens_xg", 0.0) + q
+	if dbg_on and af.has("rem_log"): print("ENS ", tipo, " cab=", cab, " z=%.1f" % z)
+	# de cabeça a bola passa por cima de quem está à frente: ou entra, ou o guarda-redes defende, ou sai
+	shoot(p, false, q, [] if cab else opps)
+	if cab: so_gr_t = 0.7
+	if remate_tipo == "": remate_tipo = "ensaio"
+	ensaio_golo = {"tipo": tipo, "de": ev.de, "cab": cab}
+	var onde: String = {"primeiro": "ao primeiro poste", "segundo": "ao segundo poste", "marca": "na marca de penálti", "entrada": "à entrada da área", "lado": "fora do alcance da barreira"}[tipo]
+	if mode == "play": toast(("Cabeceamento " if cab else "Remate de primeira ") + onde, 1.2)
+	return true
+
+func ensaio_relato(team: int, n: int) -> String:
+	var g := ensaio_golo
+	var de: String = "de canto" if g.get("de", "") == "canto" else "de livre"
+	match str(g.get("tipo", "")):
+		"primeiro": return "Golo %s %s! Jogada ensaiada: o %d antecipa-se ao primeiro poste e desvia para dentro." % [de_t(team), de, n]
+		"segundo": return "Golo %s %s! A bola passa por cima de todos e o %d aparece sozinho ao segundo poste." % [de_t(team), de, n]
+		"marca": return "Golo %s %s! O %d sobe mais alto do que todos na marca de penálti." % [de_t(team), de, n]
+		"entrada": return "Golo %s! Canto ensaiado para a entrada da área e o %d remata de primeira." % [de_t(team), n]
+		"lado": return "Golo %s! Livre ensaiado: toque para o lado e o %d remata fora do alcance da barreira." % [de_t(team), n]
+	return "Golo %s de bola parada! O %d aparece na área e não perdoa." % [de_t(team), n]
 
 func goal(team: int) -> void:
 	if not desempate.is_empty(): pen_registo(true); return
@@ -2505,7 +2829,7 @@ func start_hand(k: Pl, d: Pl) -> void:
 # no instante do pontapé o atacante está a 3,9 m de Q, com o defesa colado atrás
 const CANTO_ANTES := 3.9
 func corner_check(team: int, tk: Pl, cross: bool) -> void:
-	if mode != "play" or not training.is_empty() or tut or lance_cd > (3.0 if cross else 9.0) or rng.randf() > (0.6 if cross else 0.75): return
+	if mode != "play" or not training.is_empty() or tut or lance_cd > (3.0 if cross else 9.0) or rng.randf() > (0.6 if cross else (A("canto_lance_p", 0.5) if not ensaio.is_empty() else 0.75)): return
 	var dir := dirs(team)
 	var gx := opp_goal_x(team)
 	var near := -1.0 if bp.y < H / 2 else 1.0
@@ -2928,6 +3252,7 @@ func _decide_core(d: String, timed_out := false) -> void:
 				if p.team != att.team and p.p.distance_to(att.p) < 6: p.p = att.p + (p.p - att.p).normalized() * 6
 			if m == "": m = "Livre para " + art_t(att.team)
 			fk_check(att)
+			ensaio_livre(att.team, att)
 		if L.in_box: m = (m + " · " if m != "" else "") + "Penálti para " + art_t(att.team)
 	elif d == "vantagem":
 		m = adv_play(L)
@@ -3054,7 +3379,7 @@ func _decide_scene(L: Dictionary, d: String, timed_out: bool) -> void:
 	elif d == "mao" or d == "maoAmarelo":
 		var tk: Pl = nearest(active().filter(func(p): return p.team == atk_t and p.role != "gk"), L.P)[0]
 		bp = L.P; vai(tk, L.P - Vector2(dirs(atk_t) * 0.8, 0)); owner = tk; last = atk_t; tk.cd = 0.9; tk.set_piece = true; parado_dono = tk
-		m = "Mão na bola: livre para " + art_t(atk_t); against = def_t; fk_check(tk)
+		m = "Mão na bola: livre para " + art_t(atk_t); against = def_t; fk_check(tk); ensaio_livre(atk_t, tk)
 	else:
 		var keep := def
 		if def.off:
@@ -4482,6 +4807,14 @@ func fk_check(tk: Pl) -> void:
 		var mates: Array = active().filter(func(p): return p.team == team and p.role != "gk" and p != tk)
 		var a: Pl = nearest(mates, ponta)[0]
 		if a: fk.enc = true; fk.enc_id = a.id
+	# jogada ensaiada: em vez do remate por cima da barreira, toque para o lado e remate de quem vem de trás
+	fk.lado_id = -1
+	if ensaio_ok() and rng.randf() < A("ensaio_fk_lado", 0.25):
+		var cands: Array = active().filter(func(p): return p.team == team and p.role != "gk" and p != tk and p.id != fk.enc_id and p.down <= 0)
+		var rm: Pl = _ens_melhor(cands, [], "fin")
+		if rm:
+			fk.lado_id = rm.id; fk.lado_s = -float(fk.enc_s)
+			vai(rm, spot + perp * fk.lado_s * 4.5 - to_g * 1.2)
 	vai(tk, spot - to_g * 1.0); tk.cd = 99
 	fk_place()
 func fk_place(dt := 0.0) -> void:
@@ -4495,6 +4828,9 @@ func fk_place(dt := 0.0) -> void:
 	if fk.enc_id >= 0:
 		var a: Pl = players[fk.enc_id]
 		if not a.off: a.p = a.p.move_toward(fk.spot + fk.to_g * fk.wd + fk.perp * fk.enc_s * ((n - 1) / 2.0 * 0.85 + fk.enc_d), 6.5 * dt); a.v = Vector2.ZERO; a.dest = Vector2(-1, -1)
+	if int(fk.get("lado_id", -1)) >= 0:
+		var rm: Pl = players[fk.lado_id]
+		if not rm.off: rm.p = rm.p.move_toward(fk.spot + fk.perp * float(fk.lado_s) * 4.5 - fk.to_g * 1.2, 6.5 * dt); rm.v = Vector2.ZERO; rm.dest = Vector2(-1, -1)
 func fk_step(dt: float) -> void:
 	if fk.is_empty(): return
 	var F := fk
@@ -4594,6 +4930,16 @@ func protest_after_soon(team: int) -> void:
 	later(2.6, func(): if mode == "play" and fk.is_empty(): protest_after(team, 0.3, true))
 func _fk_kick(F: Dictionary, tk: Pl) -> void:
 	fk = {}; tk.cd = 0
+	if int(F.get("lado_id", -1)) >= 0 and not players[F.lado_id].off and players[F.lado_id].down <= 0:
+		var rm: Pl = players[F.lado_id]
+		tk.set_piece = false
+		kick(tk, rm.p, false); target = rm
+		est.passes[tk.team] += 1; ult_passe = true
+		ensaio_voo = {"alvo": rm, "tipo": "lado", "t": t, "de": "livre", "q": rm.p}
+		if dbg_on: dbg["ens_lado"] = dbg.get("ens_lado", 0) + 1
+		pause = 0
+		if mode == "play": toast("Livre ensaiado: toque para o lado", 1.5)
+		return
 	shoot(tk, false)
 	# remate por cima da barreira: desce a tempo de entrar (ou não)
 	var sp: float = max(14.0, bv.length())
@@ -4771,6 +5117,7 @@ func feed_goal(team: int) -> void:
 	if bpen: lines = ["Golo " + de_t(team) + "! Penálti bem batido" + (" pelo %d" % n if n >= 0 else "") + ".", "Golo " + de_t(team) + " de penálti, guarda-redes para um lado e bola para o outro."]
 	elif n >= 0 and remate_tipo == "chapeu": lines = ["Golo %s! Chapéu do %d ao guarda-redes, que tinha saído da baliza." % [de_t(team), n], "Que classe do %d: pica a bola por cima do guarda-redes. Golo %s!" % [n, de_t(team)]]
 	elif n >= 0 and remate_tipo == "recarga": lines = ["Golo %s na recarga! O %d aproveita o ressalto." % [de_t(team), n], "Golo %s! A bola sobra para o %d, que não falha a recarga." % [de_t(team), n]]
+	elif n >= 0 and remate_tipo == "ensaio": lines = [ensaio_relato(team, n)]
 	elif n >= 0 and remate_tipo == "poste_golo": lines = ["Golo %s! O remate do %d bate no poste e entra." % [de_t(team), n]]
 	elif n >= 0 and shot_from != null and absf(shot_from.x - opp_goal_x(team)) > 17.0:
 		lines = ["Golaço %s! O %d enche o pé de fora da área." % [de_t(team), n], "Golaço %s! Remate colocado do %d, sem hipótese para o guarda-redes." % [de_t(team), n]]
