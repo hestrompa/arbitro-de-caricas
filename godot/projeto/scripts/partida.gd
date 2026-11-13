@@ -81,6 +81,11 @@ class Pl:
 	var sai_p := Vector2(-1, -1)    # expulso a sair do campo a pé (só para o desenho)
 	var corre := Vector2(-1, -1)    # motor 2: para onde vai na desmarcação (tabela, terceiro homem)
 	var fouls := 0
+	var golos := 0
+	var assist := 0
+	var fintas := 0                 # adversários deixados para trás no drible
+	var servido: Pl = null          # quem lhe fez o último passe (para a assistência)
+	var servido_t := -99.0
 	# qualidade (à Football Manager) e manias
 	var name := ""
 	var short := ""
@@ -474,7 +479,36 @@ func xg_em(p: Pl, at: Vector2, opps: Array, press: float) -> float:
 		var s := seg_dist(at, goal, q.p)
 		if s.x < 1.0 and s.y > 0.05 and s.y < 0.95: g *= 0.55
 	if press < 1.6: g *= 0.7
+	# a estrela remata colocado: de fora da área é muito mais perigosa do que um jogador normal
+	var ek := est_k(p)
+	var dgo := at.distance_to(goal)
+	if ek > 0.0: g *= 1.0 + (A("m2_est_longe", 1.5) if dgo > 17.0 and dgo < A("m2_est_alcance", 27.0) else (A("m2_est_area", 0.15) if dgo <= 17.0 else 0.0)) * ek
 	return clampf(g * (0.6 + (p.fin - 40.0) / 100.0), 0.0, 0.8)
+
+# ---------- estrelas (motor novo): a figura de cada equipa decide jogos ----------
+# 0 para quem não é a estrela; 1 para a estrela; mais no último quarto do jogo quando a equipa não está a ganhar (chama a si o jogo)
+var finta_fx := {}                # {"id": jogador, "ms": instante} para o desenho das caricas
+var est_dito := [-99.0, -99.0]    # última vez que o relato falou da estrela de cada equipa
+var golos_reg: Array = []         # [{team, k, a, min}] quem marcou e quem assistiu
+var ult_assist: Pl = null
+func est_k(p: Pl) -> float:
+	if not m2() or p.role == "gk" or not ("estrela" in p.tr): return 0.0
+	var k := A("m2_est", 1.0)
+	if t > MATCH_SECONDS * 0.75 and score[p.team] <= score[1 - p.team]: k *= A("m2_est_fim", 1.3)
+	return k
+# quem mais pesou no jogo: golos, assistências e fintas
+func figura() -> String:
+	var best: Pl = null
+	var bs := 0.0
+	for p in players:
+		var v: float = p.golos * 3.0 + p.assist * 2.0 + p.fintas * 0.35 + (0.4 if score[p.team] > score[1 - p.team] else 0.0)
+		if v > bs: bs = v; best = p
+	if best == null or bs < 2.0: return ""
+	var bits: Array = []
+	if best.golos: bits.append("%d %s" % [best.golos, "golo" if best.golos == 1 else "golos"])
+	if best.assist: bits.append("%d %s" % [best.assist, "assistência" if best.assist == 1 else "assistências"])
+	if best.fintas: bits.append("%d %s" % [best.fintas, "finta" if best.fintas == 1 else "fintas"])
+	return "Figura do jogo: %s (%d %s%s) · %s" % [best.name if best.name != "" else "o %d" % best.num, best.num, de_t(best.team), ", a estrela da equipa" if "estrela" in best.tr else "", ", ".join(bits)]
 func sig(x: float) -> float: return 1.0 / (1.0 + exp(-x))
 func gauss() -> float: return (rng.randf() + rng.randf() + rng.randf() - 1.5) * 1.15
 # velocidade com o cansaço: todos perdem um pouco ao longo do jogo; quem pressiona alto cansa-se mais
@@ -717,6 +751,7 @@ func on_ball(p: Pl, dt: float) -> void:
 	var direto: float = float(T.direto)
 	var ca := em_contra(p.team)
 	if ca: caut *= A("m2_ca_caut", 1.0); direto *= A("m2_ca_dir", 1.0)
+	var ekp := est_k(p)
 	if dg < 32 and p.role != "gk" and not p.set_piece:
 		var q := xg(p, opps, press)
 		# jogo comprimido (90 minutos em 3): remata-se mais do que num jogo real, sobretudo de fora da área
@@ -724,6 +759,8 @@ func on_ball(p: Pl, dt: float) -> void:
 		if press < 1.3: vs += 0.01          # apertado e sem saída: remata
 		# em contra-ataque, com campo à frente, ninguém remata de 30 metros: leva-se a bola até à área
 		if ca and dg >= 22: vs -= A("bias_longe", 0.03 if m2() else 0.0) + A("m2_ca_longe", 0.03)
+		# a estrela não desperdiça de muito longe: leva a bola até à zona de onde o remate dela é perigoso
+		if ekp > 0.0 and dg >= A("m2_est_alcance", 27.0): vs -= A("bias_longe", 0.03 if m2() else 0.0) + 0.03
 		choices.append({"type": "shoot", "q": q, "sc": vs + gauss() * ruido})
 	var was_set := p.set_piece
 	# Lei 11: não há fora de jogo num lançamento, num canto nem num pontapé de baliza (nos livres há)
@@ -748,7 +785,8 @@ func on_ball(p: Pl, dt: float) -> void:
 				if rel(p.team, tg.x) > W - 5.5: continue           # bola para o guarda-redes
 				var lane_t := lane_open(p.p, tg, opps)
 				var race: float = float(nearest(opps.filter(func(o): return o.role != "gk"), tg)[1]) - m.p.distance_to(tg)
-				var pt := sig(0.08 * minf(lane_t, 8.0) + 0.05 * clampf(race, -6.0, 6.0) + 0.021 * p.pas - 0.014 * tg.distance_to(p.p) - 1.11)
+				# a estrela mete a bola onde os outros não metem (o passe que rasga a defesa)
+				var pt := sig(0.08 * minf(lane_t, 8.0) + 0.05 * clampf(race, -6.0, 6.0) + 0.021 * p.pas - 0.014 * tg.distance_to(p.p) - 1.11 + A("m2_est_passe", 1.2) * ekp)
 				var vt := pt * (amea(p.team, tg) * 1.1 + base_v) - (1.0 - pt) * (amea(1 - p.team, tg) + base_v) * caut
 				if bt.is_empty() or vt > float(bt.v): bt = {"tg": tg, "pt": pt, "v": vt, "f": [lane_t, race, p.pas, tg.distance_to(p.p), 0.0]}
 			if not bt.is_empty():
@@ -769,6 +807,8 @@ func on_ball(p: Pl, dt: float) -> void:
 		var v := ps * gain - (1.0 - ps) * (amea(1 - p.team, m.p) + base_v) * caut + prog * A("prog", 0.02) * direto * (A("m2_ca_prog", 3.0) if ca else 1.0)
 		if p.set_piece: v += 1.0
 		if p.role == "gk" and m.line == "d" and spc > 6: v += 0.01
+		# a equipa procura a sua estrela quando ela está solta no meio-campo adversário
+		if spc > 3.0 and rel(p.team, m.p.x) > 45.0: v += A("m2_est_procura", 0.012) * est_k(m)
 		choices.append({"type": "pass", "m": m, "lofted": lofted, "cross": cross, "ps": ps, "f": [lane, spc, p.pas, d, rd], "sc": v + gauss() * ruido})
 	if p.role != "gk" and not p.set_piece and rel(p.team, p.p.x) > W - 33 and absf(p.p.y - H / 2) > 10.0:
 		var cz := melhor_cruzamento(p, opps, mates, caut, base_v)
@@ -792,8 +832,10 @@ func on_ball(p: Pl, dt: float) -> void:
 			var dq: Pl = nd[0]
 			var dseg := 99.0
 			for o in opps: dseg = minf(dseg, seg_dist(p.p, a, o.p).x)
-			var pd := sig(0.258 * minf(dd, 12.0) - 0.343 * minf(dseg, 8.0) + 0.045 * p.drb - 0.03 * (dq.tck if dq else 50.0) + 0.8 + 0.6 * minf(press, 8.0) - 3.375)
+			var pd := sig(0.258 * minf(dd, 12.0) - 0.343 * minf(dseg, 8.0) + 0.045 * p.drb - 0.03 * (dq.tck if dq else 50.0) + 0.8 + 0.6 * minf(press, 8.0) - 3.375 + A("m2_est_pd", 0.5) * ekp)
 			var vd := pd * (amea(p.team, a) + base_v) - (1.0 - pd) * perde_aqui
+			# a estrela vai para cima do defesa no último terço em vez de jogar para o lado
+			if ekp > 0.0 and absi(k) <= 1 and rel(p.team, p.p.x) > 55.0: vd += A("m2_est_drible", 0.04) * ekp * (2.0 if dg >= A("m2_est_alcance", 27.0) else 1.0)
 			# contra-ataque: com campo aberto à frente, leva-se a bola em velocidade em vez de a arriscar num passe
 			if ca and absi(k) <= 1 and dd > A("m2_ca_livre", 6.0): vd += A("m2_ca_conduz", 0.05)
 			choices.append({"type": "dribble", "dir": dir, "ps": pd, "f": [dd, dseg, p.drb, dq.tck if dq else 50.0, press], "sc": vd + gauss() * ruido})
@@ -1292,6 +1334,9 @@ func tackle(def: Pl, att: Pl) -> void:
 	# perto da própria baliza o defesa não se atira ao chão (penálti): acompanha e espera, e o avançado consegue rematar
 	var zona: float = rel(def.team, att.p.x)
 	if zona < A("cuid_zona", 24.0): pt *= A("m2_cuid_p", 0.6) if m2() else A("cuid_p", 0.75); def.tackle_cd *= A("cuid_cd", 1.4)
+	# a finta da estrela: é muito mais difícil tirar-lhe a bola, e quem falha fica mesmo para trás
+	var ek := est_k(att)
+	if ek > 0.0: pt *= clampf(1.0 - A("m2_est_finta", 0.6) * ek, 0.3, 1.0)
 	var won := rng.randf() < pt
 	if dbg_on:
 		dbg["duelo"] = dbg.get("duelo", 0) + 1
@@ -1305,8 +1350,16 @@ func tackle(def: Pl, att: Pl) -> void:
 	if not won:
 		if lance_cd <= 0 and rng.randf() < risco: start_lance(att, def); return
 		# batido no drible: fica para trás um instante e o colega mais perto vem fazer a cobertura
-		def.reage = rand(0.3, 0.6) * (1.3 - def.tck / 200.0) * A("batido_k", 1.0)
+		def.reage = rand(0.3, 0.6) * (1.3 - def.tck / 200.0) * A("batido_k", 1.0) * (1.0 + 0.8 * ek)
 		def.v *= 0.5
+		att.fintas += 1
+		if ek > 0.0:
+			finta_fx = {"id": att.id, "ms": Time.get_ticks_msec()}
+			if dbg_on: dbg["est_finta"] = dbg.get("est_finta", 0) + 1
+			if mode == "play" and t - float(est_dito[att.team]) > MATCH_SECONDS * 0.08:
+				est_dito[att.team] = t
+				sfx("react", 0.5)
+				feed(str(pick(["Finta do %d %s! O %d fica para trás.", "Que pormenor do %d %s: o %d nem viu a bola.", "O %d %s dança à frente do %d e passa."])) % [att.num, de_t(att.team), def.num], "info")
 		return                                                          # não chega à bola
 	if lance_cd <= 0 and (light_check(att, def) or stamp_check(att, def) or grab_check(att, def)): return
 	if lance_cd <= 0 and rng.randf() < risco:
@@ -1492,6 +1545,7 @@ func physics(dt: float) -> void:
 	var sp_rec := sp
 	var de_passe: bool = ult_passe and kicker != null and kicker != best and kicker.team == best.team
 	if ult_passe and kicker != null and kicker != best and kicker.team == best.team:
+		best.servido = kicker; best.servido_t = t
 		est.passes_ok[best.team] += 1
 		seq_n += 1
 		if dbg_on and absf(kicker.p.y - best.p.y) > 28.0: dbg["vira"] = dbg.get("vira", 0) + 1
@@ -1637,6 +1691,15 @@ func goal(team: int) -> void:
 
 func goal_award(team: int, festeja := false) -> void:
 	score[team] += 1; added += 0.4
+	ult_assist = null
+	if kicker and kicker.team == team:
+		var a: Pl = kicker.servido if kicker.servido != null and kicker.servido.team == team and kicker.servido != kicker and t - kicker.servido_t < 9.0 and not bpen else null
+		kicker.golos += 1
+		if a: a.assist += 1
+		ult_assist = a
+		golos_reg.append({"team": team, "k": kicker, "a": a, "min": minute()})
+		if dbg_on and est_k(kicker) > 0.0: dbg["est_golo"] = dbg.get("est_golo", 0) + 1
+		if dbg_on and a and est_k(a) > 0.0: dbg["est_assist"] = dbg.get("est_assist", 0) + 1
 	toast("Golo " + de_t(team) + "!", 2.2)
 	sfx("cheer", 1.0 if team == HOME else 0.4); sfx("whistle", "short")
 	feed_goal(team)
@@ -3043,6 +3106,12 @@ func goal_verdict(L: Dictionary, allowed: bool) -> String:
 			feed("Golo %s confirmado pelo VAR. %d–%d." % [de_t(team), score[0], score[1]], "var")
 			return "Golo confirmado pelo VAR"
 		score[team] = maxi(0, score[team] - 1); anulados += 1
+		for i in range(golos_reg.size() - 1, -1, -1):
+			if int(golos_reg[i].team) == team:
+				var gr: Dictionary = golos_reg[i]
+				gr.k.golos = maxi(0, gr.k.golos - 1)
+				if gr.a: gr.a.assist = maxi(0, gr.a.assist - 1)
+				golos_reg.remove_at(i); break
 		crowd = clamp(crowd + (18 if team == HOME else -8), 0, 100)
 		flag_offside(L.oi, true)
 		feed("Golo %s anulado pelo VAR por fora de jogo. Volta a estar %d–%d." % [de_t(team), score[0], score[1]], "var")
@@ -4577,9 +4646,14 @@ func feed_goal(team: int) -> void:
 	var n := k.num if k and k.team == team else -1
 	var lines: Array
 	if bpen: lines = ["Golo " + de_t(team) + "! Penálti bem batido" + (" pelo %d" % n if n >= 0 else "") + ".", "Golo " + de_t(team) + " de penálti, guarda-redes para um lado e bola para o outro."]
+	elif n >= 0 and shot_from != null and absf(shot_from.x - opp_goal_x(team)) > 17.0:
+		lines = ["Golaço %s! O %d enche o pé de fora da área." % [de_t(team), n], "Golaço %s! Remate colocado do %d, sem hipótese para o guarda-redes." % [de_t(team), n]]
 	elif n >= 0: lines = ["Golo %s! Remate do %d que só para no fundo da baliza." % [de_t(team), n], "Golo %s! O %d não perdoa." % [de_t(team), n], "Golo %s! O %d encosta e festeja." % [de_t(team), n]]
 	else: lines = ["Golo " + de_t(team) + "!"]
-	feed(str(pick(lines)) + " %d–%d." % [score[0], score[1]], "goal")
+	var extra := ""
+	if n >= 0 and ult_assist != null: extra = " Assistência do %d." % ult_assist.num
+	if n >= 0 and "estrela" in k.tr and k.golos >= 2: extra += " Já são %d da estrela %s." % [k.golos, de_t(team)]
+	feed(str(pick(lines)) + extra + " %d–%d." % [score[0], score[1]], "goal")
 func feed_decision(L: Dictionary, d: String, msg_: String) -> void:
 	if L.get("training", false): return
 	var kind := "card" if d in ["amarelo", "vermelho", "simulacao", "maoAmarelo"] else ("pen" if msg_.contains("Penálti") else "info")
@@ -4754,10 +4828,12 @@ func end_match(kind: String) -> void:
 	if var_n: txt += "Foste ao monitor %d %s. " % [var_n, "vezes" if var_n > 1 else "vez"]
 	txt += verdict + crit_txt()
 	if kind == "fim": feed("Apito final: %s %d–%d %s." % [teams[0].name, score[0], score[1], teams[1].name], "info")
+	var fig := figura() if kind == "fim" else ""
+	if fig != "": feed(fig + ".", "info")
 	var pen_t := ""
 	if not desempate.is_empty(): pen_t = " (%d–%d nos penáltis)" % [int(desempate.g[0]), int(desempate.g[1])]
 	elif prol > 0: pen_t = " (após prolongamento)"
-	emit("end", {"kind": kind, "grade": grade, "txt": txt, "title": "Relatório do observador · %d–%d" % [score[0], score[1]] + pen_t})
+	emit("end", {"kind": kind, "grade": grade, "txt": txt, "figura": fig, "title": "Relatório do observador · %d–%d" % [score[0], score[1]] + pen_t})
 
 # linhas da tabela do relatório
 # o mesmo texto no intervalo e no relatório: a mesma decisão certa nunca aparece com avaliações diferentes sem razão

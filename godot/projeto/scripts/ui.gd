@@ -310,6 +310,7 @@ func show_report(S: Partida, d: Dictionary, career_note: String, is_career: bool
 	var hb := HBoxContainer.new(); hb.add_theme_constant_override("separation", 18); report_v.add_child(hb)
 	var g := _lbl(("%.1f" % d.grade).replace(".", ","), 64, GOLD); hb.add_child(g)
 	hb.add_child(_wrap(d.txt, 18, INK, 760))
+	if str(d.get("figura", "")) != "": report_v.add_child(_wrap(str(d.figura), 17, GOLD, 880))
 	if career_note != "":
 		var cn := _panel(Color(0.12, 0.16, 0.24, 0.9)); cn.add_child(_wrap(career_note, 17, INK, 880)); report_v.add_child(cn)
 	if not S.paper.is_empty():
@@ -488,6 +489,7 @@ func show_menu(has_career: bool, best: String, voz: bool, som: bool, publico := 
 
 # lista do que mudou nas últimas versões (para quem testa saber o que procurar)
 const NOVIDADES := [
+	["Estrelas que decidem jogos", "a estrela de cada equipa (a carica com a estrela dourada) passa a ter jogadas só dela: finta que deixa o defesa para trás (dois arcos dourados à volta da carica), remate colocado de fora da área, passe que rasga a defesa, e os colegas procuram-na quando está solta. No último quarto do jogo, se a equipa não está a ganhar, chama a si o jogo. O relato fala das fintas, dos golaços e das assistências, e o relatório final diz quem foi a figura do jogo"],
 	["Linhas do fora de jogo pela Lei 11", "no monitor do VAR as linhas já não abrem no meio do corpo à espera de serem arrastadas: são traçadas pela medição, na parte mais adiantada do atacante e do penúltimo adversário (pé, joelho, tronco, ombro ou cabeça; braços e mãos não contam), com um poste a mostrar de onde sai cada uma. O guarda-redes conta como adversário, e a linha passa para a bola ou para o meio-campo quando são eles que mandam"],
 	["Golo, festejo e VAR", "nos jogos com VAR, num fora de jogo duvidoso em ataque claro o assistente guarda a bandeira e a jogada segue; se der golo, o golo conta e festeja-se, o VAR avisa que está a verificar e chama-te ao monitor: com as linhas, confirmas o golo ou tiras-o do marcador. Se não der golo, a bandeira sobe no fim da jogada"],
 	["Ida ao monitor em 3D", "quando o VAR te chama já não se salta logo para o ecrã: vê-se o árbitro de mão no auricular, a desenhar o ecrã com as mãos e a correr até ao monitor na linha lateral, onde o espera o 4.º árbitro; depois de rever, volta a desenhar o ecrã antes de anunciar a decisão (Espaço ou clique salta)"],

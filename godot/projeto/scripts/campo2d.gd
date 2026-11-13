@@ -271,6 +271,13 @@ func _draw() -> void:
 		draw_string(font, c + Vector2(-r, fsz * 0.36), str(p.num), HORIZONTAL_ALIGNMENT_CENTER, r * 2, fsz, txc)
 		if p.yellow > 0: draw_rect(Rect2(c + Vector2(r * 0.6, -r * 1.25), Vector2(sc * 0.55, sc * 0.8)), Color("ffd52e"))
 		if "estrela" in p.tr: _star(c + Vector2(r * 0.95, -r * 0.95), sc * 0.6)
+		# finta da estrela: dois arcos dourados a rodar à volta da carica durante um instante
+		if not jogo.finta_fx.is_empty() and int(jogo.finta_fx.id) == p.id:
+			var fk: float = float(Time.get_ticks_msec() - int(jogo.finta_fx.ms)) / 700.0
+			if fk < 1.0:
+				for h in 2:
+					var a0: float = fk * TAU * 1.5 + h * PI
+					draw_arc(c, r * (1.5 + fk * 0.9), a0, a0 + PI * 0.7, 12, Color(0.95, 0.81, 0.23, 1.0 - fk), 2.5, true)
 	# quem tem a bola
 	var o = jogo.owner
 	if o != null and o.short != "" and jogo.mode == "play":
