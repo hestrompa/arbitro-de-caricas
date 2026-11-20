@@ -585,7 +585,7 @@ func _setup_scene(l: Dictionary) -> void:
 		"aereo": sc.K = l.K; sc.passer = l.has("passer") and list.size() > 0
 		"mao": sc.K = l.K; sc.Sd = l.Sd; sc.arm = l.arm_out; sc.s = l.side
 		"canto": sc.Q = l.Q; sc.V = l.V; sc.s = l.s; sc.corner = l.corner; sc.fall = l.get("fall", false); A = l.V
-		"linha": sc.B = l.B; sc.bh = l.bh; sc.Pk = l.Pk; sc.gx = l.gx; sc.dir_in = l.dir_in
+		"linha": sc.B = l.B; sc.bh = l.bh; sc.Pk = l.Pk; sc.gx = l.gx; sc.dir_in = l.dir_in; sc.save = l.get("save", true)
 		"pen":
 			sc.gx = l.gx; sc.dir_in = l.dir_in; sc.infr = l.infr; sc.golo = l.golo; sc.lado = l.lado; sc.gk_lado = l.gk_lado; sc.inv = l.has("inv")
 			# no penálti o árbitro coloca-se ao lado, entre a marca e a entrada da área
@@ -1342,7 +1342,9 @@ func _line(dt: float) -> void:
 	if t < tk: b3 = Vector3(Pk.x, 0.11, Pk.y)
 	elif t < TC: b3 = _arc(Vector3(Pk.x, 0.11, Pk.y), B3, 0.6, (t - tk) / (TC - tk))
 	elif t < TC + 0.7: b3 = B3.lerp(Vector3(B.x, 0.11, B.y), clamp((t - TC) / 0.3, 0.0, 1.0))
-	else: b3 = Vector3(B.x, 0.11, B.y).lerp(Vector3(gx - di * 1.0, 0.25, B.y), clamp((t - TC - 0.7) / 0.4, 0.0, 1.0))
+	elif sc.get("save", true): b3 = Vector3(B.x, 0.11, B.y).lerp(Vector3(gx - di * 1.0, 0.25, B.y), clamp((t - TC - 0.7) / 0.4, 0.0, 1.0))
+	# no 2D foi golo: o guarda-redes só lhe toca depois de passar a linha e a bola fica lá dentro, a rolar para a rede
+	else: b3 = Vector3(B.x, 0.11, B.y).lerp(Vector3(gx + di * 0.9, 0.11, B.y), clamp((t - TC - 0.7) / 1.2, 0.0, 1.0))
 
 # mergulho do guarda-redes em mocap: escolhe o lado do clip (normal ou espelhado)
 # que deixa o guarda-redes mais de frente para o remate e roda-o para a bola
