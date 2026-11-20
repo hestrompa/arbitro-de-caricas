@@ -2759,7 +2759,8 @@ func _settle(p: Jogador, dt: float, _d: Vector2) -> void:
 	# quem se levantou magoado fica agarrado à perna em vez de esperar como se nada fosse (Mixamo)
 	var magoado: bool = p.hurt > 0.25 and p.levantou
 	if v < 1.0: p.play("q_mx_lesao" if magoado else "idle", 0.4)
-	elif v < 3.5: p.play("m_coxo" if magoado else "jog", 0.3)       # quem se levantou magoado anda a coxear
+	elif v < 3.5: p.play("m_coxo" if magoado and v < 2.0 else "jog", 0.3)       # quem se levantou magoado anda a coxear
+	else: p.play("run", 0.3)          # ainda em corrida (depois de um remate ou de um passe): as pernas continuam a correr
 
 # 1) entrada: a força e o ângulo do toque decidem o que acontece ao atacante; ou simula
 func _tackle(dt: float) -> void:

@@ -437,6 +437,9 @@ func move(p: Vector2, d: Vector2, v: float) -> void:
 	want_yaw = want
 	if snap: node.rotation.y = want; snap = false; last_yaw = want
 	elif phase != "anim": node.rotation.y = lerp_angle(node.rotation.y, want, 0.22)
+	# quem pediu um ciclo de locomoção (parado, andar, trote, corrida) segue a velocidade: sem isto, quem começava o
+	# lance parado ficava em "idle" a deslizar pelo relvado até alguém voltar a chamar play()
+	if loco_req != "" and phase == "anim" and not clip_vel.is_empty(): _loco_pick(0.2)
 	_cadencia()
 
 func update(dt: float, t: float) -> void:
