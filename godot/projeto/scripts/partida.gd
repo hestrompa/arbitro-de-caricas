@@ -540,7 +540,7 @@ func formation_pos(p: Pl) -> Vector2:
 
 func reset_ball(at: Vector2) -> void:
 	bp = at; bv = Vector2.ZERO; bz = 0; bvz = 0; target = null; off_info = {}; trail = []; bpen = false; cruz_q = Vector2(-1, -1)
-	ensaio = {}; ensaio_voo = {}; so_gr_t = 0.0
+	ensaio = {}; ensaio_voo = {}; so_gr_t = 0.0; canto_lance = {}
 	hist = []   # bola parada: os jogadores foram reposicionados, o rasto anterior já não serve
 func hist_step(dt: float) -> void:
 	hist_cd -= dt
@@ -758,6 +758,11 @@ func on_ball(p: Pl, dt: float) -> void:
 		if pen_3d: pen_3d = false; start_pen_scene(p); return
 		if pen2t_check(p): return
 		shoot(p, true); return
+	if p.set_piece and not canto_lance.is_empty() and int(canto_lance.tk) == p.id:
+		var CL := canto_lance
+		canto_lance = {}
+		corner_check(int(CL.team), p, false)
+		if mode != "play": return
 	if p.set_piece and not ensaio.is_empty() and ensaio_bate(p): return
 	var to_goal := (goal - p.p).normalized()
 	var choices: Array = []
@@ -1844,7 +1849,8 @@ func corner(team: int, y: float) -> void:
 	if p:
 		corner_setup(team, p)
 		ensaio_canto(team, p)
-		corner_check(team, p, false)
+		# o lance do canto (empurrões na área) decide-se no momento do pontapé, com toda a gente já no sítio
+		canto_lance = {"team": team, "tk": p.id}
 
 # canto: a área enche-se antes do pontapé (quem ataca entre a marca e a pequena área, quem defende a marcar)
 func corner_setup(team: int, tk: Pl) -> void:
@@ -2886,6 +2892,7 @@ func start_hand(k: Pl, d: Pl) -> void:
 # o 3D (main._corner, TC 2,4 s) corre a 3 m/s até ao ponto de encontro Q e o pontapé sai 1,3 s antes:
 # no instante do pontapé o atacante está a 3,9 m de Q, com o defesa colado atrás
 const CANTO_ANTES := 3.9
+var canto_lance := {}            # canto à espera do pontapé para ver se há lance na área
 func corner_check(team: int, tk: Pl, cross: bool) -> void:
 	if mode != "play" or not training.is_empty() or tut or lance_cd > (3.0 if cross else 9.0) or rng.randf() > (0.6 if cross else (A("canto_lance_p", 0.5) if not ensaio.is_empty() else 0.75)): return
 	var dir := dirs(team)
@@ -2906,10 +2913,16 @@ func corner_check(team: int, tk: Pl, cross: bool) -> void:
 	var s := 1.0 if rng.randf() < 0.5 else -1.0
 	var perp := Vector2(-V.y, V.x) * s
 	if not cross:
-		# bola parada: as caricas ficam exatamente como o 3D começa
-		att.p = Q - V * CANTO_ANTES
-		def.p = att.p + (V * 0.15 + perp * 0.6 if truth == "ataque" else -V * 0.55 + perp * 0.35)
-	elif att.p.distance_to(Q) < 9.0:
+		# bola parada: o atacante parte de onde está (as caricas não saltam) e o ponto de encontro fica à frente dele
+		if att.p.distance_to(Q) > 12.0: return
+		V = (Q - att.p).normalized() if att.p.distance_to(Q) > 0.8 else V
+		Q = att.p + V * CANTO_ANTES
+		perp = Vector2(-V.y, V.x) * s
+		var dq: Vector2 = att.p + (V * 0.15 + perp * 0.6 if truth == "ataque" else -V * 0.55 + perp * 0.35)
+		if def.p.distance_to(dq) > 1.2: return          # o defesa não está colado a ele: não há lance
+		def.p = dq
+	elif att.p.distance_to(Q) >= 9.0 or def.p.distance_to(att.p) > 3.0: return     # ninguém perto do ponto de encontro: não há lance
+	else:
 		# em jogo corrido o ponto de encontro fica no caminho de quem lá está
 		if att.p.distance_to(Q) > 0.8: V = (Q - att.p).normalized()
 		Q = att.p + V * CANTO_ANTES
@@ -2939,9 +2952,8 @@ func gk_out_check(p: Pl, dt: float) -> bool:
 	var gk: Pl = null
 	for q in active():
 		if q.team != p.team and q.role == "gk": gk = q
-	if gk == null: return false
-	var g := (Vector2(opp_goal_x(p.team), H / 2) - p.p).normalized()
-	gk.p = p.p + g * 2.6
+	# só quando o guarda-redes saiu mesmo e já está em cima do avançado (as caricas nunca saltam para o lance)
+	if gk == null or gk.p.distance_to(p.p) > A("gk_out_d", 3.5): return false
 	var L := forced_lance(p, gk, {"siga": 0.3, "falta": 0.12, "amarelo": 0.2, "vermelho": 0.38}, {"gk_out": true})
 	if not L.is_empty(): L.why = ""
 	return not L.is_empty()
@@ -3307,8 +3319,6 @@ func _decide_core(d: String, timed_out := false) -> void:
 		if L.in_box: penalty(att)
 		else:
 			owner = att; last = att.team; att.cd = 0.9; att.set_piece = true; target = null; parado_dono = att
-			for p in active():
-				if p.team != att.team and p.p.distance_to(att.p) < 6: p.p = att.p + (p.p - att.p).normalized() * 6
 			if m == "": m = "Livre para " + art_t(att.team)
 			fk_check(att)
 			ensaio_livre(att.team, att)
@@ -3364,7 +3374,6 @@ func adv_play(L: Dictionary) -> String:
 	var g: Pl = players[L.get_id] if L.has("get_id") else null
 	var def: Pl = players[L.def.id]
 	var to: Pl = g if g and not g.off else def
-	if L.has("ball_to"): to.p = L.ball_to
 	owner = to; last = to.team; target = null; to.cd = 0.5
 	def.fouls += 1
 	L.gol0 = score[to.team]
@@ -3423,7 +3432,7 @@ func _decide_scene(L: Dictionary, d: String, timed_out: bool) -> void:
 	var sev := 0.2
 	var pen := scene_pen(L, d)
 	if kind_of(L) == "canto":
-		att.p = L.Q; def.p = L.Q - L.V * 0.4 + Vector2(-L.V.y, L.V.x) * L.s * 0.7
+		pass   # as caricas ficam onde estavam (antes saltavam 4 m para o ponto de encontro do 3D)
 	if d == "maoAmarelo":
 		def.yellow += 1
 		if def.yellow >= 2: def.off = true
@@ -3491,7 +3500,8 @@ func start_pen_scene(tk: Pl) -> void:
 		if inv:
 			# o invasor espera à entrada da área, como os outros, e arranca antes do tempo
 			# do lado contrário ao árbitro, para entrar no campo de visão dele
-			inv.p = Vector2(gx - dir * (BOX_D + 1.6), H / 2 + (-1.0 if ref.y > H / 2 else 1.0) * rand(6.6, 9.0))   # fora da meia-lua
+			var ip := Vector2(gx - dir * (BOX_D + 1.6), H / 2 + (-1.0 if ref.y > H / 2 else 1.0) * rand(6.6, 9.0))   # fora da meia-lua
+			if inv.p.distance_to(ip) <= 1.2: inv.p = ip          # só se já está ali ao lado: a carica não salta
 			L0.inv = pinfo(inv); L0.inv_p = inv.p
 	start_scene(L0, Vector2(dir, 0), [tk, gk], str(L0.flash))
 
@@ -3499,10 +3509,9 @@ func start_pen_scene(tk: Pl) -> void:
 # lhe passou deliberadamente com o pé. De cabeça, de peito ou num corte falhado (desvio) pode. Livre indireto.
 func atraso_check(gk: Pl, k: Pl) -> bool:
 	if mode != "play" or not training.is_empty() or tut or lance_cd > 0 or bpen or not in_own_box(gk.team, gk.p) or rng.randf() > (0.45 if atraso_forca == "" else 1.0): return false
-	start_atraso(gk, k)
-	return true
+	return start_atraso(gk, k)
 var atraso_forca := ""          # testes: obriga o próximo atraso a ser "pe", "cabeca" ou "corte"
-func start_atraso(gk: Pl, k: Pl) -> void:
+func start_atraso(gk: Pl, k: Pl) -> bool:
 	var como := atraso_forca if atraso_forca != "" else pick_truth({"pe": 0.5, "cabeca": 0.25, "corte": 0.25})
 	var team := gk.team
 	var di := float(dirs(team))             # para dentro do campo, a partir da baliza do guarda-redes
@@ -3512,10 +3521,17 @@ func start_atraso(gk: Pl, k: Pl) -> void:
 	var away := (K0 - G).normalized() if K0.distance_to(G) > 1.0 else Vector2(di, 0)
 	if away.x * di < 0.3: away = Vector2(di, away.y).normalized()
 	var K := G + away * clampf(K0.distance_to(G), 11.0, 22.0)
+	# as caricas não saltam: quem passou e o guarda-redes ficam onde estão (só se acerta o que for menos de 1 m)
+	if k.p.distance_to(K) > 1.0: K = k.p
+	if gk.p.distance_to(G) > 1.0: G = gk.p
+	if K.distance_to(G) < 6.0: return false
+	away = (K - G).normalized()
 	var opps: Array = active().filter(func(q): return q.team != team and q.role != "gk")
 	var riv: Pl = nearest(opps, K)[0]
 	var s := 1.0 if rng.randf() < 0.5 else -1.0
 	var R := K + away.rotated(deg_to_rad(28) * s) * 8.0     # de onde o adversário remata (no corte) ou de onde vem a pressionar
+	if riv and riv.p.distance_to(R) > 1.0: R = riv.p
+	if riv and riv.p.distance_to(K) > 16.0: riv = null
 	var L0 := {"kind": "atraso", "truth": "atraso" if como == "pe" else "siga", "P": G, "G": G, "K": K, "R": R, "como": como, "s": s,
 		"gx": gx, "dir_in": di, "in_box": false, "att": pinfo(k), "def": pinfo(gk), "A": (G - K).normalized(), "D": (K - G).normalized(), "flash": "Atraso?"}
 	if riv: L0.rival = pinfo(riv)
@@ -3523,6 +3539,7 @@ func start_atraso(gk: Pl, k: Pl) -> void:
 	if riv: riv.p = R
 	shot_from = null
 	start_scene(L0, Vector2(-away.y, away.x), [gk, k] + ([riv] if riv else []), "Atraso?")
+	return true
 
 func _decide_atraso(L: Dictionary, d: String, timed_out: bool) -> void:
 	var ok: bool = d == L.truth
