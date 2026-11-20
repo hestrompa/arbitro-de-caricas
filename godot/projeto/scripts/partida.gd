@@ -129,6 +129,12 @@ var owner: Pl = null
 var last := 0
 var kicker: Pl = null
 var shot_from = null
+var ult_q := -1.0                 # xG do último remate (para medir de onde vêm os golos)
+var ult_q_t := -99.0
+var parada_t := -99.0
+var parada_fora := false
+var ult_alvo := Vector2.ZERO
+var ult_res := ""                 # o que o remate ia ser: defesa, golo, fora, ferro, bloqueado
 # rasto das caricas (últimos ~3,5 s, de 0,1 em 0,1 s): o lance 3D repete o que se viu antes do flash
 var hist: Array = []
 var hist_cd := 0.0
@@ -182,14 +188,14 @@ var last_off: Dictionary = {}
 var anulados := 0
 var added := 0.0
 var add_min := 0
-var stall: Dictionary = {}
+var rep: Dictionary = {}            # reposição atrasada de propósito (Leis 15 e 16, 2026): contagem de 5 segundos
 var gk8: Dictionary = {}          # guarda-redes com a bola nas mãos (regra dos 8 segundos, desde 2025)
 var gk8_n := 0
 var lesao: Dictionary = {}        # jogador caído depois de um choque
 var lesao_n := 0
 var finge_n := 0
 var bola_solo := false            # recomeço com bola ao solo: adversários a 4 m (Lei 8)
-var stall_n := 0
+var rep_n := 0
 var warned := [false, false]
 var pend_card: Dictionary = {}
 var ask: Dictionary = {}
@@ -750,6 +756,7 @@ func on_ball(p: Pl, dt: float) -> void:
 		if pen_espera(p): p.cd = 0.25; return
 		p.penalty = false
 		if pen_3d: pen_3d = false; start_pen_scene(p); return
+		if pen2t_check(p): return
 		shoot(p, true); return
 	if p.set_piece and not ensaio.is_empty() and ensaio_bate(p): return
 	var to_goal := (goal - p.p).normalized()
@@ -1031,7 +1038,9 @@ func melhor_cruzamento(p: Pl, opps: Array, mates: Array, caut: float, base_v: fl
 			best = {"type": "cruza", "m": m, "q": q, "alto": alto, "ps": P, "v": v, "cross": true}
 	return best
 
+var ult_kick := {}
 func kick(p: Pl, tg: Vector2, lofted: bool) -> void:
+	if dbg_on: ult_kick = {"t": t, "tg": tg.round(), "alto": lofted, "de": p.role, "from": p.p.round()}
 	# lançamento: a bola sai das mãos por cima da linha, já dentro do campo
 	var lanc := bp.y < 0 or bp.y > H
 	if lanc: bp.y = clampf(bp.y, 0.3, H - 0.3)
@@ -1098,14 +1107,19 @@ func shoot(p: Pl, pen: bool, q := -1.0, opps: Array = []) -> void:
 			if q >= 0.0: dbg["ca_xg"] = dbg.get("ca_xg", 0.0) + q
 		if absf(gy - H / 2) < GOAL_W / 2 and not por_cima: est.alvo[p.team] += 1
 		if q >= 0.0: est.xg[p.team] += q
+		ult_q = q if q >= 0.0 else -1.0; ult_q_t = t; ult_alvo = Vector2(gx, gy)
+		ult_res = "ferro" if ferro != "" and ferro != "poste_golo" else ("defesa" if shot_save >= 1.0 else ("golo" if golo_livre != null or ferro == "poste_golo" else ("fora" if absf(gy - H / 2) >= GOAL_W / 2 or por_cima else "alvo_sem_gr")))
+		if q >= 0.0 and dbg_on: dbg["sx_" + ult_res] = dbg.get("sx_" + ult_res, 0) + 1; dbg["sxq_" + ult_res] = dbg.get("sxq_" + ult_res, 0.0) + q
 		if q >= 0.2: est.ocasioes[p.team] += 1
 		if in_own_box(1 - p.team, p.p): est.rem_area[p.team] += 1
 	ult_passe = false
 	owner = null; kicker = p; shot_from = p.p; bv = n * sp; bvz = rand(0, 2.5) if pen else rand(0, 4.2); bz = 0.1; last = p.team
 	if not pen and q >= 0.0: bvz = rand(0, 2.6)
 	if por_cima:
-		var tt: float = maxf(bp.distance_to(Vector2(gx, gy)) / sp, 0.3)
-		bvz = (3.0 + 4.9 * tt * tt) / tt
+		# no ar a bola trava (atrito 0,15/s): chega mais tarde e mais baixa do que sem atrito; aponta acima da barra
+		var dd: float = bp.distance_to(Vector2(gx, gy))
+		var tt: float = maxf(-log(maxf(1.0 - 0.15 * dd / sp, 0.2)) / 0.15, 0.3)
+		bvz = (3.2 + 4.9 * tt * tt) / tt
 	if ferro == "barra":
 		var tb: float = maxf(bp.distance_to(Vector2(gx - dirs(p.team) * 1.0, gy)) / sp, 0.3)
 		bvz = (2.3 + 4.9 * tb * tb) / tb          # chega à linha de golo à altura da barra
@@ -1122,6 +1136,7 @@ func shoot(p: Pl, pen: bool, q := -1.0, opps: Array = []) -> void:
 			else: bv = bv.rotated(rand(0.35, 0.9) * (-1.0 if rng.randf() < 0.5 else 1.0)) * 0.6
 			bvz = rand(0.5, 3.0); last = o.team; no_pick = o; no_pick_t = 0.3; shot_save = -1.0; golo_livre = null; ferro_pend = {}
 			if dbg_on: dbg["desvio"] = dbg.get("desvio", 0) + 1
+			ult_res = "bloqueado"
 			break
 	if mode == "play":
 		sfx("kick", clamp(1.2 - bp.distance_to(ref) / 45, 0.2, 1)); sfx("react", 0.35)
@@ -1192,7 +1207,7 @@ func chapeu(p: Pl, q: float, gk: Pl) -> void:
 	no_pick = null; no_pick_t = 0.0
 	if golo: no_pick = gk; no_pick_t = T + 0.6
 	remate_tipo = "chapeu"
-	est.remates[p.team] += 1; est.xg[p.team] += q
+	est.remates[p.team] += 1; est.xg[p.team] += q; ult_q = q; ult_q_t = t; ult_res = "chapeu"
 	if golo: est.alvo[p.team] += 1
 	if q >= 0.2: est.ocasioes[p.team] += 1
 	if in_own_box(1 - p.team, p.p): est.rem_area[p.team] += 1
@@ -1301,6 +1316,11 @@ func ai_step(dt: float) -> void:
 			# sai ao encontro de quem aparece isolado, para fechar o ângulo (é aí que pode levar um chapéu)
 			if m2() and owner and owner.team != p.team and dist > 12.0 and dist < 36.0 and absf(owner.p.y - H / 2) < 16.0 and isolado(owner):
 				out = clampf(dist * A("gk_sai_k", 0.3), 3.5, 8.5)
+			# remate à baliza: atira-se para onde a bola vai passar (é ele que tem de lá chegar para defender)
+			if owner == null and kicker != null and kicker.team != p.team and shot_save >= 1.0 and bv.x * dirs(p.team) < -2.0:
+				var yi: float = bp.y + bv.y * (p.p.x - bp.x) / bv.x
+				move_to(p, Vector2(p.p.x, clampf(yi, H / 2 - GOAL_W / 2 - 0.5, H / 2 + GOAL_W / 2 + 0.5)), A("gk_mergulho", 7.5), dt)
+				continue
 			# cruzamento para perto da baliza: o guarda-redes sai a ele se lá chega antes da bola
 			if owner == null and cruz_q.x >= 0 and bz > 0.3 and last != p.team and rel(p.team, cruz_q.x) < 7.0 and absf(cruz_q.y - H / 2) < 9.0:
 				var tb: float = bp.distance_to(cruz_q) / maxf(bv.length(), 1.0)
@@ -1647,8 +1667,11 @@ func physics(dt: float) -> void:
 			var fora := rng.randf() < ((A("ensaio_fora", 0.75) if t - ensaio_t < A("ensaio_cheia_t", 5.0) else A("parry_fora", 0.5)) if m2() else 0.65)
 			var lado := -1.0 if rng.randf() < 0.5 else 1.0
 			if dbg_on: dbg["parada_fora" if fora else "parada"] = dbg.get("parada_fora" if fora else "parada", 0) + 1
-			var n := Vector2(signf(bv.x) * 0.5, lado).normalized() if fora else Vector2(-bv.x * 0.3, lado * 8).normalized()
-			bv = n * (12.0 if fora else 9.0) + (Vector2.ZERO if fora else Vector2(dirs(best.team) * 3, 0)); bvz = 2; no_pick = best; no_pick_t = 0.4; last = best.team; bpen = false; shot_save = -1.0
+			parada_t = t; parada_fora = fora
+			if fora: lado = signf(best.p.y - H / 2) if absf(best.p.y - H / 2) > 0.3 else lado
+			var gl := Vector2(own_goal_x(best.team), H / 2 + lado * (GOAL_W / 2 + rand(1.0, 4.0)))
+			var n := (gl - bp).normalized() if fora else Vector2(-bv.x * 0.3, lado * 8).normalized()
+			bv = n * (12.0 if fora else 9.0) + (Vector2.ZERO if fora else Vector2(dirs(best.team) * 3, 0)); bvz = 2.0 if not fora else rand(1.0, 3.0); no_pick = best; no_pick_t = 0.4; last = best.team; bpen = false; shot_save = -1.0
 			if m2() and not fora:
 				# defesa para a frente: a bola fica viva na área e o guarda-redes ainda está no chão (recarga)
 				bv = Vector2(dirs(best.team) * rand(3.0, 6.0), lado * rand(2.5, 6.5)).normalized() * rand(6.5, 9.5)
@@ -1748,6 +1771,7 @@ func throw_in() -> void:
 	if p:
 		vai(p, at); owner = p; p.cd = 0.7; p.set_piece = true; last = team; parado_dono = p
 	pause = 0.7
+	if p: rep_check(p, "lanc")
 	if p and mode == "play" and training.is_empty() and not tut and not var_mode and lanc_n < 1 and rng.randf() < 0.35:
 		lanc_n += 1
 		later(1.9, func(): _lanc_check(p, at, team))
@@ -1760,13 +1784,22 @@ const LANC := [["levantou um pé do chão no momento de lançar", "adversario"],
 func _lanc_check(p: Pl, at: Vector2, team: int) -> void:
 	if mode != "play" or not ask.is_empty() or parado_dono != null or p.off or not lance.is_empty(): return
 	var it: Array = LANC[rng.randi() % LANC.size()]
-	ask_open("Lançamento: o %d %s %s." % [p.num, de_t(team), it[0]], "Lançamento lateral",
+	# Lei 5 (2026): numa reposição mal feita pode dar-se vantagem, se a bola ficou com o adversário
+	var vant: bool = owner != null and owner.team != team
+	ask_open("Lançamento: o %d %s %s%s." % [p.num, de_t(team), it[0], (", e a bola já está com " + art_t(1 - team)) if vant else ""], "Lançamento lateral",
 		[{"d": "siga", "label": "Siga", "small": "lançamento bem feito"}, {"d": "adversario", "label": "Lançamento para o adversário", "small": "mal executado"},
-		 {"d": "repetir", "label": "Repetir o lançamento", "small": "a mesma equipa lança outra vez"}], func(c): _lanc_res(p, at, team, it, c), 0)
-func _lanc_res(p: Pl, at: Vector2, team: int, it: Array, c: String) -> void:
+		 {"d": "repetir", "label": "Repetir o lançamento", "small": "a mesma equipa lança outra vez"}], func(c): _lanc_res(p, at, team, it, c, vant), 0)
+func _lanc_res(p: Pl, at: Vector2, team: int, it: Array, c: String, vant := false) -> void:
 	var certo: String = it[1]
 	var pts := 1.0 if c == certo else 0.0
 	var why := ""
+	if certo == "adversario" and vant and c == "siga":
+		pts = 1.0
+		ctrl(1.0)
+		why = "Certo: estava mal executado, mas a bola ficou com o adversário e desde 2026 pode dar-se vantagem"
+		manage.append({"minute": minute(), "what": "Lançamento: o %d %s" % [p.num, de_t(team)] + " " + str(it[0]), "dec": "Siga (vantagem)", "pts": pts, "why": why})
+		toast(why, 2.4)
+		return
 	if certo == "siga": why = "Certo: os pés podem estar em cima da linha ou atrás dela" if pts == 1 else "O lançamento estava bem feito: pés em cima ou atrás da linha, duas mãos, bola por cima da cabeça"
 	else: why = "Certo: lançamento mal executado passa para o adversário" if pts == 1 else ("Mal executado não se repete: o lançamento passa para o adversário" if c == "repetir" else "Lei 15: o lançamento estava mal executado e era do adversário")
 	ctrl(1.0 if pts == 1 else -2.0)
@@ -1787,7 +1820,7 @@ func goal_kick(side: int, sem_intruso := false) -> void:
 	reset_ball(Vector2(own_goal_x(side) + dirs(side) * 4.0, H / 2))
 	if gk:
 		vai(gk, Vector2(own_goal_x(side) + dirs(side) * 3.0, H / 2)); owner = gk; gk.cd = 1.2; gk.set_piece = true; last = side; parado_dono = gk
-		stall_check(gk)
+		rep_check(gk, "baliza")
 	pause = 0.9
 	pb_baliza = side; gk_intruso = null
 	# Lei 16: os adversários saem da área; às vezes um fica lá dentro à espera de roubar a bola
@@ -2145,6 +2178,27 @@ func goal_award(team: int, festeja := false) -> void:
 		ult_assist = a
 		golos_reg.append({"team": team, "k": kicker, "a": a, "min": minute()})
 		if dbg_on and est_k(kicker) > 0.0: dbg["est_golo"] = dbg.get("est_golo", 0) + 1
+		if dbg_on:
+			var dq := ult_q if t - ult_q_t < 6.0 else -1.0
+			if t - ult_q_t < 4.0 and ult_q >= 0.0:
+				dbg["gx_dir"] = dbg.get("gx_dir", 0) + 1
+				dbg["gx_dir_" + str(ult_res)] = dbg.get("gx_dir_" + str(ult_res), 0) + 1
+				if ult_res == "fora" and af.has("golo_log"):
+					print("FORA t-rem=%.2f bp=%s z=%.2f v=%s from=%s alvo=%s kick=%s dk=%.2f" % [t - ult_q_t, str(bp), bz, str(bv.round()), str(shot_from), str(ult_alvo), str(ult_kick), t - float(ult_kick.get("t", 0.0))])
+				if ult_res == "defesa":
+					var k2: String = ("gs_parada_fora" if parada_fora else "gs_parada_frente") if t - parada_t < 2.0 else "gs_sem_toque"
+					dbg[k2] = dbg.get(k2, 0) + 1
+					if k2 == "gs_sem_toque" and af.has("golo_log"):
+						var gkx: Pl = null
+						for o in active():
+							if o.role == "gk" and o.team != team: gkx = o
+						print("SEMTOQUE t-rem=%.2f gk=%s down=%.2f bp=%s z=%.2f v=%s shot_from=%s" % [t - ult_q_t, str(gkx.p.round()) if gkx else "-", gkx.down if gkx else -1.0, str(bp), bz, str(bv.round()), str(shot_from)])
+			var b := "gq_sem" if dq < 0.0 else ("gq_pen" if bpen else ("gq_lt05" if dq < 0.05 else ("gq_lt15" if dq < 0.15 else ("gq_lt35" if dq < 0.35 else "gq_alto"))))
+			dbg[b] = dbg.get(b, 0) + 1
+			if b == "gq_sem" and af.has("golo_log"): print("GOLOSEM t-rem=%.1f q=%.2f kicker=%s/%s equipa=%d ult_passe=%s pos=%s z=%.1f v=%.1f fk=%s parado=%s kick=%s" % [t - ult_q_t, ult_q, kicker.role if kicker else "-", str(kicker.team) if kicker else "-", team, str(ult_passe), str(bp.round()), bz, bv.length(), str(not fk.is_empty()), str(parado_dono != null), str(ult_kick) + " dt=%.1f" % (t - float(ult_kick.get("t", 0.0)))])
+			var dd: float = shot_from.distance_to(Vector2(opp_goal_x(team), H / 2)) if shot_from != null else -1.0
+			var bd := "gd_area" if dd < 16.5 else ("gd_17_25" if dd < 25.0 else "gd_25")
+			dbg[bd] = dbg.get(bd, 0) + 1
 		if dbg_on and remate_tipo != "": dbg["golo_" + remate_tipo] = dbg.get("golo_" + remate_tipo, 0) + 1
 		if dbg_on and a and est_k(a) > 0.0: dbg["est_assist"] = dbg.get("est_assist", 0) + 1
 	toast("Golo " + de_t(team) + "!", 2.2)
@@ -2582,7 +2636,7 @@ func _play_step(dt: float) -> void:
 	crowd += (crowd_base - crowd) * 0.02 * dt
 	stress_step(dt)
 	if tut: tut_step()
-	half_check(dt); added_time_check(); pend_step(dt); stall_step(dt); fk_step(dt); coach_step(dt)
+	half_check(dt); added_time_check(); pend_step(dt); rep_step(dt); fk_step(dt); coach_step(dt)
 	if mode != "play": return
 	ambiente_step(dt)
 	if mode != "play": return
@@ -2772,6 +2826,10 @@ func foul_extras(att: Pl, def: Pl, truth: String, P: Vector2, A: Vector2, in_box
 	if is_foul(truth):
 		if (truth == "falta" or truth == "amarelo") and not in_box and mate and dm < 16 and (opp == null or dm + 1.5 < dop) and rng.randf() < 0.8:
 			o.adv = true; o.get_id = mate.id; o.ball_to = E.lerp(mate.p, 0.5)
+		# Lei 12 (2026): ocasião flagrante de golo negada, mas a bola sobra para um colega isolado. Com vantagem e golo,
+		# não há cartão; com vantagem e sem golo, é amarelo
+		elif truth == "vermelho" and o.counter and not in_box and mate and dm < 14 and (opp == null or dm + 3.0 < dop) and rel(att.team, mate.p.x) > W * 0.55 and rng.randf() < A("dogso_adv", 0.7):
+			o.adv = true; o.dogso = true; o.get_id = mate.id; o.ball_to = E.lerp(mate.p, 0.5)
 		elif opp and dop < 22:
 			o.get_id = opp.id; o.ball_to = E
 	var tr := truth
@@ -3039,6 +3097,7 @@ func segundo_amarelo(L: Dictionary, d: String) -> bool:
 	return d == "amarelo" and L.has("def") and int(L.def.get("id", -1)) >= 0 and players[int(L.def.id)].yellow >= 1
 func needs_var(L: Dictionary, d: String) -> bool:
 	if interp_ok(L, d): return false
+	if d == "vantagem" and L.get("dogso", false): return false    # vantagem certa numa ocasião negada: o cartão decide-se depois
 	if L.has("ident"): return true
 	if segundo_amarelo(L, d) and SEV.has(str(L.truth)) and int(SEV[str(L.truth)]) < 2: return true      # segundo amarelo claramente errado
 	if L.get("goal_ctx", false) and kind_of(L) != "offside": return d != L.truth
@@ -3298,7 +3357,7 @@ func finish_after() -> void:
 func adv_score(L: Dictionary) -> Vector2:
 	var T: String = L.truth
 	if T == "falta" or T == "amarelo": return Vector2(1, 4) if L.adv else Vector2(0.4, -4)
-	if T == "vermelho": return Vector2(0.4, -6)
+	if T == "vermelho": return Vector2(1, 4) if L.get("dogso", false) else Vector2(0.4, -6)
 	if T == "siga": return Vector2(0.4, -3)
 	return Vector2(0, -8)
 func adv_play(L: Dictionary) -> String:
@@ -3308,7 +3367,9 @@ func adv_play(L: Dictionary) -> String:
 	if L.has("ball_to"): to.p = L.ball_to
 	owner = to; last = to.team; target = null; to.cd = 0.5
 	def.fouls += 1
-	pend_card = {"L": L, "t": 3.5}
+	L.gol0 = score[to.team]
+	# na ocasião de golo negada espera-se pelo fim do ataque: o cartão depende de haver golo
+	pend_card = {"L": L, "t": 7.0 if L.get("dogso", false) else 3.5}
 	return "Vantagem! O jogo segue"
 
 func _decide_offside(L: Dictionary, d: String, timed_out: bool) -> void:
@@ -3649,6 +3710,39 @@ func penalty(att: Pl, cena := true) -> void:
 	reset_ball(Vector2(spot_x, H / 2))
 	owner = taker; last = team; taker.cd = 1.8; taker.penalty = true; parado_dono = taker
 	pause = 1.8
+
+# Leis 10 e 14 (2026/27): o marcador escorrega e toca duas vezes na bola sem querer. Se entra, repete-se
+# (até 2025 era livre indireto para a defesa). No desempate, se não entra, conta como falhado.
+var pen2t_n := 0
+func pen2t_check(p: Pl) -> bool:
+	if not desempate.is_empty() or not training.is_empty() or tut or var_mode or pen2t_n >= 1 or mode != "play" or rng.randf() > A("pen2t_p", 0.15): return false
+	pen2t_n += 1
+	# a bola fica na marca enquanto se decide (cada decisão recoloca-a)
+	kicker = p; last = p.team; p.cd = 2.0
+	sfx("ooh")
+	ask_open("Penálti: o %d %s escorregou ao bater, a bola tocou-lhe sem querer no pé de apoio e entrou na baliza." % [p.num, de_t(p.team)], "Penálti com dois toques",
+		[{"d": "golo", "label": "Golo", "small": "foi sem querer"}, {"d": "repetir", "label": "Repetir o penálti"},
+		 {"d": "livreind", "label": "Livre indireto", "small": "para a defesa"}], func(c): _pen2t_res(p, c), 0, true)
+	return true
+func _pen2t_res(p: Pl, c: String) -> void:
+	var pts := 1.0 if c == "repetir" else (0.3 if c == "livreind" else 0.0)
+	var why := "Certo: toque duplo sem querer e golo, repete-se o penálti (Lei 14, 2026)" if pts == 1 else \
+		("Era a regra antiga: desde 2026, com golo, o toque duplo sem querer manda repetir" if c == "livreind" else "Dois toques não dão golo: com golo, repete-se o penálti (Lei 14, 2026)")
+	ctrl(2.0 if pts == 1 else -3.0)
+	manage.append({"minute": minute(), "what": "Penálti: o %d %s tocou duas vezes na bola sem querer e marcou" % [p.num, de_t(p.team)], "dec": {"golo": "Golo", "repetir": "Repetir", "livreind": "Livre indireto"}[c], "pts": pts, "why": why})
+	toast(why, 2.8)
+	sfx("whistle", "short")
+	var team := p.team
+	match c:
+		"golo":
+			bpen = true; goal_award(team, true)
+		"repetir":
+			feed("O %d %s escorregou e tocou duas vezes na bola: o penálti repete-se." % [p.num, de_t(team)], "info")
+			penalty(p, false)
+		_:
+			var at := Vector2(opp_goal_x(team) - dirs(team) * SPOT, H / 2)
+			feed("Dois toques do marcador: livre indireto para %s." % art_t(1 - team), "info")
+			livre_em(1 - team, at)
 
 # ---------- público, nervos, capitães ----------
 func crowd_react(against, wrong: bool) -> void:
@@ -4100,18 +4194,26 @@ func _anuncio_res(L: Dictionary, d: String, c: String, then: Callable) -> void:
 
 # cartão depois da vantagem, na paragem seguinte
 func pend_step(dt: float) -> void:
-	if pend_card.is_empty() or pause > 0: return
+	if pend_card.is_empty(): return
+	var Ld: Dictionary = pend_card.L
+	var dogso: bool = Ld.get("dogso", false)
+	var golo: bool = dogso and score[int(Ld.att.team)] > int(Ld.get("gol0", 99))
+	if pause > 0 or mode != "play": return
 	pend_card.t -= dt
-	if pend_card.t > 0: return
+	if pend_card.t > 0 and not golo: return
 	var L: Dictionary = pend_card.L
 	pend_card = {}
 	var p: Pl = players[L.def.id]
-	ask_open("Jogo parado. Deste vantagem na falta do %d %s%s. Mostras cartão?" % [p.num, de_t(p.team), " (já tem amarelo)" if p.yellow else ""], "Depois da vantagem",
+	var txt := "Jogo parado. Deste vantagem na falta do %d %s%s. Mostras cartão?" % [p.num, de_t(p.team), " (já tem amarelo)" if p.yellow else ""]
+	if dogso: txt = "Deste vantagem na falta do %d %s, que tirava uma ocasião clara de golo. %s Mostras cartão?" % [p.num, de_t(p.team), "A vantagem deu golo." if golo else "A vantagem não deu golo."]
+	ask_open(txt, "Depois da vantagem",
 		[{"d": "nenhum", "label": "Sem cartão", "small": "foi só falta"}, {"d": "amarelo", "label": "Amarelo", "small": "entrada imprudente", "sw": "amarelo"}, {"d": "vermelho", "label": "Vermelho", "small": "jogo violento", "sw": "vermelho"}],
 		func(c):
 			L.card_later = c
 			var want := "amarelo" if L.truth == "amarelo" else ("vermelho" if L.truth == "vermelho" else "nenhum")
+			if dogso: want = "nenhum" if golo else "amarelo"
 			if c != want: L.pts = max(0.0, L.pts - 0.5)
+			if dogso: L.adv_why = ("Certo · " if c == want else "Vantagem certa, cartão errado · ") + ("Lei 12 (2026): com vantagem e golo, a ocasião negada não leva cartão" if golo else "Lei 12: com vantagem e sem golo, a ocasião negada leva amarelo")
 			ctrl(2.0 if c == want else -4.0)
 			var m := ("Sem cartão para o %d" % p.num) if c == "nenhum" else ("Amarelo" if c == "amarelo" else "Vermelho") + " ao %d %s pela falta anterior" % [p.num, de_t(p.team)]
 			if c == "amarelo":
@@ -4123,46 +4225,123 @@ func pend_step(dt: float) -> void:
 				sfx("whistle", "long"); feed(m + ".", "card")
 			toast(m, 2.2), 0)
 
-# antijogo: o guarda-redes que está a ganhar demora a repor a bola
-func stall_check(gk: Pl) -> void:
-	if not training.is_empty() or tut or not stall.is_empty() or stall_n >= 2 or t < MATCH_SECONDS * 0.5 or score[gk.team] <= score[1 - gk.team] or rng.randf() > 0.7: return
-	stall = {"id": gk.id, "team": gk.team, "t": 0.0}; stall_n += 1
-func stall_step(dt: float) -> void:
-	if stall.is_empty(): return
-	var St := stall
-	var p: Pl = players[St.id]
-	if owner != p or p.off:
-		stall = {}; return
-	if p.dest.x >= 0: return
-	St.t += dt; p.cd = max(p.cd, 0.5)
-	if St.t < 3.2 or pause > 0: return
-	var team: int = St.team
-	var was: bool = warned[team]
-	stall = {}
-	ask_open("O guarda-redes " + de_t(team) + " está a demorar a repor a bola" + (" outra vez" if was else "") + ".", "Antijogo",
-		[{"d": "deixar", "label": "Deixar", "small": "ainda é cedo"}, {"d": "avisar", "label": "Mandar jogar", "small": "aviso verbal"}, {"d": "amarelo", "label": "Amarelo", "small": "por antijogo", "sw": "amarelo"}],
-		func(c):
-			var best := "amarelo" if was else "avisar"
-			var pts := 1.0 if c == best else (0.5 if c != "deixar" else (0.0 if was else 0.2))
-			ctrl(3.0 if pts == 1 else (-1.0 if pts >= 0.5 else -4.0))
-			if c == "deixar" and team != HOME:
-				crowd = clamp(crowd + 10, 0, 100); sfx("boo", 0.5)
-			if c != "deixar": warned[team] = true
-			var m: String = "Deixaste o guarda-redes demorar" if c == "deixar" else ("Mandaste o guarda-redes jogar" if c == "avisar" else "Amarelo ao guarda-redes " + de_t(team) + " por antijogo")
-			if c == "amarelo":
-				p.yellow += 1; sfx("whistle", "short")
-				if p.yellow >= 2: p.off = true; m = "Segundo amarelo: guarda-redes " + de_t(team) + " expulso"
-			manage.append({"minute": minute(), "what": "Guarda-redes a queimar tempo" + (" (já avisado)" if was else ""), "dec": {"deixar": "Deixar", "avisar": "Mandar jogar", "amarelo": "Amarelo"}[c], "pts": pts,
-				"why": "Certo" if pts == 1 else ("Já tinha sido avisado: era amarelo" if was else ("Devias ter mandado jogar" if c == "deixar" else "Primeira vez: bastava um aviso"))})
-			added += 0.5; p.cd = 0.3
-			feed(m + ".", "card" if c == "amarelo" else "info")
-			toast(m, 2.2), 0)
+# Leis 15 e 16 (2026/27): quem atrasa de propósito um lançamento ou um pontapé de baliza leva com a contagem
+# visual de 5 segundos (o árbitro apita e levanta a mão: tecla G ou o botão). Se não repõe a tempo, o lançamento
+# passa para o adversário e o pontapé de baliza vira canto para o adversário. O amarelo fica para o atraso excessivo.
+# Quem atrasa é a equipa que está a ganhar, na 2.ª parte. Como nos 8 segundos, cada "segundo" dura meio segundo.
+func rep_check(p: Pl, tipo: String) -> void:
+	if not training.is_empty() or tut or var_mode or not rep.is_empty() or not gk8.is_empty() or rep_n >= 2 or t < MATCH_SECONDS * 0.5: return
+	if score[p.team] <= score[1 - p.team] or rng.randf() > (0.6 if tipo == "baliza" else 0.3) * A("rep_k", 1.0): return
+	rep = {"id": p.id, "team": p.team, "tipo": tipo, "t": 0.0, "conta": -1.0, "larga": rng.randf() < 0.55, "perguntou": false, "at": bp, "y": p.p.y}
+	rep_n += 1
+func rep_falta() -> int:
+	if rep.is_empty() or rep.conta < 0: return -1
+	return maxi(0, 5 - int(floor((rep.t - rep.conta) / GK8_SEG)))
+func rep_nome(tipo: String) -> String: return "o pontapé de baliza" if tipo == "baliza" else "o lançamento lateral"
+func rep_troca(tipo: String) -> String: return "canto" if tipo == "baliza" else "adversario"
+func rep_step(dt: float) -> void:
+	if rep.is_empty(): return
+	var R := rep
+	var p: Pl = players[R.id]
+	if owner != p or p.off or parado_dono != p:
+		rep = {}; return
+	p.cd = maxf(p.cd, 0.5)
+	if mode != "play" or p.dest.x >= 0 or pause > 0: return
+	R.t += dt; p.v = Vector2.ZERO
+	if R.conta >= 0:
+		# com a mão levantada, a maioria repõe antes do fim da contagem
+		if R.larga and R.t - R.conta > rand(1.5, 3.0) * GK8_SEG:
+			rep = {}; p.cd = 0.0
+			manage.append({"minute": minute(), "what": "Atraso n" + ("o pontapé de baliza" if R.tipo == "baliza" else "o lançamento lateral") + " " + de_t(R.team), "dec": "Contagem de 5 s", "pts": 1.0,
+				"why": "Certo: a contagem visual de 5 segundos (Lei %d, 2026) obrigou a repor a bola" % (16 if R.tipo == "baliza" else 15)})
+			ctrl(1.5); toast("Contagem com a mão: repôs a bola", 1.8)
+			return
+		if R.t - R.conta < 5.0 * GK8_SEG + 0.15: return
+		rep = {}
+		_rep_ask_fim(p, R)
+		return
+	if R.perguntou or R.t < 6.0 * GK8_SEG: return
+	# o árbitro não começou a contagem: pergunta-se o que faz
+	R.perguntou = true
+	ask_open("O %d %s está a demorar de propósito %s (a equipa dele está a ganhar)." % [p.num, de_t(p.team), rep_nome(R.tipo)], "Reposição demorada",
+		[{"d": "deixar", "label": "Deixar", "small": "é o tempo dele"}, {"d": "conta", "label": "Contagem de 5 s", "small": "apito e mão levantada"},
+		 {"d": "troca", "label": "Canto para o adversário" if R.tipo == "baliza" else "Lançamento para o adversário", "small": "já"},
+		 {"d": "amarelo", "label": "Amarelo", "small": "por antijogo", "sw": "amarelo"}],
+		func(c): _rep_res(c, p), 0, true)
+func _rep_res(c: String, p: Pl) -> void:
+	if rep.is_empty(): return
+	var R := rep
+	var lei := 16 if R.tipo == "baliza" else 15
+	var pts: float = {"conta": 1.0, "troca": 0.3, "amarelo": 0.2, "deixar": 0.0}[c]
+	var why := ""
+	match c:
+		"conta": why = "Certo: atraso de propósito leva a contagem visual de 5 segundos (Lei %d, 2026)" % lei
+		"troca": why = "Primeiro apita-se e faz-se a contagem de 5 segundos; só passa para o adversário se não repuser a tempo"
+		"amarelo": why = "Desde 2026 o atraso leva primeiro a contagem de 5 segundos; o amarelo é só para o atraso excessivo"
+		_: why = "Estava a queimar tempo: era a contagem visual de 5 segundos (Lei %d, 2026)" % lei
+	ctrl(1.5 if pts == 1 else (-1.0 if pts > 0 else -3.0))
+	manage.append({"minute": minute(), "what": "Atraso n" + rep_nome(R.tipo).substr(1) + " " + de_t(R.team), "dec": {"deixar": "Deixar", "conta": "Contagem de 5 s", "troca": "Canto" if R.tipo == "baliza" else "Lançamento ao adversário", "amarelo": "Amarelo"}[c], "pts": pts, "why": why})
+	toast(why, 2.4)
+	match c:
+		"conta":
+			sfx("whistle", "short"); R.conta = R.t; R.larga = rng.randf() < 0.75
+		"troca":
+			rep = {}; _rep_aplica(p, R)
+		"amarelo":
+			rep = {}; _amarelo_atraso(p); p.cd = 0.3
+		_:
+			rep = {}; p.cd = 0.3; added += 0.2
+			if p.team != HOME: crowd = clamp(crowd + 8, 0, 100); sfx("boo", 0.5)
+			protest_after_soon(1 - p.team)
+func _rep_ask_fim(p: Pl, R: Dictionary) -> void:
+	ask_open("Acabou a tua contagem de 5 segundos e o %d %s ainda não repôs %s." % [p.num, de_t(p.team), rep_nome(R.tipo)], "Contagem de 5 segundos",
+		[{"d": "deixar", "label": "Deixar", "small": "repõe quando quiser"}, {"d": "troca", "label": "Canto para o adversário" if R.tipo == "baliza" else "Lançamento para o adversário"},
+		 {"d": "repete", "label": "Nova contagem", "small": "mais 5 segundos"}, {"d": "amarelo", "label": "Amarelo", "small": "e repõe a mesma equipa", "sw": "amarelo"}],
+		func(c): _rep_fim_res(c, p, R), 0, true)
+func _rep_fim_res(c: String, p: Pl, R: Dictionary) -> void:
+	var lei := 16 if R.tipo == "baliza" else 15
+	var pts := 1.0 if c == "troca" else (0.2 if c == "amarelo" else 0.0)
+	var why := ""
+	if pts == 1: why = ("Certo: passados os 5 segundos, o pontapé de baliza vira canto para o adversário" if R.tipo == "baliza" else "Certo: passados os 5 segundos, o lançamento passa para o adversário") + " (Lei %d, 2026)" % lei
+	elif c == "amarelo": why = "A lei dá a reposição ao adversário; o amarelo é só se o atraso continuar de forma excessiva"
+	else: why = "Lei %d (2026): acabada a contagem, a reposição passa para o adversário" % lei
+	ctrl(2.0 if pts == 1 else (-1.0 if pts > 0 else -3.0))
+	manage.append({"minute": minute(), "what": "Fim da contagem de 5 s n" + rep_nome(R.tipo).substr(1) + " " + de_t(R.team), "dec": {"deixar": "Deixar", "troca": "Canto" if R.tipo == "baliza" else "Lançamento ao adversário", "repete": "Nova contagem", "amarelo": "Amarelo"}[c], "pts": pts, "why": why})
+	toast(why, 2.6)
+	match c:
+		"troca": _rep_aplica(p, R)
+		"amarelo": _amarelo_atraso(p); p.cd = 0.3
+		_:
+			p.cd = 0.3; added += 0.2
+			if p.team != HOME: crowd = clamp(crowd + 8, 0, 100); sfx("boo", 0.5)
+			protest_after_soon(1 - p.team)
+func _rep_aplica(p: Pl, R: Dictionary) -> void:
+	sfx("whistle", "short")
+	p.set_piece = false
+	var team: int = R.team
+	if R.tipo == "baliza":
+		feed("Pontapé de baliza demorado: canto para %s." % art_t(1 - team), "info")
+		corner(1 - team, 0.5 if rng.randf() < 0.5 else H - 0.5)
+	else:
+		feed("Lançamento demorado: passa para %s." % art_t(1 - team), "info")
+		bp = R.at; last = team
+		throw_in()
+func _amarelo_atraso(p: Pl) -> void:
+	p.yellow += 1; sfx("whistle", "short")
+	var m := "Amarelo ao %d %s por atrasar o recomeço" % [p.num, de_t(p.team)]
+	if p.yellow >= 2: p.off = true; m = "Segundo amarelo: %d %s expulso" % [p.num, de_t(p.team)]
+	if p.off and owner == p:
+		var c: Array = active().filter(func(x): return x.team == p.team and x.role != "gk")
+		if c.size(): owner = nearest(c, p.p)[0]; parado_dono = owner; owner.set_piece = true
+	feed(m + ".", "card"); toast(m, 2.0)
 
 # descontos
 # Lei 4: vistoria aos equipamentos no túnel, antes do apito inicial
 const VISTORIA := [
-	["traz um fio ao pescoço", "corrigir", "Lei 4: são proibidas todas as joias (tapar com fita não chega)"],
-	["tem uma pulseira de silicone no pulso", "corrigir", "Lei 4: são proibidas todas as joias, também as pulseiras de silicone"],
+	["traz um fio ao pescoço, à vista", "corrigir", "Lei 4 (2026): acessórios só se não forem perigosos e estiverem bem tapados; à vista, tem de o tapar ou tirar"],
+	["tem uma pulseira de silicone à vista no pulso", "corrigir", "Lei 4 (2026): acessórios só se estiverem tapados e bem presos; à vista, não"],
+	["tem uma pulseira de silicone tapada por uma munhequeira bem presa", "deixar", "Lei 4 (2026): acessório sem perigo, tapado e bem preso, é permitido (até 2026 todas as joias eram proibidas)"],
+	["traz um brinco grande de argola", "corrigir", "Lei 4 (2026): um objeto perigoso tem de ser tirado; tapá-lo não chega"],
 	["vai entrar sem caneleiras", "corrigir", "Lei 4: as caneleiras são obrigatórias"],
 	["tem uma camisola térmica de cor diferente das mangas", "corrigir", "Lei 4: a roupa interior tem de ser da cor principal das mangas"],
 	["tem fita nas meias de outra cor", "corrigir", "Lei 4: a fita nas meias tem de ser da cor da parte da meia que tapa"],
@@ -4516,20 +4695,31 @@ func _troca_gr_step(dt: float) -> void:
 	elif p.dest.x < 0:
 		troca_gr = {}
 
+# Lei 3 (2026/27): quem é substituído tem 10 segundos para sair, pela linha mais próxima. Se não sai a tempo, o
+# suplente só pode entrar na primeira paragem depois de um minuto de jogo a correr (a troca já não se desfaz).
+# O amarelo fica para quem atrasa o recomeço de forma excessiva para lá dos 10 segundos.
 func _sai_devagar(ti: int, n0: int) -> void:
-	ask_open("%s ganha e o %d que vai sair atravessa o campo todo, a passo, até ao banco." % [cap_t(ti), n0], "Substituição",
-		[{"d": "esperar", "label": "Esperar", "small": "é o tempo dele"}, {"d": "linha", "label": "Linha mais próxima", "small": "sai por onde está"},
+	ask_open("%s ganha e o %d que vai sair atravessa o campo todo, a passo, até ao banco. Já passaram mais de 10 segundos." % [cap_t(ti), n0], "Substituição",
+		[{"d": "esperar", "label": "Esperar", "small": "é o tempo dele"}, {"d": "linha", "label": "Linha mais próxima", "small": "sai por onde está e o suplente entra"},
+		 {"d": "minuto", "label": "Suplente só daqui a 1 minuto", "small": "joga-se já, com menos um"},
 		 {"d": "amarelo", "label": "Amarelo", "small": "antijogo", "sw": "amarelo"}],
-		func(c): _sai_devagar_res(c, ti, n0), 0)
-# intervalo: cada equipa pode mexer sem gastar uma das 3 paragens
+		func(c): _sai_devagar_res(c, ti, n0), 0, true)
 func _sai_devagar_res(c: String, ti: int, n0: int) -> void:
-	var pts := 1.0 if c == "linha" else (0.4 if c == "amarelo" else 0.0)
+	var pts: float = {"minuto": 1.0, "linha": 0.4, "amarelo": 0.2, "esperar": 0.0}[c]
+	var why := ""
+	match c:
+		"minuto": why = "Certo: passados 10 segundos, o suplente só entra na primeira paragem depois de um minuto (Lei 3, 2026)"
+		"linha": why = "A linha mais próxima está certa, mas já tinham passado os 10 segundos: o suplente só entrava daqui a um minuto"
+		"amarelo": why = "Desde 2026 a sanção é o suplente esperar um minuto; o amarelo é só para atrasos excessivos"
+		_: why = "Lei 3 (2026): quem é substituído tem 10 segundos para sair; passado isso, o suplente espera um minuto"
 	ctrl(2.0 if pts == 1 else (-1.0 if pts > 0 else -3.0))
 	if c == "esperar": added += 0.3; protest_after_soon(1 - ti)
-	manage.append({"minute": minute(), "what": "Jogador substituído a sair devagar", "dec": {"esperar": "Esperar", "linha": "Linha mais próxima", "amarelo": "Amarelo"}[c], "pts": pts,
-		"why": "Certo: quem é substituído sai pela linha mais próxima" if pts == 1 else ("Primeiro manda-o sair pela linha mais próxima; o amarelo é para quem recusa" if c == "amarelo" else "Deixaste queimar tempo: sai pela linha mais próxima")})
-	toast({"esperar": "Esperaste que ele chegasse ao banco", "linha": "Sai pela linha lateral, ali mesmo", "amarelo": "Amarelo ao %d %s por atrasar o jogo" % [n0, de_t(ti)]}[c], 2.0)
+	manage.append({"minute": minute(), "what": "Jogador substituído a demorar a sair", "dec": {"esperar": "Esperar", "linha": "Linha mais próxima", "minuto": "Suplente daqui a 1 minuto", "amarelo": "Amarelo"}[c], "pts": pts, "why": why})
+	toast({"esperar": "Esperaste que ele chegasse ao banco", "linha": "Sai pela linha lateral, ali mesmo", "minuto": "Joga-se já: o suplente %s só entra daqui a um minuto" % de_t(ti),
+		"amarelo": "Amarelo ao %d %s por atrasar o jogo" % [n0, de_t(ti)]}[c], 2.2)
+	if c == "minuto": feed("O %d %s demorou a sair: o suplente só entra na primeira paragem depois de um minuto." % [n0, de_t(ti)], "info")
 	if c == "amarelo": feed("Amarelo ao %d %s, já substituído, por atrasar a saída." % [n0, de_t(ti)], "card"); sfx("whistle", "short")
+# intervalo: cada equipa pode mexer sem gastar uma das 3 paragens
 func subs_intervalo() -> void:
 	for ti in 2:
 		if rng.randf() < 0.45 and subs[ti].n < 5:
@@ -4574,13 +4764,22 @@ func gk8_check(gk: Pl) -> void:
 	if rng.randf() > pr: return
 	gk8 = {"id": gk.id, "team": gk.team, "t": 0.0, "conta": -1.0, "larga": rng.randf() < 0.6}
 	gk8_n += 1
+# para a vista 2D: quem está a ser contado (guarda-redes com a bola nas mãos ou reposição atrasada)
+func mao_alvo() -> Dictionary:
+	if not gk8.is_empty(): return {"id": gk8.id, "txt": "bola nas mãos", "falta": gk8_falta()}
+	if not rep.is_empty() and rep.t > 1.0 * GK8_SEG and (rep.conta >= 0 or not rep.perguntou): return {"id": rep.id, "txt": "a demorar", "falta": rep_falta()}
+	return {}
 func gk8_seg() -> int: return int(floor(gk8.t / GK8_SEG)) if not gk8.is_empty() else 0
 func gk8_falta() -> int:
 	# o que o árbitro mostra com a mão: 5, 4, 3, 2, 1
 	if gk8.is_empty() or gk8.conta < 0: return -1
 	return maxi(0, 5 - int(floor((gk8.t - gk8.conta) / GK8_SEG)))
 func conta_mao() -> void:
-	if gk8.is_empty() or gk8.conta >= 0 or mode != "play": return
+	if mode != "play": return
+	if gk8.is_empty() and not rep.is_empty() and rep.conta < 0 and not rep.perguntou:
+		rep.conta = rep.t; rep.cedo = rep.t < 1.0 * GK8_SEG; sfx("whistle", "short")
+		return
+	if gk8.is_empty() or gk8.conta >= 0: return
 	gk8.conta = gk8.t
 	gk8.cedo = gk8.t < 1.5 * GK8_SEG
 func gk8_step(dt: float) -> void:
@@ -4720,7 +4919,7 @@ func _solo_res(c: String) -> void:
 	var certo := "gr" if area >= 0 else "posse"
 	var pts := 1.0 if c == certo else (0.3 if c == "disputa" else (0.4 if c == "posse" else 0.0))
 	var why := ""
-	if pts == 1: why = "Certo: dentro da área, a bola ao solo é para o guarda-redes" if area >= 0 else "Certo: bola ao solo para quem a tinha, com os adversários a 4 m"
+	if pts == 1: why = "Certo: dentro da área, a bola ao solo é para o guarda-redes" if area >= 0 else "Certo: bola ao solo para a equipa que tinha (ou ia ganhar) a bola, com os adversários a 4 m"
 	elif c == "disputa": why = "Era a regra antiga: desde 2019 a bola ao solo é para uma só equipa"
 	elif c == "posse": why = "Dentro da área, a bola ao solo é sempre para o guarda-redes"
 	else: why = "Não houve falta: recomeça-se com bola ao solo"
@@ -4759,9 +4958,27 @@ func _assistencia(parado: bool) -> void:
 		return
 	p.down = 2.5
 	# Lei 5: quem é assistido em campo sai e só volta com autorização do árbitro
-	feed("Entra a equipa médica: o %d %s é assistido e sai do campo para voltar depois." % [p.num, de_t(p.team)], "info")
+	feed("Entra a equipa médica: o %d %s é assistido e sai do campo." % [p.num, de_t(p.team)], "info")
 	if not parado: toast("Bola fora: entra a equipa médica", 1.6)
 	if rng.randf() < 0.45: later(1.4, func(): _sangue(p))
+	elif volta_n < 1: later(1.4, func(): _volta_ask(p))
+
+# Lei 5 (2026/27): quem é assistido em campo sai e só volta um minuto (de jogo a correr) depois do recomeço.
+# Exceções: o guarda-redes, ou quando o adversário viu amarelo ou vermelho pela falta que causou a lesão
+var volta_n := 0
+func _volta_ask(p: Pl) -> void:
+	if mode != "play" or p.off or not ask.is_empty(): return
+	volta_n += 1
+	ask_open("O %d %s foi assistido pela equipa médica e já está bem, à beira do campo. Não houve cartão no lance. Quando pode voltar?" % [p.num, de_t(p.team)], "Regresso depois da assistência",
+		[{"d": "ja", "label": "Já, com o meu sinal", "small": "logo no recomeço"}, {"d": "minuto", "label": "Um minuto depois do recomeço", "small": "e com o meu sinal"},
+		 {"d": "fora", "label": "Quando a bola sair", "small": "na paragem seguinte"}], func(c): _volta_res(p, c), 0, true)
+func _volta_res(p: Pl, c: String) -> void:
+	var pts := 1.0 if c == "minuto" else 0.0
+	var why := "Certo: desde 2026 quem é assistido só volta um minuto depois do recomeço" if pts == 1 else \
+		"Lei 5 (2026): quem é assistido sai e só volta um minuto depois do recomeço (salvo o guarda-redes, ou se o adversário viu cartão pela falta)"
+	ctrl(1.0 if pts == 1 else -1.5)
+	manage.append({"minute": minute(), "what": "Regresso do %d %s depois de assistido" % [p.num, de_t(p.team)], "dec": {"ja": "Já", "minuto": "Um minuto depois", "fora": "Quando a bola sair"}[c], "pts": pts, "why": why})
+	toast(why, 2.8)
 
 # Lei 5: quem sangra sai do campo e só volta com sinal do árbitro, sem sangue e sem sangue no equipamento
 func _sangue(p: Pl) -> void:
@@ -4940,7 +5157,8 @@ func _fk_kick(F: Dictionary, tk: Pl) -> void:
 		pause = 0
 		if mode == "play": toast("Livre ensaiado: toque para o lado", 1.5)
 		return
-	shoot(tk, false)
+	# a qualidade do livre é a de quem bate: distância, ângulo e pé (finalização; a estrela bate melhor)
+	shoot(tk, false, xg_em(tk, tk.p, [], 9.0) * A("livre_q", 1.0))
 	# remate por cima da barreira: desce a tempo de entrar (ou não)
 	var sp: float = max(14.0, bv.length())
 	var tg: float = F.d / sp
@@ -5316,6 +5534,7 @@ func verdict_txt(l: Dictionary) -> String:
 	var dec: String = l.get("decided", "")
 	var why: String
 	if l.has("var_why"): return str(l.var_why)
+	if l.has("adv_why"): return str(l.adv_why)
 	if l.get("interp_good", false) and pts == 1: why = "Certo · no limite: " + interp_txt(l) + " serviam" + (" (mas aos %d' foste por outro critério)" % l.crit_flip if l.has("crit_flip") else "")
 	elif l.get("miss_adv", false) and pts == 1: why = "Certo (podias ter dado vantagem)"
 	elif dec == "vantagem" and l.get("adv", false) and pts < 1: why = "Vantagem certa, cartão errado"

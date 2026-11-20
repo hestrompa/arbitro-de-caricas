@@ -6,7 +6,11 @@ func _initialize():
 	var rb := float(OS.get_environment("RB")) if OS.get_environment("RB") != "" else 70.0
 	for j in n:
 		var tm: Array = Carreira.default_teams()
+		if OS.get_environment("TROCA") != "": tm = [tm[1], tm[0]]       # as mesmas equipas, com os lados trocados
 		tm[0].rating = ra; tm[1].rating = rb
+		# EA / EB: estilo de cada equipa (posse, direto, pressao, contra)
+		if OS.get_environment("EA") != "": tm[0].estilo = OS.get_environment("EA")
+		if OS.get_environment("EB") != "": tm[1].estilo = OS.get_environment("EB")
 		var S := Partida.new(tm)
 		S.dbg_on = true
 		if OS.get_environment("AF") != "": S.af = JSON.parse_string(OS.get_environment("AF"))

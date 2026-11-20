@@ -10,6 +10,8 @@ var CASES = [
 	["puxao", {"lance": 2, "force": 0.9, "side": 1.0, "sim": false, "clean": false}],
 	["ombro_forte", {"lance": 3, "force": 1.4, "side": 1.0, "sim": false, "clean": false, "phi": 50.0, "vD": 8.0}],
 	["ombro", {"lance": 3, "force": 1.0, "side": 1.0, "sim": false, "clean": false, "phi": 50.0, "vD": 8.0}],
+	["aereo", {"lance": 5, "force": 1.0, "side": 1.0, "sim": false, "clean": true, "phi": 50.0, "vD": 8.0}],
+	["canto", {"lance": 7, "force": 1.0, "side": 1.0, "sim": false, "clean": true, "phi": 50.0, "vD": 8.0}],
 ]
 func _initialize():
 	DirAccess.make_dir_recursive_absolute(OUT)

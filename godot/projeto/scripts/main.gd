@@ -950,7 +950,7 @@ func _qclip(g: String) -> String:
 		"abre":
 			# protesto de corpo inteiro: abanar a cabeça, falar (Quaternius) ou discutir de braços abertos (Mixamo)
 			var r := rng.randf()
-			return "q_nao" if r < 0.3 else ("q_fala" if r < 0.5 else ("q_mx_discute" if r < 0.75 else "q_mx_discute2"))
+			return "q_nao" if r < 0.25 else ("q_fala" if r < 0.42 else ("q_mx_discute" if r < 0.62 else ("q_mx_discute2" if r < 0.8 else "q_mx_zangado")))
 		"braco":
 			# aponta para o árbitro (três maneiras) em vez de levantar o braço
 			var r := rng.randf()
@@ -1063,6 +1063,16 @@ func _ball3_step(dt: float) -> void:
 
 # ---------- cenas ----------
 # 5) disputa no ar: os dois saltam à bola; o defesa pode usar o braço (empurrão, alavanca, cotovelada)
+# salto capturado (Mixamo "jump_2"): agacha, impulsiona e a cabeça chega ao ponto mais alto aos 0,80 s.
+# Entra-se no clip aos 0,35 s, 0,45 s antes do instante da bola, para o pico calhar no momento do cabeceamento.
+const SALTO_DE := 0.35
+const SALTO_ANTES := 0.45
+func _salta(j: Jogador) -> bool:
+	if j.rag or t < TC - SALTO_ANTES or t > TC + 0.8: return false
+	j.play("m_salto", 0.12, SALTO_DE + maxf(0.0, t - (TC - SALTO_ANTES)) if j.state != "m_salto" else 0.0)
+	j.jump = 0.0
+	return true
+
 func _aerial(dt: float) -> void:
 	var perp := Vector2(-A.y, A.x) * side
 	var v := 3.4
@@ -1076,10 +1086,12 @@ func _aerial(dt: float) -> void:
 	if not cab and not att.rag: _settle(att, dt, A)
 	var ts: float = kp["cab"].ts
 	if t < TC + 0.35:
-		if not def.rag: def.move(hb + A * v * minf(t - ts, 0.0) - A * 0.55 + perp * 0.38, A, v if t < ts else 0.6); def.play("jog", 0.2)
+		if not def.rag:
+			def.move(hb + A * v * minf(t - ts, 0.0) - A * 0.55 + perp * 0.38, A, v if t < ts else 0.6)
+			# o defesa salta a sério com ele (captura), em vez de subir o corpo todo de uma vez
+			if not _salta(def): def.play("jog", 0.2); def.jump = jmp * 0.92
 	else:
 		_settle(def, dt, A)
-	def.jump = jmp * 0.92
 	var w: float = clamp(jt / 0.2, 0.0, 1.0) * clamp((0.9 - jt) / 0.25, 0.0, 1.0)
 	var up := Vector3(0, 0.38, 0)
 	if not att.rag and not cab: att.ik = {"wrist_L": [att.bone_world("head") + up - Vector3(perp.x, 0, perp.y) * 0.18, w * 0.6], "wrist_R": [att.bone_world("head") + up + Vector3(perp.x, 0, perp.y) * 0.18, w * 0.6]}
@@ -1178,15 +1190,15 @@ func _corner(dt: float) -> void:
 	var wo := 1.0 - smoothstep(tk, TC - 0.35, t)
 	if t < TC + 0.4:
 		var a_at: Vector2 = ap + (sc.off_a as Vector2) * wo
-		if not att.rag: att.move(a_at, V, v if t < TC + 0.25 else 0.5); att.play("jog", 0.3)
+		if not att.rag:
+			att.move(a_at, V, v if t < TC + 0.25 else 0.5)
+			if not _salta(att): att.play("jog", 0.3)
 		var dp: Vector2 = ap + dof + (sc.off_d as Vector2) * wo
-		if not def.rag: def.move(dp, V, v); def.play("jog", 0.3)
+		if not def.rag:
+			def.move(dp, V, v)
+			if not _salta(def): def.play("jog", 0.3)
 	else:
 		_settle(att, dt, V); _settle(def, dt, V)
-	var jt := t - (TC - 0.3)
-	var jmp: float = 0.0 if jt < 0 or jt > 0.62 else 0.35 * sin(PI * jt / 0.62)
-	if not att.rag: att.jump = jmp
-	if not def.rag: def.jump = jmp * 0.8
 	var w: float = clamp(1.0 - absf(t - TC + 0.1) / 0.35, 0.0, 1.0)
 	if T == "penalti":
 		var back := att.bone_world("spine01") - Vector3(V.x, 0, V.y) * 0.15
@@ -2743,8 +2755,9 @@ func _settle(p: Jogador, dt: float, _d: Vector2) -> void:
 	var v: float = max(0.0, p.speed - 3.0 * dt)
 	p.move(p.pos + d * v * dt, d, v)
 	# quem se levantou magoado fica agarrado à perna em vez de esperar como se nada fosse (Mixamo)
-	if v < 1.0: p.play("q_mx_lesao" if p.hurt > 0.25 and p.levantou else "idle", 0.4)
-	elif v < 3.5: p.play("jog", 0.3)
+	var magoado: bool = p.hurt > 0.25 and p.levantou
+	if v < 1.0: p.play("q_mx_lesao" if magoado else "idle", 0.4)
+	elif v < 3.5: p.play("m_coxo" if magoado else "jog", 0.3)       # quem se levantou magoado anda a coxear
 
 # 1) entrada: a força e o ângulo do toque decidem o que acontece ao atacante; ou simula
 func _tackle(dt: float) -> void:

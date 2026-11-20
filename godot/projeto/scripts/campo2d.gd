@@ -115,12 +115,13 @@ var btn_mao := Rect2()
 func _regras2d(rp: Vector2) -> void:
 	btn_mao = Rect2()
 	var pul := 0.5 + 0.5 * sin(Time.get_ticks_msec() / 120.0)
-	if not jogo.gk8.is_empty():
-		var g = jogo.players[jogo.gk8.id]
+	var ma: Dictionary = jogo.mao_alvo()
+	if not ma.is_empty():
+		var g = jogo.players[ma.id]
 		var gc := w2s(g.p)
 		draw_arc(gc, sc * (1.8 + pul * 0.4), 0, TAU, 24, Color(0.4, 1.0, 0.9, 0.9), maxf(2.0, sc * 0.25))
-		draw_string(font, gc + Vector2(-60, -sc * 2.6), "bola nas mãos", HORIZONTAL_ALIGNMENT_CENTER, 120, 12, Color(0.75, 1.0, 0.95))
-		var f: int = jogo.gk8_falta()
+		draw_string(font, gc + Vector2(-60, -sc * 2.6), str(ma.txt), HORIZONTAL_ALIGNMENT_CENTER, 120, 12, Color(0.75, 1.0, 0.95))
+		var f: int = int(ma.falta)
 		if f >= 0:
 			# mão levantada do árbitro com os segundos que faltam
 			draw_rect(Rect2(rp + Vector2(-sc * 0.35, -sc * 4.6), Vector2(sc * 0.7, sc * 2.6)), Color(0.98, 0.85, 0.7))
